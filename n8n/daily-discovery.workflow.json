@@ -1,0 +1,12 @@
+{
+  "name": "Scout — Daily internship discovery",
+  "nodes": [
+    { "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 7 * * *" }] } }, "id": "schedule", "name": "Every morning", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0] },
+    { "parameters": { "method": "POST", "url": "={{$env.SCOUT_URL}}/api/discover", "sendBody": true, "specifyBody": "json", "jsonBody": "={\"source\":\"greenhouse\",\"companyToken\":\"{{$json.companyToken || 'example'}}\"}" }, "id": "discover", "name": "Run ATS discovery", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [240, 0] },
+    { "parameters": { "chatId": "={{$env.TELEGRAM_CHAT_ID}}", "text": "=Scout found {{$json.shortlisted}} strong matches today. Review: {{$env.SCOUT_URL}}", "additionalFields": { "appendAttribution": false } }, "id": "telegram", "name": "Send approval batch", "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [480, 0], "credentials": { "telegramApi": { "id": "SCOUT_TELEGRAM_CREDENTIAL", "name": "Scout Telegram bot" } } }
+  ],
+  "connections": { "Every morning": { "main": [[{ "node": "Run ATS discovery", "type": "main", "index": 0 }]] }, "Run ATS discovery": { "main": [[{ "node": "Send approval batch", "type": "main", "index": 0 }]] } },
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Kolkata" },
+  "active": false,
+  "versionId": "0c350e70-3cb9-4d87-9fb1-c0fc0a791201"
+}
