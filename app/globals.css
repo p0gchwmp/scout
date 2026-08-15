@@ -58,7 +58,7 @@ h1 em { color: var(--green); font-weight: 400; }
 .queue-heading > p { font-size: 11px; color: var(--muted); }
 
 .job-list { display: grid; gap: 8px; }
-.job-card { min-height: 187px; display: grid; grid-template-columns: 24px 58px 1fr 136px; gap: 21px; align-items: center; background: var(--card); border: 1px solid var(--line); padding: 25px 25px 25px 18px; position: relative; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.job-card { min-height: 187px; display: grid; grid-template-columns: 58px 1fr 150px; gap: 21px; align-items: center; background: var(--card); border: 1px solid var(--line); padding: 25px; position: relative; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
 .job-card:hover { transform: translateY(-2px); border-color: #abb0a8; box-shadow: 0 8px 25px #1b2f2110; }
 .job-card.is-approved { border-left: 4px solid var(--green); padding-left: 15px; }
 .select-job input { position: absolute; opacity: 0; }
@@ -87,6 +87,14 @@ h1 em { color: var(--green); font-weight: 400; }
 .details-link:hover { color: var(--ink); }
 .approved-label { color: var(--green); font-size: 11px; text-align: center; font-weight: 650; }
 .approved-label span { display: grid; place-items: center; margin: 0 auto 7px; background: var(--green-soft); width: 30px; height: 30px; border-radius: 50%; }
+.card-actions button:disabled, .source-card button:disabled { cursor: not-allowed; opacity: .55; }
+.error-notice { background: #8d3229; }
+.empty-state { padding: 42px; border: 1px dashed #b8bab3; background: #faf8f1; color: var(--muted); text-align: center; font-size: 13px; line-height: 1.6; }
+.source-list { display: grid; gap: 8px; margin-bottom: 20px; }
+.source-card { display: flex; justify-content: space-between; gap: 30px; align-items: center; padding: 25px; background: var(--card); border: 1px solid var(--line); }
+.source-card h3 { margin: 4px 0; font: 400 24px Georgia, serif; }
+.source-card p, .source-card small { color: var(--muted); font-size: 11px; }
+.source-card .primary-action { border: 0; border-radius: 2px; background: var(--green); color: white; min-height: 38px; padding: 0 16px; cursor: pointer; }
 
 .safety-panel { margin: 75px 0; background: var(--green); color: white; min-height: 230px; padding: 42px; display: grid; grid-template-columns: 70px 1fr 1.15fr; align-items: center; gap: 26px; }
 .safety-icon { width: 54px; height: 54px; border: 1px solid #ffffff66; border-radius: 50%; display: grid; place-items: center; font-size: 25px; }
@@ -104,9 +112,9 @@ footer p { font: 10px var(--font-geist), sans-serif; letter-spacing: 0; }
   .topbar { grid-template-columns: 1fr auto; }
   .main-nav { display: none; }
   .hero { grid-template-columns: 1fr; gap: 38px; }
-  .job-card { grid-template-columns: 20px 48px 1fr; }
+  .job-card { grid-template-columns: 48px 1fr; }
   .company-logo { width: 45px; height: 45px; }
-  .card-actions { grid-column: 3; border-left: 0; border-top: 1px solid var(--line); padding: 13px 0 0; flex-direction: row; }
+  .card-actions { grid-column: 2; border-left: 0; border-top: 1px solid var(--line); padding: 13px 0 0; flex-direction: row; }
   .card-actions button { flex: 1; }
   .rank { display: none; }
   .safety-panel { grid-template-columns: 60px 1fr; }

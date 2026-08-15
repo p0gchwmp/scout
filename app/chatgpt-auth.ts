@@ -17,6 +17,7 @@ const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
+const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
@@ -37,6 +38,10 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
     email,
     fullName,
   };
+}
+
+export async function getScoutOwnerUserId(): Promise<string | null> {
+  return (await headers()).get(SCOUT_OWNER_USER_ID_HEADER);
 }
 
 export async function requireChatGPTUser(

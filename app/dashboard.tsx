@@ -1,234 +1,193 @@
 "use client";
 
-import { useMemo, useState } from "react";
-
-type JobState = "shortlisted" | "approved" | "saved" | "rejected";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Job = {
   id: string;
+  sourceRegistryId: string | null;
   company: string;
-  monogram: string;
   title: string;
   location: string;
-  mode: string;
+  workplaceType: string;
   source: string;
-  posted: string;
+  canonicalUrl: string;
   score: number;
-  accent: string;
-  reasons: string[];
-  risks: string[];
-  state: JobState;
-  applyUrl: string;
+  scoreExplanation: string[];
+  eligibilityRisks: string[];
+  state: "shortlisted" | "saved" | "rejected";
+  lifecycleState: "active" | "closed";
+  currentSnapshotId: string | null;
+  lastSeenAt: string;
 };
 
-const seedJobs: Job[] = [
-  {
-    id: "linear-product-intern",
-    company: "Linear",
-    monogram: "LI",
-    title: "Product Operations Intern",
-    location: "Remote · APAC",
-    mode: "Remote",
-    source: "Ashby",
-    posted: "2h ago",
-    score: 94,
-    accent: "#e05b38",
-    reasons: ["Student-friendly", "Product & ops fit", "Remote in APAC"],
-    risks: [],
-    state: "shortlisted",
-    applyUrl: "https://jobs.ashbyhq.com/",
-  },
-  {
-    id: "razorpay-product-analyst",
-    company: "Razorpay",
-    monogram: "RZ",
-    title: "Product Analyst Intern",
-    location: "Bengaluru, India",
-    mode: "Hybrid",
-    source: "Greenhouse",
-    posted: "5h ago",
-    score: 91,
-    accent: "#3366cc",
-    reasons: ["India eligible", "Analytics match", "Strong learning value"],
-    risks: ["May require SQL assessment"],
-    state: "shortlisted",
-    applyUrl: "https://boards.greenhouse.io/",
-  },
-  {
-    id: "meesho-strategy-intern",
-    company: "Meesho",
-    monogram: "ME",
-    title: "Strategy & Operations Intern",
-    location: "Bengaluru, India",
-    mode: "On-site",
-    source: "Lever",
-    posted: "Yesterday",
-    score: 87,
-    accent: "#9d3c8c",
-    reasons: ["Business breadth", "Current students accepted", "India eligible"],
-    risks: ["On-site availability needed"],
-    state: "shortlisted",
-    applyUrl: "https://jobs.lever.co/",
-  },
-  {
-    id: "atlassian-pm-intern",
-    company: "Atlassian",
-    monogram: "AT",
-    title: "Associate Product Manager Intern",
-    location: "Sydney, Australia",
-    mode: "Hybrid",
-    source: "Workday",
-    posted: "1d ago",
-    score: 86,
-    accent: "#1769e0",
-    reasons: ["Exceptional global role", "Product fit", "High learning value"],
-    risks: ["Work authorization unconfirmed", "Relocation required"],
-    state: "shortlisted",
-    applyUrl: "https://atlassian.wd1.myworkdayjobs.com/",
-  },
-];
+type Source = {
+  id: string;
+  provider: "greenhouse";
+  companyName: string;
+  companyDomain: string;
+  careersUrl: string | null;
+  enabled: boolean;
+};
 
-const tabs = ["Daily queue", "Applications", "Profile evidence", "Sources"];
+type SyncRun = {
+  id: string;
+  sourceId: string;
+  status: "running" | "completed" | "failed";
+  discoveredCount: number;
+  createdCount: number;
+  updatedCount: number;
+  closedCount: number;
+  completedAt: string | null;
+};
+
+const tabs = ["Jobs", "Sources"] as const;
 
 export function Dashboard() {
-  const [jobs, setJobs] = useState(seedJobs);
-  const [activeTab, setActiveTab] = useState("Daily queue");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [filter, setFilter] = useState("All matches");
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [runs, setRuns] = useState<SyncRun[]>([]);
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Jobs");
+  const [filter, setFilter] = useState("Active");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  const loadData = useCallback(async () => {
+    setError("");
+    try {
+      const [jobsResponse, sourcesResponse] = await Promise.all([fetch("/api/jobs"), fetch("/api/sources")]);
+      const jobsPayload = await jobsResponse.json() as { jobs?: Job[]; error?: string };
+      const sourcesPayload = await sourcesResponse.json() as { sources?: Source[]; recentRuns?: SyncRun[]; error?: string };
+      if (!jobsResponse.ok) throw new Error(jobsPayload.error ?? "Unable to load jobs");
+      if (!sourcesResponse.ok) throw new Error(sourcesPayload.error ?? "Unable to load sources");
+      setJobs(jobsPayload.jobs ?? []);
+      setSources(sourcesPayload.sources ?? []);
+      setRuns(sourcesPayload.recentRuns ?? []);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to load Scout data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadData(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
 
   const visibleJobs = useMemo(() => jobs.filter((job) => {
-    if (filter === "India") return job.location.includes("India");
-    if (filter === "Remote") return job.mode === "Remote";
-    if (filter === "Exceptional global") return job.reasons.includes("Exceptional global role");
-    return job.state !== "rejected";
+    if (filter === "Active") return job.lifecycleState === "active" && job.state !== "rejected";
+    if (filter === "Saved") return job.state === "saved";
+    if (filter === "Closed") return job.lifecycleState === "closed";
+    return true;
   }), [jobs, filter]);
 
-  const updateJob = (id: string, state: JobState) => {
-    setJobs((items) => items.map((job) => job.id === id ? { ...job, state } : job));
-    setSelected((items) => items.filter((item) => item !== id));
-    setNotice(state === "approved" ? "Added to tonight’s safe-fill batch." : `Job ${state}.`);
-  };
+  async function syncSource(source: Source) {
+    setBusy(source.id);
+    setNotice("");
+    setError("");
+    try {
+      const idempotencyKey = `manual-${new Date().toISOString().slice(0, 13)}`;
+      const response = await fetch("/api/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceId: source.id, idempotencyKey }) });
+      const payload = await response.json() as { run?: SyncRun; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Sync failed");
+      setNotice(`${source.companyName}: ${payload.run?.discoveredCount ?? 0} jobs observed; the same hourly key is safe to retry.`);
+      await loadData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Sync failed");
+    } finally {
+      setBusy(null);
+    }
+  }
 
-  const approveSelected = () => {
-    if (!selected.length) return setNotice("Select at least one role first.");
-    setJobs((items) => items.map((job) => selected.includes(job.id) ? { ...job, state: "approved" } : job));
-    setNotice(`${selected.length} application${selected.length > 1 ? "s" : ""} approved for safe filling.`);
-    setSelected([]);
-  };
+  async function updateJob(id: string, state: "shortlisted" | "saved" | "rejected") {
+    setBusy(id);
+    try {
+      const response = await fetch("/api/jobs", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, state }) });
+      const payload = await response.json() as { job?: Job; error?: string };
+      if (!response.ok || !payload.job) throw new Error(payload.error ?? "Update failed");
+      setJobs((items) => items.map((job) => job.id === id ? payload.job! : job));
+      setNotice(`Job marked ${state}. No application or message was sent.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Update failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function extractContacts(job: Job) {
+    setBusy(job.id);
+    try {
+      const response = await fetch("/api/contacts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: job.id }) });
+      const payload = await response.json() as { contacts?: unknown[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Extraction failed");
+      setNotice(`${payload.contacts?.length ?? 0} published business contact record(s) stored with provenance. Nothing was sent.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Extraction failed");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Scout home">
-          <span className="brand-mark">S</span>
-          <span>Scout</span>
-        </a>
+        <a className="brand" href="#top" aria-label="Scout home"><span className="brand-mark">S</span><span>Scout</span></a>
         <nav className="main-nav" aria-label="Primary navigation">
-          {tabs.map((tab) => (
-            <button key={tab} className={activeTab === tab ? "nav-active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>
-          ))}
+          {tabs.map((tab) => <button key={tab} className={activeTab === tab ? "nav-active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}
         </nav>
-        <div className="header-actions">
-          <span className="sync-dot"><i /> Synced 8:42 AM</span>
-          <button className="avatar" aria-label="Open profile">AK</button>
-        </div>
+        <div className="header-actions"><span className="sync-dot"><i /> Persisted D1 data</span><button className="avatar" aria-label="Local MVP">MVP</button></div>
       </header>
 
       <main id="top">
         <section className="hero">
           <div>
-            <p className="eyebrow">WEDNESDAY · AUGUST 12</p>
-            <h1>Your best shots,<br /><em>not the most shots.</em></h1>
-            <p className="hero-copy">Scout found <strong>8 internships</strong> worth your attention today. Every match is scored against facts in your profile—never invented experience.</p>
+            <p className="eyebrow">CONTROLLED DISCOVERY · PROVENANCE FIRST</p>
+            <h1>Observed openings,<br /><em>not personalized rankings.</em></h1>
+            <p className="hero-copy">Scout currently reads only registered Greenhouse boards and keeps immutable job snapshots. Jobs remain explicitly unranked until a persisted approved profile is configured. <strong>It cannot send messages or apply.</strong></p>
           </div>
-          <div className="hero-stats" aria-label="Daily summary">
-            <div><span>08</span><p>strong matches</p></div>
-            <div><span>03</span><p>closing soon</p></div>
-            <div><span>92%</span><p>profile ready</p></div>
-          </div>
-        </section>
-
-        <section className="control-strip" aria-label="Queue controls">
-          <div className="filters">
-            {["All matches", "India", "Remote", "Exceptional global"].map((item) => (
-              <button key={item} className={filter === item ? "filter-active" : ""} onClick={() => setFilter(item)}>{item}</button>
-            ))}
-          </div>
-          <div className="batch-actions">
-            <span>{selected.length} selected</span>
-            <button className="approve-batch" onClick={approveSelected}>Approve batch <span>→</span></button>
+          <div className="hero-stats" aria-label="Current persisted summary">
+            <div><span>{jobs.filter((job) => job.lifecycleState === "active").length}</span><p>active jobs</p></div>
+            <div><span>{sources.filter((source) => source.enabled).length}</span><p>enabled sources</p></div>
+            <div><span>{runs.filter((run) => run.status === "completed").length}</span><p>recent syncs</p></div>
           </div>
         </section>
 
         {notice && <div className="notice" role="status"><span>✓</span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notification">×</button></div>}
+        {error && <div className="notice error-notice" role="alert"><span>!</span>{error}<button onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
 
-        <section className="queue-heading">
-          <div>
-            <p className="section-kicker">TODAY’S SHORTLIST</p>
-            <h2>{activeTab}</h2>
-          </div>
-          <p>Ranked by fit, eligibility, learning value, and freshness.</p>
-        </section>
-
-        <section className="job-list" aria-label="Internship matches">
-          {visibleJobs.map((job, index) => (
-            <article className={`job-card ${job.state === "approved" ? "is-approved" : ""}`} key={job.id}>
-              <label className="select-job">
-                <span className="sr-only">Select {job.title} at {job.company}</span>
-                <input type="checkbox" checked={selected.includes(job.id)} onChange={(event) => setSelected((items) => event.target.checked ? [...items, job.id] : items.filter((id) => id !== job.id))} />
-                <span />
-              </label>
-              <div className="company-logo" style={{ background: job.accent }}>{job.monogram}</div>
+        {activeTab === "Jobs" ? <>
+          <section className="control-strip" aria-label="Job filters"><div className="filters">{["Active", "Saved", "Closed", "All"].map((item) => <button key={item} className={filter === item ? "filter-active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div><div className="batch-actions"><span>{visibleJobs.length} persisted result(s)</span></div></section>
+          <section className="queue-heading"><div><p className="section-kicker">CURRENT DATABASE</p><h2>Discovered jobs</h2></div><p>Composite source identity · versioned snapshots · lifecycle tracking</p></section>
+          <section className="job-list" aria-label="Persisted jobs">
+            {loading && <div className="empty-state">Loading persisted jobs…</div>}
+            {!loading && !visibleJobs.length && <div className="empty-state">No jobs match this view. Register a Greenhouse source in D1, then sync it from the Sources tab.</div>}
+            {visibleJobs.map((job) => <article className="job-card" key={job.id}>
+              <div className="company-logo">{job.company.slice(0, 2).toUpperCase()}</div>
               <div className="job-main">
-                <div className="job-title-row">
-                  <div>
-                    <p className="company-name">{job.company}</p>
-                    <h3>{job.title}</h3>
-                  </div>
-                  <div className="score-ring" style={{ "--score": `${job.score * 3.6}deg` } as React.CSSProperties}>
-                    <span>{job.score}</span>
-                  </div>
-                </div>
-                <p className="job-meta"><span>⌖</span>{job.location}<b>·</b>{job.mode}<b>·</b>{job.source}<b>·</b>{job.posted}</p>
-                <div className="reason-row">
-                  {job.reasons.map((reason) => <span className="reason" key={reason}>✓ {reason}</span>)}
-                  {job.risks.map((risk) => <span className="risk" key={risk}>! {risk}</span>)}
-                </div>
+                <div className="job-title-row"><div><p className="company-name">{job.company}</p><h3>{job.title}</h3></div><span className="sync-dot">Unranked</span></div>
+                <p className="job-meta"><span>⌖</span>{job.location || "Location unspecified"}<b>·</b>{job.workplaceType}<b>·</b>{job.source}<b>·</b>{job.lifecycleState}</p>
+                <div className="reason-row">{job.scoreExplanation.map((reason) => <span className="reason" key={reason}>✓ {reason}</span>)}{job.eligibilityRisks.map((risk) => <span className="risk" key={risk}>! {risk}</span>)}</div>
               </div>
-              <div className="card-actions">
-                <span className="rank">0{index + 1}</span>
-                {job.state === "approved" ? (
-                  <div className="approved-label"><span>✓</span> Approved</div>
-                ) : (
-                  <>
-                    <button className="primary-action" onClick={() => updateJob(job.id, "approved")}>Approve</button>
-                    <button className="ghost-action" onClick={() => updateJob(job.id, "saved")}>Save</button>
-                  </>
-                )}
-                <a className="details-link" href={job.applyUrl} target="_blank" rel="noreferrer">Official listing ↗</a>
-              </div>
-            </article>
-          ))}
-        </section>
+              <div className="card-actions"><button className="primary-action" disabled={busy === job.id || !job.currentSnapshotId} onClick={() => void extractContacts(job)}>Extract contacts</button><button className="ghost-action" disabled={busy === job.id} onClick={() => void updateJob(job.id, job.state === "saved" ? "shortlisted" : "saved")}>{job.state === "saved" ? "Unsave" : "Save"}</button><button className="ghost-action" disabled={busy === job.id} onClick={() => void updateJob(job.id, "rejected")}>Reject</button><a className="details-link" href={job.canonicalUrl} target="_blank" rel="noreferrer">Stored official URL ↗</a></div>
+            </article>)}
+          </section>
+        </> : <>
+          <section className="queue-heading"><div><p className="section-kicker">ALLOWLISTED REGISTRY</p><h2>Greenhouse sources</h2></div><p>Board tokens are never accepted by the sync endpoint.</p></section>
+          <section className="source-list">
+            {loading && <div className="empty-state">Loading registered sources…</div>}
+            {!loading && !sources.length && <div className="empty-state">No controlled sources are registered. Add one directly to <code>company_sources</code> using the validated README procedure.</div>}
+            {sources.map((source) => { const latest = runs.find((run) => run.sourceId === source.id); return <article className="source-card" key={source.id}><div><p className="company-name">{source.provider.toUpperCase()}</p><h3>{source.companyName}</h3><p>{source.companyDomain} · persisted posting content only</p><small>{latest ? `Last run: ${latest.status} · ${latest.discoveredCount} observed` : "Never synced"}</small></div><button className="primary-action" disabled={!source.enabled || busy === source.id} onClick={() => void syncSource(source)}>{busy === source.id ? "Syncing…" : "Sync registered source"}</button></article>; })}
+          </section>
+        </>}
 
         <section className="safety-panel">
-          <div className="safety-icon">◎</div>
-          <div>
-            <p className="section-kicker">SAFE SUBMISSION GATE</p>
-            <h2>Scout knows when to stop.</h2>
-            <p>Simple, allowlisted forms can be filled after approval. CAPTCHA, login, legal consent, self-ID, uncertain work authorization, or any unsupported answer comes back to you.</p>
-          </div>
-          <div className="safety-steps">
-            <span className="done">1 <b>Match</b></span><i />
-            <span className="done">2 <b>Approve</b></span><i />
-            <span>3 <b>Safe-fill</b></span><i />
-            <span>4 <b>Confirm</b></span>
-          </div>
+          <div className="safety-icon">◎</div><div><p className="section-kicker">SAFE OUTREACH GATE</p><h2>Scout knows when to stop.</h2><p>Contact evidence comes only from persisted Greenhouse posting content and requires explicit acceptance. Drafts require approved immutable claims and revision-bound approval.</p></div>
+          <div className="safety-steps"><span className="done">1 <b>Discover</b></span><i /><span className="done">2 <b>Extract</b></span><i /><span>3 <b>Draft</b></span><i /><span>4 <b>Approve</b></span></div>
         </section>
       </main>
-
-      <footer><span>SCOUT / APPLICATION COPILOT</span><p>Evidence first. Consent always. Zero duplicate applications.</p><span>INDIA + REMOTE</span></footer>
+      <footer><span>SCOUT / DISCOVERY + DRAFTING MVP</span><p>No send capability. No application capability. Human review required.</p><span>GREENHOUSE ONLY</span></footer>
     </div>
   );
 }

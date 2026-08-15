@@ -10,9 +10,12 @@ export class GreenhouseAdapter implements SourceAdapter {
   readonly source = "greenhouse";
   readonly capabilities = { discovery: true, submission: false } as const;
   async discover(boardToken: string): Promise<NormalizedJob[]> {
-    const response = await fetch(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(boardToken)}/jobs?content=true`);
+    const endpoint = new URL(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(boardToken)}/jobs`);
+    endpoint.searchParams.set("content", "true");
+    const response = await fetch(endpoint, { signal: AbortSignal.timeout(10_000), redirect: "error" });
     if (!response.ok) throw new Error(`Greenhouse discovery failed (${response.status})`);
-    const payload = await response.json() as { jobs: Array<Record<string, unknown>> };
+    const payload = await response.json() as { jobs?: Array<Record<string, unknown>> };
+    if (!Array.isArray(payload.jobs)) throw new Error("Greenhouse discovery returned an invalid jobs payload");
     return payload.jobs.map((raw) => ({
       source: this.source,
       externalId: String(raw.id),

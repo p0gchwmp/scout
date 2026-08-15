@@ -1,26 +1,33 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { applications, jobs } from "../../../db/schema";
-
-const allowedStates = new Set(["discovered", "shortlisted", "approved", "filling", "needs_input", "submitted", "failed", "withdrawn", "saved", "rejected"]);
+import { jobs } from "../../../db/schema";
+import { parseJobMutationPayload } from "../../../lib/scout/api-validation";
+import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
 export async function GET() {
+  const unauthorized = await requireScoutApiUser();
+  if (unauthorized) return unauthorized;
   try {
-    const rows = await getDb().select().from(jobs).orderBy(desc(jobs.score), desc(jobs.lastSeenAt)).limit(50);
+    const rows = await getDb().select().from(jobs).orderBy(desc(jobs.lastSeenAt), desc(jobs.score)).limit(100);
     return Response.json({ jobs: rows });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Unable to load jobs" }, { status: 500 });
+    return scoutServerError("jobs.list", error, "Unable to load jobs");
   }
 }
 
 export async function PATCH(request: Request) {
-  const payload = await request.json() as { id?: string; state?: string };
-  if (!payload.id || !payload.state || !allowedStates.has(payload.state)) return Response.json({ error: "Valid id and state are required" }, { status: 400 });
-  const db = getDb();
-  const [job] = await db.update(jobs).set({ state: payload.state }).where(eq(jobs.id, payload.id)).returning();
-  if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
-  if (payload.state === "approved") {
-    await db.insert(applications).values({ id: crypto.randomUUID(), jobId: job.id, status: "approved", approvedAt: new Date().toISOString() }).onConflictDoUpdate({ target: applications.jobId, set: { status: "approved", approvedAt: new Date().toISOString() } });
+  const unauthorized = await requireScoutApiUser();
+  if (unauthorized) return unauthorized;
+  const crossOrigin = requireSameOriginMutation(request);
+  if (crossOrigin) return crossOrigin;
+  let payload: ReturnType<typeof parseJobMutationPayload>;
+  try { payload = parseJobMutationPayload(await request.json()); }
+  catch { return Response.json({ error: "A valid job mutation body is required" }, { status: 400 }); }
+  try {
+    const [job] = await getDb().update(jobs).set({ state: payload.state }).where(eq(jobs.id, payload.id)).returning();
+    if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
+    return Response.json({ job });
+  } catch (error) {
+    return scoutServerError("jobs.update", error, "Unable to update job");
   }
-  return Response.json({ job });
 }
