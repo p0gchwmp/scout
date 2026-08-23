@@ -56,20 +56,38 @@ export function InternshipInbox() {
     setNotice("");
     setDiscovering(true);
     try {
-      const response = await fetch("/api/lead-discovery", { method: "POST" });
-      const payload = await response.json() as {
-        found?: number; created?: number; existing?: number; leads?: DiscoveryLead[];
-        failures?: Array<{ company: string }>; error?: string;
-      };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to discover internships");
+      let payload: { found?: number; created?: number; upgraded?: number; existing?: number; pending?: number; leads?: DiscoveryLead[]; failures?: Array<{ company: string; reason?: string }>; error?: string };
+      let usedLocalBridge = false;
+
+      try {
+        const bridgeResponse = await fetch("http://127.0.0.1:43119/discover", { method: "GET", cache: "no-store" });
+        if (!bridgeResponse.ok) throw new Error("Local discovery bridge unavailable");
+        const envelope = await bridgeResponse.json() as { payload?: string; signature?: string; error?: string };
+        if (!envelope.payload || !envelope.signature) throw new Error(envelope.error ?? "Local discovery bridge returned an invalid envelope");
+        const importResponse = await fetch("/api/lead-discovery/import", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ payload: envelope.payload, signature: envelope.signature }),
+        });
+        payload = await importResponse.json() as typeof payload;
+        if (!importResponse.ok) throw new Error(payload.error ?? "Unable to import local discovery results");
+        usedLocalBridge = true;
+      } catch (bridgeError) {
+        const response = await fetch("/api/lead-discovery", { method: "POST" });
+        const fallback = await response.json() as { found?: number; created?: number; existing?: number; leads?: DiscoveryLead[]; failures?: Array<{ company: string; reason?: string }>; error?: string };
+        if (!response.ok) throw new Error(fallback.error ?? (bridgeError instanceof Error ? bridgeError.message : "Unable to discover internships"));
+        const resolutionResponse = await fetch("/api/lead-resolution", { method: "POST" });
+        const resolution = await resolutionResponse.json() as { resolved?: number; pending?: number; failures?: unknown[]; error?: string };
+        if (!resolutionResponse.ok) throw new Error(resolution.error ?? "Unable to resolve official postings");
+        payload = { ...fallback, upgraded: resolution.resolved ?? 0, pending: resolution.pending ?? 0 };
+      }
+
       setDiscovered(payload.leads ?? []);
-      const resolutionResponse = await fetch("/api/lead-resolution", { method: "POST" });
-      const resolution = await resolutionResponse.json() as { resolved?: number; pending?: number; failures?: unknown[]; error?: string };
-      if (!resolutionResponse.ok) throw new Error(resolution.error ?? "Unable to resolve official postings");
       await loadLeads();
-      const failureNote = payload.failures?.length ? ` ${payload.failures.length} discovery source(s) were temporarily unavailable.` : "";
-      const resolutionFailureNote = resolution.failures?.length ? ` ${resolution.failures.length} supported lead(s) could not be resolved.` : "";
-      setNotice(`Scout found ${payload.found ?? 0} relevant internship lead(s); ${payload.created ?? 0} new lead(s) were saved, ${resolution.resolved ?? 0} Greenhouse lead(s) were upgraded to immutable official snapshots, and ${resolution.pending ?? 0} lead(s) remain pending a supported resolver.${failureNote}${resolutionFailureNote}`);
+      const failureNote = payload.failures?.length
+        ? ` ${payload.failures.length} source(s) failed: ${payload.failures.slice(0, 3).map((failure) => `${failure.company}${failure.reason ? ` (${failure.reason})` : ""}`).join(", ")}.`
+        : "";
+      setNotice(`Scout found ${payload.found ?? 0} relevant internship lead(s); ${payload.created ?? 0} new record(s) were saved, ${payload.upgraded ?? 0} existing Greenhouse lead(s) were upgraded to immutable snapshots, ${payload.existing ?? 0} were already known, and ${payload.pending ?? 0} Lever lead(s) remain pending immutable Lever snapshot support.${usedLocalBridge ? " Local Node discovery bridge used." : " Worker discovery fallback used."}${failureNote}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to discover internships");
     } finally {
