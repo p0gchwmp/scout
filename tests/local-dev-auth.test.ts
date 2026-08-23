@@ -136,3 +136,16 @@ test("local worker binding setup requires an explicit matching owner", () => {
     );
   }
 });
+
+test("npm dev wrapper bootstraps only a fresh local shell and worker injects auth before route gating", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const devScript = await readFile(new URL("../scripts/scout-dev.mjs", import.meta.url), "utf8");
+  const worker = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
+  assert.match(devScript, /configured\.length === 0/);
+  assert.match(devScript, /SCOUT_LOCAL_DEV_AUTH = "1"/);
+  assert.match(devScript, /Partial or mismatched configuration remains/);
+  const injection = worker.indexOf("const localAuth = resolveLocalDevWorkerAuth");
+  const gate = worker.indexOf('url.pathname === "/"');
+  assert.ok(injection >= 0 && gate > injection, "local auth must be injected before page/API route gating");
+  assert.match(worker, /url\.pathname === "\/inbox"/);
+});
