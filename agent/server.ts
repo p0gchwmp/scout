@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { AGENT_EXECUTION_CAPABILITIES, planAgentTasks } from "../lib/scout/agent-task-planner.ts";
 import { AGENT_SERVICE_CAPABILITIES, InMemoryAgentReplayGuard, verifyAgentServiceRequest } from "../lib/scout/agent-service-auth.ts";
 import { runAgentDiscovery } from "./discovery.ts";
+import { researchPublishedCompanyContacts } from "./contact-research.ts";
 
 const port = Number(process.env.PORT ?? process.env.SCOUT_AGENT_PORT ?? 8788);
 const secret = process.env.SCOUT_AGENT_SHARED_SECRET?.trim() ?? "";
@@ -50,10 +51,10 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    if (request.method !== "POST" || (request.url !== "/v1/plan" && request.url !== "/v1/discover")) return json(response, 404, { error: "Not found" });
+    if (request.method !== "POST" || !["/v1/plan", "/v1/discover", "/v1/research-contacts"].includes(request.url ?? "")) return json(response, 404, { error: "Not found" });
     const rawBody = await readBody(request);
     const verified = await verifyAgentServiceRequest(toWebRequest(request, rawBody), secret);
-    const expectedOperation = request.url === "/v1/plan" ? "plan_job" : "discover_internships";
+    const expectedOperation = request.url === "/v1/plan" ? "plan_job" : request.url === "/v1/discover" ? "discover_internships" : "research_contacts";
     if (verified.auth.operation !== expectedOperation) return json(response, 409, { error: "Signed operation does not match this endpoint" });
     if (!replayGuard.accept(verified.auth)) return json(response, 409, { error: "Duplicate or replayed agent task" });
 
@@ -68,6 +69,18 @@ const server = createServer(async (request, response) => {
       }
       const discovery = await runAgentDiscovery();
       return json(response, 200, { taskId: verified.auth.taskId, idempotencyKey: verified.auth.idempotencyKey, ...discovery });
+    }
+
+    if (request.url === "/v1/research-contacts") {
+      const raw = payload as Record<string, unknown>;
+      if (typeof raw.companyDomain !== "string" || typeof raw.jobSnapshotId !== "string") {
+        return json(response, 400, { error: "companyDomain and jobSnapshotId are required" });
+      }
+      if (Object.keys(raw).some((key) => key !== "companyDomain" && key !== "jobSnapshotId")) {
+        return json(response, 400, { error: "Contact research accepts only the registered company domain and pinned job snapshot id" });
+      }
+      const research = await researchPublishedCompanyContacts({ companyDomain: raw.companyDomain, jobSnapshotId: raw.jobSnapshotId });
+      return json(response, 200, { taskId: verified.auth.taskId, idempotencyKey: verified.auth.idempotencyKey, ...research });
     }
 
     const raw = payload as Record<string, unknown>;
