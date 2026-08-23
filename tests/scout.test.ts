@@ -11,6 +11,9 @@ import {
   parseOutreachCreatePayload,
   parseOutreachMutationPayload,
   parseSyncPayload,
+  parseProfileUpsertPayload,
+  parseProfileReviewPayload,
+  parseApplicationPreparePayload,
 } from "../lib/scout/api-validation.ts";
 import { approveClaim, editClaim } from "../lib/scout/claims.ts";
 import {
@@ -23,6 +26,10 @@ import {
   hashDraftBody,
   renderOutreachDraft,
 } from "../lib/scout/outreach.ts";
+import { evaluateResumeAlignment } from "../lib/scout/resume-alignment.ts";
+import { classifyApplicationUrl } from "../lib/scout/application-sites.ts";
+import { APPLICATION_PREP_CAPABILITIES, buildApplicationPreparation } from "../lib/scout/application-prep.ts";
+import { gmailComposeUrl, parseOutreachDraftForEmail } from "../lib/scout/gmail-compose.ts";
 import { synchronizeSource, type ScoutSyncStore } from "../lib/scout/sync.ts";
 import type {
   CompanySource,
@@ -235,7 +242,7 @@ test("every Scout route and page applies owner auth and mutations apply same-ori
   const apiRoot = new URL("../app/api/", import.meta.url);
   for (const relative of [
     "jobs/route.ts", "sources/route.ts", "sync/route.ts", "discover/route.ts",
-    "contacts/route.ts", "claims/route.ts", "outreach/route.ts",
+    "contacts/route.ts", "claims/route.ts", "outreach/route.ts", "profile/route.ts", "applications/route.ts",
   ]) {
     const route = await readFile(new URL(relative, apiRoot), "utf8");
     const exportedMethods = [...route.matchAll(/export async function (GET|POST|PATCH|PUT|DELETE)\b/g)];
@@ -356,6 +363,111 @@ test("Greenhouse evidence URL binds exact board token and numeric external id", 
   ] as const) assert.throws(() => validateGreenhouseEvidenceUrl(...invalid));
 });
 
+test("resume alignment uses approved claims only and returns exact supporting claim ids", () => {
+  const claims = [
+    { id: "claim-product", status: "approved" as const, statement: "Led requirements and AI-assisted delivery of a clinic operations prototype.", evidence: "Node.js, Express, workflow mapping and 14 automated tests." },
+    { id: "claim-research", status: "approved" as const, statement: "Supported adverse-drug-reaction data review and technical documentation.", evidence: "Government Medical College Jammu placement." },
+    { id: "claim-licence-draft", status: "draft" as const, statement: "Hold a driver's licence.", evidence: "Unreviewed draft evidence." },
+    { id: "claim-customer-rejected", status: "rejected" as const, statement: "Direct customer-facing experience.", evidence: "Rejected evidence." },
+  ];
+  const result = evaluateResumeAlignment({
+    title: "Data Annotator - Fresh Graduate",
+    description: "Review videos for accuracy, audit tags, follow operational procedures. A driver's license is required and direct customer-facing experience is preferred.",
+    location: "Bengaluru",
+  }, claims);
+
+  assert.equal(result.band, "stretch");
+  assert.ok(result.matches.includes("Product & operations"));
+  assert.ok(result.matches.includes("Research & analysis"));
+  assert.ok(result.matches.includes("Quality & documentation"));
+  assert.deepEqual(result.supportingClaims.find((match) => match.theme === "Product & operations")?.claimIds, ["claim-product"]);
+  assert.deepEqual(result.supportingClaims.find((match) => match.theme === "Research & analysis")?.claimIds, ["claim-research"]);
+  assert.deepEqual(result.gaps, [
+    "Driver's licence is required but is not evidenced in approved resume claims",
+    "Direct customer-facing experience is requested but is not explicit in approved resume claims",
+  ]);
+  assert.equal(result.basis, "2 approved resume claims");
+  assert.deepEqual(result.notChecked, ["Work authorization", "Availability", "Recruiter preference"]);
+});
+
+test("resume alignment ignores draft and rejected claims even when passed directly", () => {
+  const result = evaluateResumeAlignment({
+    title: "Product Operations Intern",
+    description: "Support product workflows and operations.",
+    location: "Remote",
+  }, [
+    { id: "draft-product", status: "draft", statement: "Product operations experience", evidence: "Unreviewed" },
+    { id: "rejected-product", status: "rejected", statement: "Product operations experience", evidence: "Rejected" },
+  ]);
+
+  assert.equal(result.band, "unranked");
+  assert.deepEqual(result.supportingClaims, []);
+  assert.equal(result.basis, "No approved resume claims");
+});
+
+test("dashboard exposes claim review with expected-version mutation controls", async () => {
+  const dashboard = await readFile(new URL("../app/dashboard.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /const tabs = \["Jobs", "Apply", "Outreach", "Profile", "Sources", "Claims"\] as const/);
+  assert.match(dashboard, /expectedVersion: claim\.version/);
+  assert.match(dashboard, /`Approve version \$\{claim\.version\}`/);
+  assert.match(dashboard, /disabled=\{claimBusy \|\| isDirty\}/);
+  assert.match(dashboard, /Rejected claims are ignored by resume alignment/);
+});
+
+
+
+test("application preparation recognizes common internship channels and stops on missing evidence", () => {
+  assert.equal(classifyApplicationUrl("https://jobs.lever.co/acme/123").id, "lever");
+  assert.equal(classifyApplicationUrl("https://jobs.ashbyhq.com/acme/123").automation, "structured");
+  assert.equal(classifyApplicationUrl("https://internshala.com/internship/detail/test").id, "internshala");
+  assert.equal(classifyApplicationUrl("https://www.linkedin.com/jobs/view/123").automation, "manual_lead");
+  assert.equal(classifyApplicationUrl("https://careers.acme.example/internships/1").id, "company");
+
+  const prepared = buildApplicationPreparation({
+    job: { id: "job-1", company: "Acme", title: "Product Intern", canonicalUrl: "https://jobs.lever.co/acme/123", currentSnapshotId: "snapshot-1" },
+    profileFields: [
+      { id: "p1", kind: "full_name", claim: "Asha Kumar", evidence: "ID", verified: true },
+      { id: "p2", kind: "email", claim: "asha@example.com", evidence: "Inbox", verified: true },
+      { id: "p3", kind: "current_location", claim: "India", evidence: "Profile", verified: true },
+      { id: "p4", kind: "university", claim: "Example University", evidence: "Enrollment", verified: true },
+      { id: "p5", kind: "program", claim: "Public Policy", evidence: "Enrollment", verified: true },
+      { id: "p6", kind: "graduation_year", claim: "2029", evidence: "Enrollment", verified: true },
+      { id: "p7", kind: "resume_reference", claim: "resume-v3.pdf", evidence: "Reviewed local file", verified: false },
+    ],
+    claims: [{ id: "claim-1", statement: "Built a workflow prototype", status: "approved" }],
+    relevantClaimIds: ["claim-1"],
+  });
+  assert.equal(prepared.status, "needs_input");
+  assert.match(prepared.blockers.join(" "), /resume_reference/);
+  assert.equal(prepared.packet.channel.id, "lever");
+  assert.deepEqual(prepared.packet.claimIds, ["claim-1"]);
+  assert.equal(prepared.packet.externalSideEffect, false);
+  assert.deepEqual(APPLICATION_PREP_CAPABILITIES, { prepare: true, submit: false, browserMutation: false });
+});
+
+test("profile and application payloads stay controlled", () => {
+  assert.deepEqual(parseProfileUpsertPayload({ kind: "full_name", claim: "Asha Kumar", evidence: "Government ID" }), { kind: "full_name", claim: "Asha Kumar", evidence: "Government ID" });
+  assert.deepEqual(parseProfileReviewPayload({ id: "p1", action: "verify" }), { id: "p1", action: "verify" });
+  assert.deepEqual(parseApplicationPreparePayload({ jobId: "job-1" }), { jobId: "job-1" });
+  assert.throws(() => parseProfileUpsertPayload({ kind: "work_authorization", claim: "yes", evidence: "guess" }), /unsupported/i);
+  assert.throws(() => parseProfileReviewPayload({ id: "p1", action: "approve" }));
+});
+
+test("custom outreach opens a prefilled Gmail compose without a send capability", () => {
+  const rendered = renderOutreachDraft({
+    candidateName: "Asha Kumar", companyName: "Acme", roleTitle: "Product Intern", contactEmail: "recruiting@acme.example",
+    jobSnapshotId: "snapshot-1", contactId: "contact-1", claims: [{ id: "claim-1", statement: "Built a workflow prototype" }],
+  });
+  const parsed = parseOutreachDraftForEmail(rendered.body);
+  assert.equal(parsed.to, "recruiting@acme.example");
+  assert.match(parsed.subject, /Product Intern at Acme/);
+  assert.match(parsed.body, /workflow prototype/);
+  const url = new URL(gmailComposeUrl(rendered.body));
+  assert.equal(url.hostname, "mail.google.com");
+  assert.equal(url.searchParams.get("to"), "recruiting@acme.example");
+  assert.equal(url.searchParams.get("su"), parsed.subject);
+  assert.deepEqual(OUTREACH_CAPABILITIES, { draft: true, send: false, apply: false });
+});
 test("contact extraction reads only persisted snapshot content with exact provenance", () => {
   const fetchedAt = "2026-08-15T10:00:00.000Z";
   const result = extractPublishedBusinessEmails({
@@ -426,8 +538,8 @@ test("outreach drafts are deterministic immutable revisions and approval is expl
   const second = renderOutreachDraft({ ...input, claims: [...input.claims].reverse() });
   assert.equal(first.body, second.body);
   assert.equal(await hashDraftBody(first.body), await hashDraftBody(second.body));
-  assert.equal(await hashDraftBody(first.body), "c703fe7f143ebb8b89fcdbd67290b54b661c803510ed9e3dac7a4c01e97d17e6");
-  assert.equal(new TextEncoder().encode(first.body).byteLength, 403);
+  assert.equal(await hashDraftBody(first.body), "9149a3da22e2da0548a14b605378be455f3b907fd02d70330b79882cf5532a19");
+  assert.equal(new TextEncoder().encode(first.body).byteLength, 416);
   assert.deepEqual(first.claimIds, ["claim-a", "claim-b"]);
   assert.equal(first.jobSnapshotId, "snapshot-7");
   assert.equal(first.contactId, "contact-2");

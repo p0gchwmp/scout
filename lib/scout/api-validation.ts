@@ -8,6 +8,14 @@ export class PayloadValidationError extends Error {
 const ID_MAX = 128;
 const CANDIDATE_NAME_MAX = 120;
 
+const PROFILE_KEY_MAX = 64;
+const PROFILE_VALUE_MAX = 2000;
+const PROFILE_EVIDENCE_MAX = 4000;
+const ALLOWED_PROFILE_KEYS = new Set([
+  "full_name", "email", "phone", "current_location", "university", "program", "graduation_year",
+  "linkedin_url", "github_url", "portfolio_url", "resume_reference",
+]);
+
 function hasControlCharacters(value: string) {
   return Array.from(value).some((character) => {
     const codePoint = character.codePointAt(0) ?? 0;
@@ -130,4 +138,28 @@ export function parseSyncPayload(value: unknown) {
     throw new PayloadValidationError("A valid idempotency key is required");
   }
   return { sourceId, idempotencyKey };
+}
+
+export function parseProfileUpsertPayload(value: unknown) {
+  const payload = record(value);
+  const kind = boundedString(payload.kind, "Profile field", PROFILE_KEY_MAX, true);
+  if (!ALLOWED_PROFILE_KEYS.has(kind)) throw new PayloadValidationError("Unsupported profile field");
+  return {
+    kind,
+    claim: boundedString(payload.claim, "Profile value", PROFILE_VALUE_MAX),
+    evidence: boundedString(payload.evidence, "Profile evidence", PROFILE_EVIDENCE_MAX),
+  };
+}
+
+export function parseProfileReviewPayload(value: unknown) {
+  const payload = record(value);
+  if (payload.action !== "verify" && payload.action !== "unverify") {
+    throw new PayloadValidationError("Profile action must be verify or unverify");
+  }
+  return { id: id(payload.id, "Profile field id"), action: payload.action as "verify" | "unverify" };
+}
+
+export function parseApplicationPreparePayload(value: unknown) {
+  const payload = record(value);
+  return { jobId: id(payload.jobId, "Job id") };
 }

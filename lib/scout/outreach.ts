@@ -1,5 +1,5 @@
 export const OUTREACH_CAPABILITIES = Object.freeze({ draft: true, send: false, apply: false } as const);
-export const OUTREACH_TEMPLATE_VERSION = 1;
+export const OUTREACH_TEMPLATE_VERSION = 2;
 
 export async function hashDraftBody(body: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
@@ -54,20 +54,22 @@ export function renderOutreachDraft(input: DraftRenderInput): RenderedDraft {
     .sort((left, right) => left.id.localeCompare(right.id));
   if (!claims.length) throw new Error("At least one approved claim is required");
 
-  const evidence = claims.map((claim) => `- ${claim.statement}`).join("\n");
+  const highlights = claims.slice(0, 3).map((claim) => claim.statement.replace(/[.!?]+$/, ""));
+  const background = highlights.length === 1
+    ? highlights[0]
+    : `${highlights.slice(0, -1).join("; ")}; and ${highlights.at(-1)}`;
   const body = [
     `To: ${contactEmail}`,
-    `Subject: Interest in ${roleTitle} at ${companyName}`,
+    `Subject: ${roleTitle} at ${companyName} — ${candidateName}`,
     "",
-    "Hello recruiting team,",
+    "Hi recruiting team,",
     "",
-    `I am writing to express interest in the ${roleTitle} role at ${companyName}.`,
-    "Relevant, approved facts from my background:",
-    evidence,
+    `I came across the ${roleTitle} opportunity at ${companyName} and wanted to reach out directly.`,
+    `A few relevant things from my background: ${background}.`,
     "",
-    "If helpful, I would be glad to share more context. This is a draft for review and has not been sent.",
+    "I would be glad to share my resume or any additional context if useful. Thank you for your time.",
     "",
-    `Best,`,
+    "Best,",
     candidateName,
   ].join("\n");
 

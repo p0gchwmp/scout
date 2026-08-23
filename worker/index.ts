@@ -1,11 +1,15 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { resolveLocalDevWorkerAuth } from "../lib/scout/local-dev-auth";
 
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   SCOUT_OWNER_USER_ID?: string;
+  SCOUT_LOCAL_DEV_RUNTIME?: string;
+  SCOUT_LOCAL_DEV_AUTH?: string;
+  SCOUT_LOCAL_DEV_USER_ID?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -20,6 +24,14 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+const USER_ID_HEADER = "oai-authenticated-user-id";
+const USER_EMAIL_HEADER = "oai-authenticated-user-email";
+const USER_FULL_NAME_HEADER = "oai-authenticated-user-full-name";
+const USER_FULL_NAME_ENCODING_HEADER =
+  "oai-authenticated-user-full-name-encoding";
+const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
+const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -31,13 +43,27 @@ const worker = {
     const url = new URL(request.url);
 
     if (url.pathname === "/" || url.pathname.startsWith("/api/")) {
-      const authenticatedUserId = request.headers.get("oai-authenticated-user-id");
+      const localAuth = resolveLocalDevWorkerAuth(request, env);
+      if (localAuth) {
+        const routedHeaders = new Headers(request.headers);
+        routedHeaders.set(USER_ID_HEADER, localAuth.user.userId);
+        routedHeaders.set(USER_EMAIL_HEADER, localAuth.user.email);
+        routedHeaders.set(
+          USER_FULL_NAME_HEADER,
+          encodeURIComponent(localAuth.user.fullName ?? localAuth.user.displayName),
+        );
+        routedHeaders.set(USER_FULL_NAME_ENCODING_HEADER, PERCENT_ENCODED_UTF8);
+        routedHeaders.set(SCOUT_OWNER_USER_ID_HEADER, localAuth.ownerUserId);
+        request = new Request(request, { headers: routedHeaders });
+      }
+
+      const authenticatedUserId = request.headers.get(USER_ID_HEADER);
       if (authenticatedUserId) {
         const ownerId = env.SCOUT_OWNER_USER_ID?.trim();
         if (!ownerId) return Response.json({ error: "Scout owner is not configured" }, { status: 503 });
         if (authenticatedUserId !== ownerId) return Response.json({ error: "Forbidden" }, { status: 403 });
         const routedHeaders = new Headers(request.headers);
-        routedHeaders.set("x-scout-owner-user-id", ownerId);
+        routedHeaders.set(SCOUT_OWNER_USER_ID_HEADER, ownerId);
         request = new Request(request, { headers: routedHeaders });
       }
     }

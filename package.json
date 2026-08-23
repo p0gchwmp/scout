@@ -6,6 +6,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "scout:demo:status": "node scripts/scout-demo-db.mjs status",
+    "scout:demo:seed": "node scripts/scout-demo-db.mjs seed",
+    "scout:demo:reset": "node scripts/scout-demo-db.mjs reset",
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
