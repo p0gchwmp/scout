@@ -144,6 +144,8 @@ test("npm dev wrapper bootstraps only a fresh local shell and worker injects aut
   assert.match(devScript, /configured\.length === 0/);
   assert.match(devScript, /SCOUT_LOCAL_DEV_AUTH = "1"/);
   assert.match(devScript, /Partial or mismatched configuration remains/);
+  assert.match(devScript, /spawn\(process\.execPath/);
+  assert.doesNotMatch(devScript, /npm\.cmd/);
   const injection = worker.indexOf("const localAuth = resolveLocalDevWorkerAuth");
   const gate = worker.indexOf('url.pathname === "/"');
   assert.ok(injection >= 0 && gate > injection, "local auth must be injected before page/API route gating");
