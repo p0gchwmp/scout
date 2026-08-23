@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { AGENT_EXECUTION_CAPABILITIES, planAgentTasks } from "../lib/scout/agent-task-planner.ts";
 import { AGENT_SERVICE_CAPABILITIES, InMemoryAgentReplayGuard, verifyAgentServiceRequest } from "../lib/scout/agent-service-auth.ts";
+import { runAgentDiscovery } from "./discovery.ts";
 
 const port = Number(process.env.PORT ?? process.env.SCOUT_AGENT_PORT ?? 8788);
 const secret = process.env.SCOUT_AGENT_SHARED_SECRET?.trim() ?? "";
@@ -49,16 +50,26 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    if (request.method !== "POST" || request.url !== "/v1/plan") return json(response, 404, { error: "Not found" });
+    if (request.method !== "POST" || (request.url !== "/v1/plan" && request.url !== "/v1/discover")) return json(response, 404, { error: "Not found" });
     const rawBody = await readBody(request);
     const verified = await verifyAgentServiceRequest(toWebRequest(request, rawBody), secret);
-    if (verified.auth.operation !== "plan_job") return json(response, 409, { error: "Signed operation does not match this endpoint" });
+    const expectedOperation = request.url === "/v1/plan" ? "plan_job" : "discover_internships";
+    if (verified.auth.operation !== expectedOperation) return json(response, 409, { error: "Signed operation does not match this endpoint" });
     if (!replayGuard.accept(verified.auth)) return json(response, 409, { error: "Duplicate or replayed agent task" });
 
     let payload: unknown;
     try { payload = JSON.parse(verified.body); }
     catch { return json(response, 400, { error: "Invalid JSON body" }); }
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return json(response, 400, { error: "Planning payload must be an object" });
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return json(response, 400, { error: "Request payload must be an object" });
+
+    if (request.url === "/v1/discover") {
+      if (Object.keys(payload as Record<string, unknown>).length !== 0) {
+        return json(response, 400, { error: "Discovery sources are server-controlled; caller-supplied discovery fields are not accepted" });
+      }
+      const discovery = await runAgentDiscovery();
+      return json(response, 200, { taskId: verified.auth.taskId, idempotencyKey: verified.auth.idempotencyKey, ...discovery });
+    }
+
     const raw = payload as Record<string, unknown>;
     if (typeof raw.url !== "string") return json(response, 400, { error: "Planning URL is required" });
     const booleans = ["hasOfficialSnapshot", "applicationPrepared", "hasAcceptedContact", "outreachDraftReady", "gmailDraftCreated"] as const;
