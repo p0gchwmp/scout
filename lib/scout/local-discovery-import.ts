@@ -136,9 +136,8 @@ export async function verifyLocalDiscoveryEnvelope(input: unknown, secret: strin
 }
 
 export async function localDiscoverySnapshot(lead: LocalBridgeLead) {
-  if (lead.provider !== "greenhouse") return null;
   const snapshot = {
-    sourceProvider: "greenhouse" as const,
+    sourceProvider: lead.provider,
     externalId: lead.externalId,
     canonicalUrl: lead.canonicalUrl,
     company: lead.company,
