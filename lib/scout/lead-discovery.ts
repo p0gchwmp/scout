@@ -18,18 +18,23 @@ type DiscoverySource = {
   company: string;
   sourceUrl: string;
   focus: string;
+  companyDomain: string;
 };
 
+// Public ATS boards only. Client callers cannot add slugs or URLs to this list.
+// These are intentionally broad across product/startups/operations/health-tech;
+// Scout filters the returned postings to internship/early-career leads in
+// India or explicitly remote locations.
 export const CONTROLLED_DISCOVERY_SOURCES: readonly DiscoverySource[] = Object.freeze([
-  { provider: "greenhouse", slug: "fourkites", company: "FourKites", sourceUrl: "https://job-boards.greenhouse.io/fourkites", focus: "product, operations, documentation" },
-  { provider: "greenhouse", slug: "enterpret", company: "Enterpret", sourceUrl: "https://job-boards.greenhouse.io/enterpret", focus: "product, startups, customer intelligence" },
-  { provider: "greenhouse", slug: "project44", company: "project44", sourceUrl: "https://job-boards.greenhouse.io/project44", focus: "product, logistics, operations" },
-  { provider: "greenhouse", slug: "impiricus", company: "Impiricus", sourceUrl: "https://job-boards.greenhouse.io/impiricus", focus: "health-tech, product, operations, finance" },
-  { provider: "lever", slug: "paytm", company: "Paytm", sourceUrl: "https://jobs.lever.co/paytm", focus: "product, fintech, operations" },
-  { provider: "lever", slug: "Sprinto", company: "Sprinto", sourceUrl: "https://jobs.lever.co/Sprinto", focus: "product-led growth, operations, startups" },
-  { provider: "lever", slug: "weekdayworks", company: "Weekday", sourceUrl: "https://jobs.lever.co/weekdayworks", focus: "operations, startups" },
-  { provider: "lever", slug: "dozee", company: "Dozee", sourceUrl: "https://jobs.lever.co/dozee", focus: "health-tech, operations" },
-  { provider: "lever", slug: "100ms", company: "100ms", sourceUrl: "https://jobs.lever.co/100ms", focus: "health-tech AI, product, people" },
+  { provider: "greenhouse", slug: "fourkites", company: "FourKites", sourceUrl: "https://job-boards.greenhouse.io/fourkites", focus: "product, operations, documentation", companyDomain: "fourkites.com" },
+  { provider: "greenhouse", slug: "enterpret", company: "Enterpret", sourceUrl: "https://job-boards.greenhouse.io/enterpret", focus: "product, startups, customer intelligence", companyDomain: "enterpret.com" },
+  { provider: "greenhouse", slug: "project44", company: "project44", sourceUrl: "https://job-boards.greenhouse.io/project44", focus: "product, logistics, operations", companyDomain: "project44.com" },
+  { provider: "greenhouse", slug: "impiricus", company: "Impiricus", sourceUrl: "https://job-boards.greenhouse.io/impiricus", focus: "health-tech, product, operations, finance", companyDomain: "impiricus.com" },
+  { provider: "lever", slug: "paytm", company: "Paytm", sourceUrl: "https://jobs.lever.co/paytm", focus: "product, fintech, operations", companyDomain: "paytm.com" },
+  { provider: "lever", slug: "Sprinto", company: "Sprinto", sourceUrl: "https://jobs.lever.co/Sprinto", focus: "product-led growth, operations, startups", companyDomain: "sprinto.com" },
+  { provider: "lever", slug: "weekdayworks", company: "Weekday", sourceUrl: "https://jobs.lever.co/weekdayworks", focus: "operations, startups", companyDomain: "weekday.works" },
+  { provider: "lever", slug: "dozee", company: "Dozee", sourceUrl: "https://jobs.lever.co/dozee", focus: "health-tech, operations", companyDomain: "dozeehealth.ai" },
+  { provider: "lever", slug: "100ms", company: "100ms", sourceUrl: "https://jobs.lever.co/100ms", focus: "health-tech AI, product, people", companyDomain: "100ms.live" },
 ]);
 
 export type DiscoveredInternshipLead = ReturnType<typeof normalizeInternshipLead> & {
@@ -89,7 +94,7 @@ export async function discoverControlledInternships() {
           postedAt: job.postedAt,
         });
       } catch {
-        // Ignore malformed/non-HTTPS canonical URLs returned by an ATS.
+        // An ATS result with a malformed/non-HTTPS canonical URL is ignored.
       }
     }
   });
