@@ -42,21 +42,25 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === "/" || url.pathname.startsWith("/api/")) {
-      const localAuth = resolveLocalDevWorkerAuth(request, env);
-      if (localAuth) {
-        const routedHeaders = new Headers(request.headers);
-        routedHeaders.set(USER_ID_HEADER, localAuth.user.userId);
-        routedHeaders.set(USER_EMAIL_HEADER, localAuth.user.email);
-        routedHeaders.set(
-          USER_FULL_NAME_HEADER,
-          encodeURIComponent(localAuth.user.fullName ?? localAuth.user.displayName),
-        );
-        routedHeaders.set(USER_FULL_NAME_ENCODING_HEADER, PERCENT_ENCODED_UTF8);
-        routedHeaders.set(SCOUT_OWNER_USER_ID_HEADER, localAuth.ownerUserId);
-        request = new Request(request, { headers: routedHeaders });
-      }
+    // Local development auth is injected before routing so every owner-only page
+    // (including /inbox and future pages) receives the same synthetic identity.
+    // resolveLocalDevWorkerAuth itself only succeeds for an explicitly marked
+    // development worker on loopback and never replaces hosted identity headers.
+    const localAuth = resolveLocalDevWorkerAuth(request, env);
+    if (localAuth) {
+      const routedHeaders = new Headers(request.headers);
+      routedHeaders.set(USER_ID_HEADER, localAuth.user.userId);
+      routedHeaders.set(USER_EMAIL_HEADER, localAuth.user.email);
+      routedHeaders.set(
+        USER_FULL_NAME_HEADER,
+        encodeURIComponent(localAuth.user.fullName ?? localAuth.user.displayName),
+      );
+      routedHeaders.set(USER_FULL_NAME_ENCODING_HEADER, PERCENT_ENCODED_UTF8);
+      routedHeaders.set(SCOUT_OWNER_USER_ID_HEADER, localAuth.ownerUserId);
+      request = new Request(request, { headers: routedHeaders });
+    }
 
+    if (url.pathname === "/" || url.pathname === "/inbox" || url.pathname.startsWith("/api/")) {
       const authenticatedUserId = request.headers.get(USER_ID_HEADER);
       if (authenticatedUserId) {
         const ownerId = env.SCOUT_OWNER_USER_ID?.trim();
