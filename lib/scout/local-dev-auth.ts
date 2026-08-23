@@ -23,6 +23,7 @@ const LOCAL_DEV_AUTH_FLAG = "SCOUT_LOCAL_DEV_AUTH";
 const LOCAL_DEV_RUNTIME = "SCOUT_LOCAL_DEV_RUNTIME";
 const LOCAL_DEV_USER_ID = "SCOUT_LOCAL_DEV_USER_ID";
 const SCOUT_OWNER_USER_ID = "SCOUT_OWNER_USER_ID";
+const LOCAL_DISCOVERY_SECRET = "SCOUT_LOCAL_DISCOVERY_SECRET";
 
 const USER_ID_HEADER = "oai-authenticated-user-id";
 const USER_EMAIL_HEADER = "oai-authenticated-user-email";
@@ -58,11 +59,17 @@ export function buildLocalDevWorkerBindings(
     );
   }
 
+  const discoverySecret = environment[LOCAL_DISCOVERY_SECRET]?.trim();
+  if (discoverySecret && !/^[a-f0-9]{64}$/i.test(discoverySecret)) {
+    throw new Error("SCOUT_LOCAL_DISCOVERY_SECRET must be 64 hex characters when configured.");
+  }
+
   return {
     ...bindings,
     [LOCAL_DEV_RUNTIME]: "1",
     [LOCAL_DEV_AUTH_FLAG]: "1",
     [LOCAL_DEV_USER_ID]: localUserId,
+    ...(discoverySecret ? { [LOCAL_DISCOVERY_SECRET]: discoverySecret } : {}),
   };
 }
 
