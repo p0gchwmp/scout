@@ -60,6 +60,24 @@ export function validateGreenhouseEvidenceUrl(raw: string, boardToken: string, e
   return url;
 }
 
+const LEVER_HOST = "jobs.lever.co";
+const LEVER_EXTERNAL_ID_PATTERN = /^[A-Za-z0-9-]{8,128}$/;
+
+export function validateLeverEvidenceUrl(raw: string, site: string, externalId: string) {
+  if (!BOARD_TOKEN_PATTERN.test(site)) throw new Error("Registered Lever site token is invalid");
+  if (!LEVER_EXTERNAL_ID_PATTERN.test(externalId)) throw new Error("Lever external id is invalid");
+  let url: URL;
+  try { url = new URL(raw); } catch { throw new Error("Lever evidence URL is invalid"); }
+  if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash) {
+    throw new Error("Lever evidence URL must be an exact HTTPS job URL");
+  }
+  const parts = url.pathname.split("/").filter(Boolean).map(decodePathSegment);
+  if (url.hostname.toLowerCase() !== LEVER_HOST || parts.length < 2 || parts[0] !== site || parts[1] !== externalId) {
+    throw new Error("Lever evidence URL does not match the registered source");
+  }
+  return url;
+}
+
 function normalizedCompanyDomain(raw: string) {
   const domain = raw.trim().toLowerCase().replace(/^\./, "");
   if (!COMPANY_DOMAIN_PATTERN.test(domain)) throw new Error("Company domain is invalid");
@@ -106,10 +124,13 @@ export function extractPublishedBusinessEmails(options: {
   boardToken: string;
   externalId: string;
   companyDomain: string;
+  provider?: "greenhouse" | "lever";
   now?: () => string;
 }) {
   if (options.persistedContent.length > 1_000_000) throw new Error("Persisted snapshot content exceeds extraction limit");
-  const sourceUrl = validateGreenhouseEvidenceUrl(options.evidenceUrl, options.boardToken, options.externalId).href;
+  const sourceUrl = (options.provider === "lever"
+    ? validateLeverEvidenceUrl(options.evidenceUrl, options.boardToken, options.externalId)
+    : validateGreenhouseEvidenceUrl(options.evidenceUrl, options.boardToken, options.externalId)).href;
   normalizedCompanyDomain(options.companyDomain);
   const now = options.now ?? (() => new Date().toISOString());
   const text = contentToText(options.persistedContent);
