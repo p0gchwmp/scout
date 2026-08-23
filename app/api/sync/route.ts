@@ -1,6 +1,6 @@
 import { D1ScoutSyncStore } from "../../../lib/scout/d1-sync-store";
 import { parseSyncPayload } from "../../../lib/scout/api-validation";
-import { discoverGreenhouseSource } from "../../../lib/scout/greenhouse";
+import { discoverRegisteredSource } from "../../../lib/scout/greenhouse";
 import { SyncInProgressError, synchronizeSource } from "../../../lib/scout/sync";
 import { logScoutError, requireSameOriginMutation, requireScoutApiUser } from "../../scout-api";
 
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   catch { return Response.json({ error: "A valid sync request body is required" }, { status: 400 }); }
 
   try {
-    const run = await synchronizeSource(new D1ScoutSyncStore(), discoverGreenhouseSource, {
+    const run = await synchronizeSource(new D1ScoutSyncStore(), discoverRegisteredSource, {
       sourceId: payload.sourceId,
       idempotencyKey: payload.idempotencyKey,
       observedAt: new Date().toISOString(),
