@@ -36,7 +36,7 @@ test("local discovery import rejects tampering, arbitrary sources and stale payl
   await assert.rejects(() => verifyLocalDiscoveryEnvelope(envelope, secret, Date.parse("2026-08-24T01:00:00Z")), /stale/);
 });
 
-test("Lever bridge observations remain non-snapshot leads until Lever persistence is added", async () => {
+test("Lever bridge observations produce immutable snapshots after provider support is enabled", async () => {
   const lever = { ...greenhouseLead,
     provider: "lever", slug: "paytm", company: "Paytm", companyDomain: "paytm.com",
     sourceUrl: "https://jobs.lever.co/paytm", focus: "product, fintech, operations", externalId: "abc-123",
@@ -44,5 +44,8 @@ test("Lever bridge observations remain non-snapshot leads until Lever persistenc
   };
   const verified = await verifyLocalDiscoveryEnvelope(signed([lever]), secret, Date.parse("2026-08-24T00:05:00Z"));
   assert.equal(verified.leads[0].provider, "lever");
-  assert.equal(await localDiscoverySnapshot(verified.leads[0]), null);
+  const snapshot = await localDiscoverySnapshot(verified.leads[0]);
+  assert.ok(snapshot);
+  assert.equal(snapshot.snapshot.sourceProvider, "lever");
+  assert.equal(snapshot.snapshot.externalId, "abc-123");
 });
