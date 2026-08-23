@@ -39,6 +39,7 @@ export async function POST(request: Request) {
       boardToken: source.boardToken,
       externalId: job.externalId,
       companyDomain: source.companyDomain,
+      provider: source.provider,
     });
     if (result.contacts.length) {
       await db.batch(result.contacts.map((contact) => db.insert(contactEvidence).values({
