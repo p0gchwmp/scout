@@ -15,6 +15,13 @@
       "when": 1786801445054,
       "tag": "0001_scout_vertical",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787518969875,
+      "tag": "0002_lever_sources",
+      "breakpoints": true
     }
   ]
 }
