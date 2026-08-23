@@ -1,0 +1,122 @@
+[
+  {
+    "provider": "greenhouse",
+    "slug": "fourkites",
+    "company": "FourKites",
+    "sourceUrl": "https://job-boards.greenhouse.io/fourkites",
+    "focus": "product, operations, documentation",
+    "companyDomain": "fourkites.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "enterpret",
+    "company": "Enterpret",
+    "sourceUrl": "https://job-boards.greenhouse.io/enterpret",
+    "focus": "product, startups, customer intelligence",
+    "companyDomain": "enterpret.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "project44",
+    "company": "project44",
+    "sourceUrl": "https://job-boards.greenhouse.io/project44",
+    "focus": "product, logistics, operations",
+    "companyDomain": "project44.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "impiricus",
+    "company": "Impiricus",
+    "sourceUrl": "https://job-boards.greenhouse.io/impiricus",
+    "focus": "health-tech, product, operations, finance",
+    "companyDomain": "impiricus.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "paytm",
+    "company": "Paytm",
+    "sourceUrl": "https://jobs.lever.co/paytm",
+    "focus": "product, fintech, operations",
+    "companyDomain": "paytm.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "Sprinto",
+    "company": "Sprinto",
+    "sourceUrl": "https://jobs.lever.co/Sprinto",
+    "focus": "product-led growth, operations, startups",
+    "companyDomain": "sprinto.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "weekdayworks",
+    "company": "Weekday",
+    "sourceUrl": "https://jobs.lever.co/weekdayworks",
+    "focus": "operations, startups",
+    "companyDomain": "weekday.works"
+  },
+  {
+    "provider": "lever",
+    "slug": "dozee",
+    "company": "Dozee",
+    "sourceUrl": "https://jobs.lever.co/dozee",
+    "focus": "health-tech, operations",
+    "companyDomain": "dozeehealth.ai"
+  },
+  {
+    "provider": "lever",
+    "slug": "100ms",
+    "company": "100ms",
+    "sourceUrl": "https://jobs.lever.co/100ms",
+    "focus": "health-tech AI, product, people",
+    "companyDomain": "100ms.live"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "instawork",
+    "company": "Instawork",
+    "sourceUrl": "https://job-boards.greenhouse.io/instawork",
+    "focus": "operations, data, startups, business",
+    "companyDomain": "instawork.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "inmobi",
+    "company": "InMobi",
+    "sourceUrl": "https://job-boards.greenhouse.io/inmobi",
+    "focus": "product, business, advertising, technology",
+    "companyDomain": "inmobi.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "twinhealth",
+    "company": "Twin Health",
+    "sourceUrl": "https://job-boards.greenhouse.io/twinhealth",
+    "focus": "health-tech, marketing, operations, product",
+    "companyDomain": "twinhealth.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "formaaiinc3",
+    "company": "Forma.ai",
+    "sourceUrl": "https://job-boards.greenhouse.io/formaaiinc3",
+    "focus": "operations, analytics, finance, SaaS",
+    "companyDomain": "forma.ai"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "cclfg",
+    "company": "CC&L Financial Group",
+    "sourceUrl": "https://job-boards.greenhouse.io/cclfg",
+    "focus": "finance, markets, operations, technology",
+    "companyDomain": "cclgroup.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "phonepe",
+    "company": "PhonePe",
+    "sourceUrl": "https://job-boards.greenhouse.io/phonepe",
+    "focus": "fintech, product, operations, business",
+    "companyDomain": "phonepe.com"
+  }
+]
