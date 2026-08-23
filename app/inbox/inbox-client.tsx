@@ -63,9 +63,13 @@ export function InternshipInbox() {
       };
       if (!response.ok) throw new Error(payload.error ?? "Unable to discover internships");
       setDiscovered(payload.leads ?? []);
+      const resolutionResponse = await fetch("/api/lead-resolution", { method: "POST" });
+      const resolution = await resolutionResponse.json() as { resolved?: number; pending?: number; failures?: unknown[]; error?: string };
+      if (!resolutionResponse.ok) throw new Error(resolution.error ?? "Unable to resolve official postings");
       await loadLeads();
-      const failureNote = payload.failures?.length ? ` ${payload.failures.length} source(s) were temporarily unavailable.` : "";
-      setNotice(`Scout found ${payload.found ?? 0} relevant internship lead(s); ${payload.created ?? 0} new lead(s) were saved and ${payload.existing ?? 0} were already known.${failureNote}`);
+      const failureNote = payload.failures?.length ? ` ${payload.failures.length} discovery source(s) were temporarily unavailable.` : "";
+      const resolutionFailureNote = resolution.failures?.length ? ` ${resolution.failures.length} supported lead(s) could not be resolved.` : "";
+      setNotice(`Scout found ${payload.found ?? 0} relevant internship lead(s); ${payload.created ?? 0} new lead(s) were saved, ${resolution.resolved ?? 0} Greenhouse lead(s) were upgraded to immutable official snapshots, and ${resolution.pending ?? 0} lead(s) remain pending a supported resolver.${failureNote}${resolutionFailureNote}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to discover internships");
     } finally {
@@ -90,7 +94,10 @@ export function InternshipInbox() {
       const payload = await response.json() as { created?: boolean; lead?: { channel?: { label?: string }; nextStep?: string }; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to save internship lead");
       setForm({ url: "", company: "", title: "" });
-      setNotice(`${payload.created ? "Saved" : "Already saved"}. ${payload.lead?.nextStep ?? "Official posting resolution is required before application preparation."}`);
+      const resolutionResponse = await fetch("/api/lead-resolution", { method: "POST" });
+      const resolution = await resolutionResponse.json() as { resolved?: number; pending?: number; error?: string };
+      if (!resolutionResponse.ok) throw new Error(resolution.error ?? "Unable to resolve official postings");
+      setNotice(`${payload.created ? "Saved" : "Already saved"}. ${resolution.resolved ?? 0} supported lead(s) were upgraded to official snapshots; ${resolution.pending ?? 0} remain pending a supported resolver.`);
       await loadLeads();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save internship lead");
