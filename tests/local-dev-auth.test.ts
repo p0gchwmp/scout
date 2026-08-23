@@ -151,3 +151,12 @@ test("npm dev wrapper bootstraps only a fresh local shell and worker injects aut
   assert.ok(injection >= 0 && gate > injection, "local auth must be injected before page/API route gating");
   assert.match(worker, /url\.pathname === "\/inbox"/);
 });
+
+
+test("local discovery secret is passed only into development serve bindings", () => {
+  const environment = { ...shellEnvironment, SCOUT_LOCAL_DISCOVERY_SECRET: "b".repeat(64) };
+  const bindings = buildLocalDevWorkerBindings("serve", "development", environment);
+  assert.equal(bindings.SCOUT_LOCAL_DISCOVERY_SECRET, "b".repeat(64));
+  assert.deepEqual(buildLocalDevWorkerBindings("build", "production", environment), {});
+  assert.throws(() => buildLocalDevWorkerBindings("serve", "development", { ...environment, SCOUT_LOCAL_DISCOVERY_SECRET: "bad" }), /64 hex/);
+});
