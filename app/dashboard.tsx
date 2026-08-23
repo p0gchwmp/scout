@@ -349,7 +349,7 @@ export function Dashboard() {
         <nav className="main-nav" aria-label="Primary navigation">
           {tabs.map((tab) => <button key={tab} className={activeTab === tab ? "nav-active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}
         </nav>
-        <div className="header-actions"><span className="sync-dot"><i /> Persisted D1 data</span><button className="avatar" aria-label="Local MVP">MVP</button></div>
+        <div className="header-actions"><a className="details-link" href="/inbox">Internship Inbox</a><span className="sync-dot"><i /> Persisted D1 data</span><button className="avatar" aria-label="Local MVP">MVP</button></div>
       </header>
 
       <main id="top">
@@ -416,70 +416,49 @@ export function Dashboard() {
           <section className="queue-heading"><div><p className="section-kicker">PROVENANCE + CUSTOM DRAFTING</p><h2>Recruiter outreach</h2></div><p>{contacts.filter((contact) => contact.reviewState === "accepted").length} accepted contact(s) · {drafts.length} draft record(s)</p></section>
           <section className="source-list">
             {!contacts.length && <div className="empty-state">No public business contacts have been extracted yet. Extract from a stored posting first; broader official contact-page discovery is the next adapter layer.</div>}
-            {contacts.map((contact) => { const job = jobs.find((item) => item.id === contact.jobId); return <article className="source-card" key={contact.id}><div><p className="company-name">{contact.reviewState} · {contact.suitability}</p><h3>{contact.email}</h3><p>{job ? `${job.company} — ${job.title}` : "Pinned job"}</p><small>{contact.excerpt}</small><a className="details-link" href={contact.sourceUrl} target="_blank" rel="noreferrer">Evidence source ↗</a></div><div className="card-actions">{contact.reviewState === "needs_review" && <><button className="primary-action" onClick={() => void reviewContact(contact, "accepted")}>Accept evidence</button><button className="danger-action" onClick={() => void reviewContact(contact, "rejected")}>Reject</button></>}{contact.reviewState === "accepted" && <button className="primary-action" disabled={busy === `draft-${contact.id}`} onClick={() => void createOutreachDraft(contact)}>Create customized draft</button>}</div></article>; })}
+            {contacts.map((contact) => { const job = jobs.find((item) => item.id === contact.jobId); return <article className="source-card" key={contact.id}><div><p className="company-name">{contact.reviewState} · {contact.suitability}</p><h3>{contact.email}</h3><p>{job ? `${job.company} — ${job.title}` : "Pinned job"}</p><p>{contact.excerpt}</p><small>{contact.suitabilityReason}</small><br /><a className="details-link" href={contact.sourceUrl} target="_blank" rel="noreferrer">Exact source ↗</a></div><div className="card-actions"><button className="primary-action" disabled={busy === `contact-${contact.id}`} onClick={() => void reviewContact(contact, "accepted")}>Accept evidence</button><button className="danger-action" disabled={busy === `contact-${contact.id}`} onClick={() => void reviewContact(contact, "rejected")}>Reject</button><button className="ghost-action" disabled={contact.reviewState !== "accepted" || busy === `draft-${contact.id}`} onClick={() => void createOutreachDraft(contact)}>Create custom draft</button></div></article>; })}
           </section>
-          <section className="claim-list">{drafts.map((draft) => { const latest = draft.revisions.at(-1); const job = jobs.find((item) => item.id === draft.jobId); let gmailUrl = "#"; try { if (latest) gmailUrl = gmailComposeUrl(latest.body); } catch { gmailUrl = "#"; } return <article className={`claim-card claim-${draft.state}`} key={draft.id}><div className="claim-card-head"><div><span className={`claim-status status-${draft.state}`}>{draft.state}</span><code className="claim-id">{job ? `${job.company} / ${job.title}` : draft.id}</code></div></div>{latest && <><div className="claim-readonly"><span>Customized email</span><pre className="draft-preview">{latest.body}</pre></div><p className="claim-note">Pinned claims: {latest.claimIds.join(", ")}. Opening Gmail pre-fills a compose window; Scout still does not send.</p><div className="claim-actions"><a className="primary-action" href={gmailUrl} target="_blank" rel="noreferrer">Open in Gmail</a></div></>}</article>; })}</section>
+          <section className="source-list outreach-draft-list">{drafts.map((draft) => { const revision = draft.revisions.at(-1); const contact = revision ? contacts.find((item) => item.id === revision.contactId) : undefined; const job = jobs.find((item) => item.id === draft.jobId); return <article className="source-card" key={draft.id}><div><p className="company-name">Draft · {draft.state}</p><h3>{job?.company} — {job?.title}</h3>{revision && <><pre className="draft-preview">{revision.body}</pre><small>Claims: {revision.claimIds.join(", ")} · Snapshot: {revision.jobSnapshotId}</small></>}</div><div className="card-actions">{revision && contact && <a className="primary-action link-button" href={gmailComposeUrl({ to: contact.email, subject: `${job?.title ?? "Internship"} — Ryan Mahajan`, body: revision.body })} target="_blank" rel="noreferrer">Open in Gmail</a>}<span className="alignment-caveat">This pre-fills Gmail only. Review and press Send yourself.</span></div></article>; })}</section>
         </>}
 
         {activeTab === "Sources" && <>
-          <section className="queue-heading"><div><p className="section-kicker">ALLOWLISTED REGISTRY</p><h2>Greenhouse sources</h2></div><p>Board tokens are never accepted by the sync endpoint.</p></section>
+          <section className="queue-heading"><div><p className="section-kicker">CONTROLLED REGISTRY</p><h2>Approved discovery sources</h2></div><p>{sources.filter((source) => source.enabled).length} enabled · Greenhouse only</p></section>
           <section className="source-list">
-            {loading && <div className="empty-state">Loading registered sources…</div>}
-            {!loading && !sources.length && <div className="empty-state">No controlled sources are registered. Add one directly to <code>company_sources</code> using the validated README procedure.</div>}
-            {sources.map((source) => {
-              const latest = runs.find((run) => run.sourceId === source.id);
-              return <article className="source-card" key={source.id}><div><p className="company-name">{source.provider.toUpperCase()}</p><h3>{source.companyName}</h3><p>{source.companyDomain} · persisted posting content only</p><small>{latest ? `Last run: ${latest.status} · ${latest.discoveredCount} observed` : "Never synced"}</small></div><button className="primary-action" disabled={!source.enabled || busy === source.id} onClick={() => void syncSource(source)}>{busy === source.id ? "Syncing…" : "Sync registered source"}</button></article>;
-            })}
+            {!sources.length && <div className="empty-state">No controlled sources are registered yet. Add a reviewed Greenhouse board directly to D1; there is intentionally no public source-creation API.</div>}
+            {sources.map((source) => <article className="source-card" key={source.id}><div><p className="company-name">{source.provider}</p><h3>{source.companyName}</h3><p>{source.companyDomain}</p><small>{source.enabled ? "Enabled" : "Disabled"}</small></div><button className="primary-action" disabled={!source.enabled || busy === source.id} onClick={() => void syncSource(source)}>{busy === source.id ? "Syncing…" : "Sync source"}</button></article>)}
           </section>
+          <section className="runs"><p className="section-kicker">RECENT RUNS</p>{runs.map((run) => <div className="run-row" key={run.id}><code>{run.id}</code><span>{run.status}</span><span>{run.discoveredCount} observed</span><span>{run.createdCount} new</span><span>{run.updatedCount} changed</span><span>{run.closedCount} closed</span></div>)}</section>
         </>}
 
         {activeTab === "Claims" && <>
-          <section className="queue-heading"><div><p className="section-kicker">APPROVAL-BOUND EVIDENCE</p><h2>Candidate claims</h2></div><p>{approvedClaims.length} approved · {claims.filter((claim) => claim.status === "draft").length} draft · {claims.filter((claim) => claim.status === "rejected").length} rejected</p></section>
-
-          <section className="claim-composer" aria-label="Create draft resume claim">
-            <div><p className="section-kicker">NEW DRAFT</p><h3>Add an evidence-backed claim</h3><p>New claims start as drafts and are ignored by alignment and outreach until explicitly approved.</p></div>
-            <label>Claim statement<textarea value={newClaim.statement} maxLength={1000} onChange={(event) => setNewClaim((value) => ({ ...value, statement: event.target.value }))} placeholder="A precise claim Scout may eventually use." /></label>
-            <label>Evidence<textarea value={newClaim.evidence} maxLength={4000} onChange={(event) => setNewClaim((value) => ({ ...value, evidence: event.target.value }))} placeholder="Artifact, source, scope, or evidence supporting the statement." /></label>
-            <button className="primary-action" disabled={busy === "new-claim"} onClick={() => void createClaim()}>{busy === "new-claim" ? "Creating…" : "Create draft"}</button>
+          <section className="queue-heading claims-heading"><div><p className="section-kicker">CANDIDATE EVIDENCE</p><h2>Claims review</h2></div><p>{claims.filter((claim) => claim.status === "approved").length} approved · {claims.filter((claim) => claim.status === "draft").length} draft · {claims.filter((claim) => claim.status === "rejected").length} rejected</p></section>
+          <section className="claim-composer">
+            <div><p className="section-kicker">NEW CLAIM</p><h3>Create as draft</h3><p>New evidence never affects alignment or outreach until you explicitly approve it.</p></div>
+            <label>Statement<textarea value={newClaim.statement} onChange={(event) => setNewClaim((value) => ({ ...value, statement: event.target.value }))} placeholder="What the resume can honestly claim" /></label>
+            <label>Evidence<textarea value={newClaim.evidence} onChange={(event) => setNewClaim((value) => ({ ...value, evidence: event.target.value }))} placeholder="Source, artifact, or factual basis" /></label>
+            <button className="primary-action" disabled={busy === "new-claim"} onClick={() => void createClaim()}>{busy === "new-claim" ? "Creating…" : "Create draft claim"}</button>
           </section>
-
-          <section className="claim-list" aria-label="Candidate claims">
-            {loading && <div className="empty-state">Loading candidate claims…</div>}
-            {!loading && !claims.length && <div className="empty-state">No candidate claims exist yet. Add a draft above, review its wording and evidence, then approve it only when it is accurate.</div>}
+          <section className="claim-list">
+            {!claims.length && <div className="empty-state">No candidate claims are stored yet. Add evidence as a draft, review the exact wording, then approve the version you want Scout to use.</div>}
             {claims.map((claim) => {
               const edit = claimEdits[claim.id] ?? { statement: claim.statement, evidence: claim.evidence };
-              const isDraft = claim.status === "draft";
-              const isDirty = isDraft && (edit.statement.trim() !== claim.statement || edit.evidence.trim() !== claim.evidence);
-              const claimBusy = busy?.startsWith(`claim-${claim.id}-`) === true;
+              const changed = edit.statement !== claim.statement || edit.evidence !== claim.evidence;
               return <article className={`claim-card claim-${claim.status}`} key={claim.id}>
-                <div className="claim-card-head">
-                  <div><span className={`claim-status status-${claim.status}`}>{claim.status}</span><code className="claim-id">{claim.id}</code></div>
-                  <p>Version {claim.version} · {claim.status === "approved" ? `Approved ${formatTimestamp(claim.approvedAt)}` : `Created ${formatTimestamp(claim.createdAt)}`}</p>
-                </div>
-
-                {isDraft ? <>
-                  <label>Statement<textarea maxLength={1000} value={edit.statement} onChange={(event) => setClaimEdits((items) => ({ ...items, [claim.id]: { ...edit, statement: event.target.value } }))} /></label>
-                  <label>Evidence<textarea maxLength={4000} value={edit.evidence} onChange={(event) => setClaimEdits((items) => ({ ...items, [claim.id]: { ...edit, evidence: event.target.value } }))} /></label>
-                  <div className="claim-actions">
-                    <button className="ghost-action" disabled={claimBusy || !isDirty} onClick={() => void mutateClaim(claim, "edit")}>{isDirty ? "Save draft" : "Draft saved"}</button>
-                    <button className="primary-action" disabled={claimBusy || isDirty} onClick={() => void mutateClaim(claim, "approve")}>{isDirty ? "Save before approval" : `Approve version ${claim.version}`}</button>
-                    <button className="danger-action" disabled={claimBusy} onClick={() => void mutateClaim(claim, "reject")}>Reject</button>
-                  </div>
-                  <p className="claim-note">Approval is version-bound. If this claim changes elsewhere first, Scout will return a conflict and refresh instead of overwriting it.</p>
+                <div className="claim-card-head"><div><span className={`claim-status status-${claim.status}`}>{claim.status}</span><code className="claim-id">{claim.id}</code></div><span className="claim-version">v{claim.version}</span></div>
+                {claim.status === "draft" ? <>
+                  <label>Statement<textarea value={edit.statement} onChange={(event) => setClaimEdits((items) => ({ ...items, [claim.id]: { ...edit, statement: event.target.value } }))} /></label>
+                  <label>Evidence<textarea value={edit.evidence} onChange={(event) => setClaimEdits((items) => ({ ...items, [claim.id]: { ...edit, evidence: event.target.value } }))} /></label>
+                  <div className="claim-actions"><button className="ghost-action" disabled={!changed || busy?.startsWith(`claim-${claim.id}`)} onClick={() => void mutateClaim(claim, "edit")}>Save draft</button><button className="primary-action" disabled={changed || busy?.startsWith(`claim-${claim.id}`)} title={changed ? "Save draft changes before approving this exact version" : "Approve the persisted reviewed version"} onClick={() => void mutateClaim(claim, "approve")}>Approve v{claim.version}</button><button className="danger-action" disabled={busy?.startsWith(`claim-${claim.id}`)} onClick={() => void mutateClaim(claim, "reject")}>Reject</button></div>
+                  {changed && <p className="alignment-caveat">Unsaved edits are not v{claim.version}. Save them first so approval can pin the reviewed version.</p>}
                 </> : <>
-                  <div className="claim-readonly"><span>Statement</span><p>{claim.statement}</p></div>
-                  <div className="claim-readonly"><span>Evidence</span><p>{claim.evidence}</p></div>
-                  <p className="claim-note">{claim.status === "approved" ? "Immutable approved evidence. This exact version may support role alignment and outreach drafts." : "Rejected and immutable. Scout ignores this claim for role alignment and outreach drafts."}</p>
+                  <div className="claim-readonly"><span>Statement</span><p>{claim.statement}</p></div><div className="claim-readonly"><span>Evidence</span><p>{claim.evidence}</p></div><p className="claim-timestamp">{claim.status === "approved" ? `Approved ${formatTimestamp(claim.approvedAt)}` : "Rejected · ignored by alignment and new drafts"}</p>
                 </>}
               </article>;
             })}
           </section>
         </>}
 
-        <section className="safety-panel">
-          <div className="safety-icon">◎</div><div><p className="section-kicker">SAFE OUTREACH GATE</p><h2>Scout knows when to stop.</h2><p>Application packets reuse only verified profile fields and approved claims. Contact evidence still requires provenance and explicit acceptance; customized email drafts remain pinned to approved evidence.</p></div>
-          <div className="safety-steps"><span className="done">1 <b>Discover</b></span><i /><span className="done">2 <b>Prepare</b></span><i /><span>3 <b>Draft</b></span><i /><span>4 <b>Review</b></span></div>
-        </section>
+        <section className="safety-panel"><div className="safety-icon">◎</div><div><p className="section-kicker">SAFE OUTREACH GATE</p><h2>Scout knows when to stop.</h2><p>Application packets reuse only verified profile fields and approved claims. Contact evidence still requires provenance and explicit acceptance; customized email drafts remain pinned to approved evidence.</p></div><div className="safety-steps"><span className="done">1 <b>Discover</b></span><i /><span className="done">2 <b>Prepare</b></span><i /><span>3 <b>Draft</b></span><i /><span>4 <b>Review</b></span></div></section>
       </main>
       <footer><span>SCOUT / INTERNSHIP ACTION QUEUE</span><p>Application preparation + customized Gmail compose. No autonomous submit or send worker enabled.</p><span>MULTI-SITE PREP</span></footer>
     </div>
