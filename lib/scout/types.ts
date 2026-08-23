@@ -2,7 +2,7 @@ import type { WorkplaceType } from "../types";
 
 export type CompanySource = {
   id: string;
-  provider: "greenhouse";
+  provider: "greenhouse" | "lever";
   companyName: string;
   boardToken: string;
   companyDomain: string;
@@ -11,7 +11,7 @@ export type CompanySource = {
 };
 
 export type NormalizedJobSnapshot = {
-  sourceProvider: "greenhouse";
+  sourceProvider: "greenhouse" | "lever";
   externalId: string;
   canonicalUrl: string;
   company: string;
