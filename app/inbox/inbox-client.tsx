@@ -15,10 +15,23 @@ type LeadJob = {
   lastSeenAt: string;
 };
 
+type DiscoveryLead = {
+  canonicalUrl: string;
+  company: string;
+  title: string;
+  provider: string;
+  sourceUrl: string;
+  focus: string;
+  location: string;
+  postedAt: string | null;
+};
+
 export function InternshipInbox() {
   const [form, setForm] = useState({ url: "", company: "", title: "" });
   const [leads, setLeads] = useState<LeadJob[]>([]);
   const [busy, setBusy] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [discovered, setDiscovered] = useState<DiscoveryLead[]>([]);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -37,6 +50,28 @@ export function InternshipInbox() {
   }, [loadLeads]);
 
   const channel = form.url.trim() ? classifyApplicationUrl(form.url.trim()) : null;
+
+  async function discoverLeads() {
+    setError("");
+    setNotice("");
+    setDiscovering(true);
+    try {
+      const response = await fetch("/api/lead-discovery", { method: "POST" });
+      const payload = await response.json() as {
+        found?: number; created?: number; existing?: number; leads?: DiscoveryLead[];
+        failures?: Array<{ company: string }>; error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to discover internships");
+      setDiscovered(payload.leads ?? []);
+      await loadLeads();
+      const failureNote = payload.failures?.length ? ` ${payload.failures.length} source(s) were temporarily unavailable.` : "";
+      setNotice(`Scout found ${payload.found ?? 0} relevant internship lead(s); ${payload.created ?? 0} new lead(s) were saved and ${payload.existing ?? 0} were already known.${failureNote}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to discover internships");
+    } finally {
+      setDiscovering(false);
+    }
+  }
 
   async function saveLead() {
     setError("");
@@ -72,6 +107,19 @@ export function InternshipInbox() {
 
     {notice && <div className={styles.notice}>{notice}</div>}
     {error && <div className={`${styles.notice} ${styles.error}`}>{error}</div>}
+
+    <section className={styles.discovery}>
+      <div><p className={styles.kicker}>AUTOMATED LEAD DISCOVERY</p><h2>Find internships for me</h2><p>Scout scans a controlled set of public Greenhouse and Lever company boards for India/remote internship roles. It does not scrape LinkedIn or accept arbitrary server-side fetch URLs.</p></div>
+      <button disabled={discovering} onClick={() => void discoverLeads()}>{discovering ? "Scanning official boards…" : "Find internships"}</button>
+    </section>
+
+    {discovered.length > 0 && <section className={styles.results}>
+      <div className={styles.listHead}><div><p className={styles.kicker}>LATEST DISCOVERY</p><h2>{discovered.length} matching lead(s)</h2></div><p>Automatically saved to the inbox for resolution.</p></div>
+      {discovered.slice(0, 12).map((lead) => <article className={styles.card} key={lead.canonicalUrl}>
+        <div><p className={styles.source}>{lead.provider.toUpperCase()} · {lead.location || "Location unspecified"}</p><h3>{lead.company} — {lead.title}</h3><p>{lead.focus}</p></div>
+        <a href={lead.canonicalUrl} target="_blank" rel="noreferrer">Official posting ↗</a>
+      </article>)}
+    </section>}
 
     <section className={styles.composer}>
       <label>Internship URL<input type="url" value={form.url} onChange={(event) => setForm((value) => ({ ...value, url: event.target.value }))} placeholder="https://…" /></label>
