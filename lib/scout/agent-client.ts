@@ -1,0 +1,250 @@
+import { signAgentServiceRequest, type AgentServiceOperation } from "./agent-service-auth.ts";
+
+const HEX_64 = /^[a-f0-9]{64}$/i;
+const MAX_RESPONSE_BYTES = 2_000_000;
+const REQUEST_TIMEOUT_MS = 20_000;
+
+export const AGENT_CLIENT_CAPABILITIES = Object.freeze({
+  planJob: true,
+  discoverInternships: true,
+  researchContacts: true,
+  createGmailDraft: false,
+  sendEmail: false,
+  submitApplication: false,
+  arbitraryUnsignedRequest: false,
+} as const);
+
+export type AgentClientOptions = {
+  baseUrl: string;
+  sharedSecret: string;
+  allowLoopbackDev?: boolean;
+  fetcher?: typeof fetch;
+  now?: () => Date;
+  idFactory?: () => string;
+};
+
+export type AgentDiscoveryLead = {
+  provider: "greenhouse" | "lever";
+  canonicalUrl: string;
+  company: string;
+  title: string;
+  sourceUrl: string;
+  focus: string;
+  location: string;
+  postedAt: string | null;
+  platformId: string;
+  nextStep: string;
+};
+
+export type AgentDiscoveryResponse = {
+  taskId: string;
+  idempotencyKey: string;
+  schemaVersion: 1;
+  observedAt: string;
+  found: number;
+  failures: Array<{ company: string; provider: string; reason: string }>;
+  leads: AgentDiscoveryLead[];
+};
+
+export type AgentContactResearchResponse = {
+  taskId: string;
+  idempotencyKey: string;
+  schemaVersion: 1;
+  jobSnapshotId: string;
+  companyDomain: string;
+  researchedAt: string;
+  pagesAttempted: number;
+  candidates: Array<{
+    id: string;
+    email: string;
+    sourceUrl: string;
+    excerpt: string;
+    sourceType: "official_careers" | "official_contact" | "official_company";
+  }>;
+  failures: Array<{ sourceUrl: string; reason: string }>;
+};
+
+function loopback(hostname: string) {
+  const value = hostname.toLowerCase();
+  return value === "localhost" || value === "127.0.0.1" || value === "[::1]";
+}
+
+function normalizeBaseUrl(value: string, allowLoopbackDev: boolean) {
+  let url: URL;
+  try { url = new URL(value.trim()); }
+  catch { throw new Error("SCOUT_AGENT_BASE_URL is invalid"); }
+  if (url.username || url.password || url.search || url.hash) throw new Error("SCOUT_AGENT_BASE_URL must be an origin only");
+  if (url.pathname !== "/") throw new Error("SCOUT_AGENT_BASE_URL must not contain a path");
+  if (url.protocol !== "https:" && !(allowLoopbackDev && url.protocol === "http:" && loopback(url.hostname))) {
+    throw new Error("SCOUT_AGENT_BASE_URL must use HTTPS outside explicit loopback development");
+  }
+  if (!allowLoopbackDev && loopback(url.hostname)) throw new Error("Hosted Scout cannot use a loopback agent URL");
+  return url.origin;
+}
+
+function stringField(value: unknown, field: string, max = 4000) {
+  if (typeof value !== "string") throw new Error(`Agent response ${field} is invalid`);
+  const candidate = value.trim();
+  if (!candidate || candidate.length > max || candidate.includes("\0")) throw new Error(`Agent response ${field} is invalid`);
+  return candidate;
+}
+
+function nonNegativeInteger(value: unknown, field: string) {
+  if (!Number.isInteger(value) || (value as number) < 0) throw new Error(`Agent response ${field} is invalid`);
+  return value as number;
+}
+
+function record(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Agent response must be an object");
+  return value as Record<string, unknown>;
+}
+
+function validateDiscovery(value: unknown): AgentDiscoveryResponse {
+  const raw = record(value);
+  if (raw.schemaVersion !== 1 || !Array.isArray(raw.leads) || raw.leads.length > 100 || !Array.isArray(raw.failures) || raw.failures.length > 100) {
+    throw new Error("Agent discovery response is invalid");
+  }
+  const leads = raw.leads.map((item) => {
+    const lead = record(item);
+    if (lead.provider !== "greenhouse" && lead.provider !== "lever") throw new Error("Agent discovery provider is invalid");
+    const canonicalUrl = stringField(lead.canonicalUrl, "canonicalUrl", 2000);
+    const sourceUrl = stringField(lead.sourceUrl, "sourceUrl", 2000);
+    for (const url of [canonicalUrl, sourceUrl]) if (new URL(url).protocol !== "https:") throw new Error("Agent discovery URL must use HTTPS");
+    const postedAt = lead.postedAt === null ? null : stringField(lead.postedAt, "postedAt", 100);
+    return {
+      provider: lead.provider,
+      canonicalUrl,
+      company: stringField(lead.company, "company", 200),
+      title: stringField(lead.title, "title", 300),
+      sourceUrl,
+      focus: stringField(lead.focus, "focus", 500),
+      location: typeof lead.location === "string" ? lead.location.trim().slice(0, 500) : "",
+      postedAt,
+      platformId: stringField(lead.platformId, "platformId", 80),
+      nextStep: stringField(lead.nextStep, "nextStep", 1000),
+    } as AgentDiscoveryLead;
+  });
+  const failures = raw.failures.map((item) => {
+    const failure = record(item);
+    return {
+      company: stringField(failure.company, "failure company", 200),
+      provider: stringField(failure.provider, "failure provider", 80),
+      reason: stringField(failure.reason, "failure reason", 500),
+    };
+  });
+  return {
+    taskId: stringField(raw.taskId, "taskId", 200),
+    idempotencyKey: stringField(raw.idempotencyKey, "idempotencyKey", 200),
+    schemaVersion: 1,
+    observedAt: stringField(raw.observedAt, "observedAt", 100),
+    found: nonNegativeInteger(raw.found, "found"),
+    leads,
+    failures,
+  };
+}
+
+function validateContactResearch(value: unknown): AgentContactResearchResponse {
+  const raw = record(value);
+  if (raw.schemaVersion !== 1 || !Array.isArray(raw.candidates) || raw.candidates.length > 50 || !Array.isArray(raw.failures) || raw.failures.length > 20) {
+    throw new Error("Agent contact research response is invalid");
+  }
+  const candidates = raw.candidates.map((item) => {
+    const candidate = record(item);
+    if (candidate.sourceType !== "official_careers" && candidate.sourceType !== "official_contact" && candidate.sourceType !== "official_company") {
+      throw new Error("Agent contact source type is invalid");
+    }
+    const email = stringField(candidate.email, "contact email", 320).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Agent contact email is invalid");
+    const sourceUrl = stringField(candidate.sourceUrl, "contact sourceUrl", 2000);
+    if (new URL(sourceUrl).protocol !== "https:") throw new Error("Agent contact source URL must use HTTPS");
+    return {
+      id: stringField(candidate.id, "contact id", 200),
+      email,
+      sourceUrl,
+      excerpt: stringField(candidate.excerpt, "contact excerpt", 2500),
+      sourceType: candidate.sourceType,
+    };
+  });
+  const failures = raw.failures.map((item) => {
+    const failure = record(item);
+    return {
+      sourceUrl: stringField(failure.sourceUrl, "failure sourceUrl", 2000),
+      reason: stringField(failure.reason, "failure reason", 500),
+    };
+  });
+  return {
+    taskId: stringField(raw.taskId, "taskId", 200),
+    idempotencyKey: stringField(raw.idempotencyKey, "idempotencyKey", 200),
+    schemaVersion: 1,
+    jobSnapshotId: stringField(raw.jobSnapshotId, "jobSnapshotId", 200),
+    companyDomain: stringField(raw.companyDomain, "companyDomain", 300),
+    researchedAt: stringField(raw.researchedAt, "researchedAt", 100),
+    pagesAttempted: nonNegativeInteger(raw.pagesAttempted, "pagesAttempted"),
+    candidates,
+    failures,
+  };
+}
+
+export function createScoutAgentClient(options: AgentClientOptions) {
+  const allowLoopbackDev = options.allowLoopbackDev === true;
+  const baseUrl = normalizeBaseUrl(options.baseUrl, allowLoopbackDev);
+  const secret = options.sharedSecret.trim();
+  if (!HEX_64.test(secret)) throw new Error("SCOUT_AGENT_SHARED_SECRET must be exactly 64 hex characters");
+  const fetcher = options.fetcher ?? fetch;
+  const now = options.now ?? (() => new Date());
+  const idFactory = options.idFactory ?? (() => crypto.randomUUID());
+
+  async function post(operation: AgentServiceOperation, pathname: string, payload: unknown) {
+    const body = JSON.stringify(payload);
+    const issued = now();
+    const expires = new Date(issued.getTime() + 5 * 60_000);
+    const taskId = idFactory();
+    const idempotencyKey = idFactory();
+    const headers = await signAgentServiceRequest({
+      method: "POST",
+      pathname,
+      taskId,
+      idempotencyKey,
+      issuedAt: issued.toISOString(),
+      expiresAt: expires.toISOString(),
+      operation,
+      body,
+      secret,
+    });
+    const response = await fetcher(`${baseUrl}${pathname}`, {
+      method: "POST",
+      headers,
+      body,
+      redirect: "error",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`Scout agent request failed (${response.status})`);
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (!contentType.includes("application/json")) throw new Error("Scout agent returned a non-JSON response");
+    const declared = Number(response.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) throw new Error("Scout agent response exceeded the size limit");
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > MAX_RESPONSE_BYTES) throw new Error("Scout agent response exceeded the size limit");
+    try { return JSON.parse(new TextDecoder().decode(bytes)); }
+    catch { throw new Error("Scout agent returned invalid JSON"); }
+  }
+
+  return Object.freeze({
+    async planJob(input: {
+      url: string;
+      hasOfficialSnapshot: boolean;
+      applicationPrepared: boolean;
+      hasAcceptedContact: boolean;
+      outreachDraftReady: boolean;
+      gmailDraftCreated: boolean;
+    }) {
+      return post("plan_job", "/v1/plan", input);
+    },
+    async discoverInternships() {
+      return validateDiscovery(await post("discover_internships", "/v1/discover", {}));
+    },
+    async researchContacts(input: { companyDomain: string; jobSnapshotId: string }) {
+      return validateContactResearch(await post("research_contacts", "/v1/research-contacts", input));
+    },
+  });
+}
