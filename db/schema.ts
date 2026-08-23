@@ -119,7 +119,7 @@ export const outreachDrafts = sqliteTable("outreach_drafts", {
 });
 
 export const outreachDraftRevisions = sqliteTable("outreach_draft_revisions", {
-  id: text("id").primaryKey().references(() => outreachDrafts.id),
+  id: text("id").primaryKey(),
   draftId: text("draft_id").notNull().references(() => outreachDrafts.id),
   version: integer("version").notNull(),
   templateVersion: integer("template_version").notNull().default(1),
@@ -131,6 +131,8 @@ export const outreachDraftRevisions = sqliteTable("outreach_draft_revisions", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("idx_outreach_revisions_draft_version").on(table.draftId, table.version)]);
 
+// Legacy tables remain readable for migration compatibility. New Scout routes never
+// create application records or perform submission/apply side effects.
 export const applications = sqliteTable("applications", {
   id: text("id").primaryKey(),
   jobId: text("job_id").notNull().references(() => jobs.id),
