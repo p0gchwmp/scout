@@ -34,10 +34,13 @@ export class LeverAdapter implements SourceAdapter {
   readonly source = "lever";
   readonly capabilities = { discovery: true, submission: false } as const;
   async discover(site: string): Promise<NormalizedJob[]> {
-    const response = await fetch(`https://api.lever.co/v0/postings/${encodeURIComponent(site)}?mode=json`);
+    const endpoint = new URL(`https://api.lever.co/v0/postings/${encodeURIComponent(site)}`);
+    endpoint.searchParams.set("mode", "json");
+    const response = await fetch(endpoint, { signal: AbortSignal.timeout(10_000), redirect: "error" });
     if (!response.ok) throw new Error(`Lever discovery failed (${response.status})`);
-    const payload = await response.json() as Array<Record<string, unknown>>;
-    return payload.map((raw) => {
+    const payload = await response.json() as unknown;
+    if (!Array.isArray(payload)) throw new Error("Lever discovery returned an invalid postings payload");
+    return (payload as Array<Record<string, unknown>>).map((raw) => {
       const categories = raw.categories as { location?: string } | undefined;
       return {
         source: this.source,
