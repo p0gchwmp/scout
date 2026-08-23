@@ -163,3 +163,11 @@ export function parseApplicationPreparePayload(value: unknown) {
   const payload = record(value);
   return { jobId: id(payload.jobId, "Job id") };
 }
+
+export function parseInternshipIntakePayload(value: unknown) {
+  const payload = record(value);
+  const url = boundedString(payload.url, "Internship URL", 2000, true);
+  const company = boundedString(payload.company, "Company", 160, true);
+  const title = boundedString(payload.title, "Role title", 240, true);
+  return { url, company, title };
+}
