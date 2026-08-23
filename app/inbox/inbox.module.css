@@ -1,0 +1,27 @@
+.shell { max-width: 1120px; margin: 0 auto; padding: 56px 28px 80px; color: #18221c; }
+.header { display: flex; justify-content: space-between; gap: 32px; align-items: flex-start; padding-bottom: 30px; border-bottom: 1px solid #d8d5ca; }
+.header h1 { margin: 6px 0 10px; font: 400 clamp(34px, 6vw, 64px)/.98 Georgia, serif; max-width: 720px; }
+.header p:not(.kicker) { max-width: 760px; color: #69726b; line-height: 1.6; }
+.kicker, .source { margin: 0; font-size: 10px; letter-spacing: .14em; font-weight: 750; color: #496452; }
+.back { color: #234d36; white-space: nowrap; text-decoration: none; font-weight: 700; }
+.notice { margin: 18px 0 0; padding: 12px 14px; border: 1px solid #b8c9bd; background: #eff6f0; font-size: 13px; }
+.error { border-color: #d4aaa4; background: #fbefed; }
+.composer { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; margin: 24px 0 38px; padding: 22px; border: 1px solid #d8d5ca; background: #fffdf7; }
+.composer label { display: grid; gap: 7px; font-size: 11px; font-weight: 700; color: #69726b; }
+.composer input { width: 100%; min-height: 42px; border: 1px solid #cbc8bd; background: #faf8f1; padding: 9px 11px; color: #18221c; }
+.composer input:focus { outline: 2px solid #1e4b3625; border-color: #8ca395; }
+.channel { grid-column: 1 / -2; display: grid; gap: 4px; color: #69726b; font-size: 12px; }
+.channel strong { color: #244d36; }
+.composer button { justify-self: end; min-height: 42px; padding: 0 20px; border: 0; background: #234d36; color: white; font-weight: 750; cursor: pointer; }
+.composer button:disabled { opacity: .55; cursor: not-allowed; }
+.listHead { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 14px; }
+.listHead h2 { margin: 5px 0 0; font: 400 30px Georgia, serif; }
+.listHead > p { color: #69726b; font-size: 12px; }
+.list { display: grid; gap: 10px; }
+.card, .empty { border: 1px solid #d8d5ca; background: #fffdf7; padding: 18px 20px; }
+.card { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.card h3 { margin: 4px 0 7px; font: 400 20px Georgia, serif; }
+.card p:not(.source) { margin: 0; color: #69726b; font-size: 12px; }
+.card a { color: #234d36; font-weight: 750; text-decoration: none; white-space: nowrap; }
+.empty { color: #69726b; }
+@media (max-width: 760px) { .shell { padding: 28px 16px 56px; } .header, .listHead, .card { align-items: stretch; flex-direction: column; } .composer { grid-template-columns: 1fr; } .channel { grid-column: auto; } .composer button { justify-self: stretch; } }
