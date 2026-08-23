@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const env = { ...process.env };
 const keys = ["SCOUT_LOCAL_DEV_AUTH", "SCOUT_LOCAL_DEV_USER_ID", "SCOUT_OWNER_USER_ID"];
@@ -15,10 +16,19 @@ if (configured.length === 0) {
   console.log("Scout local dev auth: loopback-only owner enabled for this dev process.");
 }
 
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const child = spawn(npm, ["exec", "--", "vinext", "dev"], {
+// Spawn Node directly on Vinext's JS CLI instead of spawning npm.cmd. Recent
+// Node versions on Windows can reject .cmd execution through child_process
+// with EINVAL depending on shell/quoting behavior. Running the installed CLI
+// with the current Node executable is cross-platform and avoids that layer.
+const vinextCli = fileURLToPath(new URL("../node_modules/vinext/dist/cli.js", import.meta.url));
+const child = spawn(process.execPath, [vinextCli, "dev"], {
   env,
   stdio: "inherit",
+});
+
+child.on("error", (error) => {
+  console.error("Unable to start Vinext:", error.message);
+  process.exit(1);
 });
 
 child.on("exit", (code, signal) => {
