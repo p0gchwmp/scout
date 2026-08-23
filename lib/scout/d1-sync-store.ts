@@ -79,7 +79,7 @@ export class D1ScoutSyncStore implements ScoutSyncStore {
         version: row.version,
         contentHash: row.contentHash,
         capturedAt: row.capturedAt,
-        sourceProvider: "greenhouse",
+        sourceProvider: row.source as JobSnapshotRecord["sourceProvider"],
         externalId: job.externalId,
         canonicalUrl: row.canonicalUrl,
         company: row.company,
