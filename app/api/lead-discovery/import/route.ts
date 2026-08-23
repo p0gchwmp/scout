@@ -21,39 +21,20 @@ export async function POST(request: Request) {
     let created = 0;
     let upgraded = 0;
     let existing = 0;
-    let pending = 0;
 
     for (const lead of discovery.leads) {
       const [byUrl] = await db.select().from(jobs).where(eq(jobs.canonicalUrl, lead.canonicalUrl)).limit(1);
-
-      if (lead.provider === "lever") {
-        if (byUrl) existing += 1;
-        else {
-          const now = discovery.observedAt;
-          await db.insert(jobs).values({
-            id: crypto.randomUUID(), source: "lead:discovery:lever", sourceRegistryId: null,
-            externalId: lead.externalId, canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title,
-            description: lead.description, location: lead.location, workplaceType: lead.workplaceType,
-            score: 0, scoreExplanation: ["Verified public Lever observation; immutable Lever snapshot support is pending"],
-            eligibilityRisks: ["Immutable Lever snapshot required before application preparation"],
-            state: "saved", lifecycleState: "active", fingerprint: `lead|${lead.canonicalUrl}`,
-            postedAt: lead.postedAt, firstSeenAt: now, lastSeenAt: now, missingCount: 0, currentSnapshotId: null,
-          });
-          created += 1;
-        }
-        pending += 1;
-        continue;
-      }
-
       const official = await localDiscoverySnapshot(lead);
-      if (!official) continue;
-      const sourceId = `catalog-greenhouse-${lead.slug}`;
-      const [registered] = await db.select().from(companySources).where(and(eq(companySources.provider, "greenhouse"), eq(companySources.boardToken, lead.slug))).limit(1);
+      const sourceId = `catalog-${lead.provider}-${lead.slug}`;
+      const [registered] = await db.select().from(companySources).where(and(
+        eq(companySources.provider, lead.provider),
+        eq(companySources.boardToken, lead.slug),
+      )).limit(1);
       const source = registered ?? (await db.insert(companySources).values({
-        id: sourceId, provider: "greenhouse", companyName: lead.company, boardToken: lead.slug,
+        id: sourceId, provider: lead.provider, companyName: lead.company, boardToken: lead.slug,
         companyDomain: lead.companyDomain, careersUrl: lead.sourceUrl, enabled: true,
       }).returning())[0];
-      if (!source) throw new Error("Unable to register controlled Greenhouse source");
+      if (!source) throw new Error(`Unable to register controlled ${lead.provider} source`);
 
       const existingJob = byUrl ?? (await db.select().from(jobs).where(and(eq(jobs.sourceRegistryId, source.id), eq(jobs.externalId, lead.externalId))).limit(1))[0];
       if (existingJob?.currentSnapshotId) {
@@ -73,7 +54,7 @@ export async function POST(request: Request) {
         unchangedCount: 0, closedCount: 0, completedAt: now, error: null,
       }));
       if (!existingJob) statements.push(db.insert(jobs).values({
-        id: jobId, source: "greenhouse", sourceRegistryId: source.id, externalId: lead.externalId,
+        id: jobId, source: lead.provider, sourceRegistryId: source.id, externalId: lead.externalId,
         canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title, description: lead.description,
         location: lead.location, workplaceType: lead.workplaceType, score: 0,
         scoreExplanation: official.snapshot.scoreExplanation, eligibilityRisks: official.snapshot.eligibilityRisks,
@@ -89,7 +70,7 @@ export async function POST(request: Request) {
         postedAt: lead.postedAt, capturedAt: now,
       }));
       if (existingJob) statements.push(db.update(jobs).set({
-        source: "greenhouse", sourceRegistryId: source.id, externalId: lead.externalId, canonicalUrl: lead.canonicalUrl,
+        source: lead.provider, sourceRegistryId: source.id, externalId: lead.externalId, canonicalUrl: lead.canonicalUrl,
         company: lead.company, title: lead.title, description: lead.description, location: lead.location,
         workplaceType: lead.workplaceType, score: 0, scoreExplanation: official.snapshot.scoreExplanation,
         eligibilityRisks: official.snapshot.eligibilityRisks, postedAt: lead.postedAt,
@@ -101,7 +82,7 @@ export async function POST(request: Request) {
     }
 
     return Response.json({
-      found: discovery.leads.length, created, upgraded, existing, pending, failures: discovery.failures,
+      found: discovery.leads.length, created, upgraded, existing, pending: 0, failures: discovery.failures,
       leads: discovery.leads.map((lead) => ({
         canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title, provider: lead.provider,
         sourceUrl: lead.sourceUrl, focus: lead.focus, location: lead.location, postedAt: lead.postedAt,
