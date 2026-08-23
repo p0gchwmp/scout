@@ -1,16 +1,18 @@
-import { GreenhouseAdapter } from "../adapters";
-import { validateGreenhouseEvidenceUrl } from "./contact-extraction";
+import { GreenhouseAdapter, LeverAdapter } from "../adapters";
+import { validateGreenhouseEvidenceUrl, validateLeverEvidenceUrl } from "./contact-extraction";
 import type { SyncDiscoveryResult } from "./sync";
 import type { CompanySource } from "./types";
 
-export async function discoverGreenhouseSource(source: CompanySource): Promise<SyncDiscoveryResult> {
-  if (source.provider !== "greenhouse") throw new Error("Only Greenhouse sources are supported");
-  if (!/^[A-Za-z0-9_-]{2,80}$/.test(source.boardToken)) throw new Error("Registered Greenhouse board token is invalid");
-  const discovered = await new GreenhouseAdapter().discover(source.boardToken);
+export async function discoverRegisteredSource(source: CompanySource): Promise<SyncDiscoveryResult> {
+  if (!/^[A-Za-z0-9_-]{2,80}$/.test(source.boardToken)) throw new Error("Registered ATS source token is invalid");
+  const discovered = source.provider === "greenhouse"
+    ? await new GreenhouseAdapter().discover(source.boardToken)
+    : await new LeverAdapter().discover(source.boardToken);
   const normalized = discovered.map((job) => {
-    validateGreenhouseEvidenceUrl(job.canonicalUrl, source.boardToken, job.externalId);
+    if (source.provider === "greenhouse") validateGreenhouseEvidenceUrl(job.canonicalUrl, source.boardToken, job.externalId);
+    else validateLeverEvidenceUrl(job.canonicalUrl, source.boardToken, job.externalId);
     return {
-      sourceProvider: "greenhouse" as const,
+      sourceProvider: source.provider,
       externalId: job.externalId,
       canonicalUrl: job.canonicalUrl,
       company: source.companyName,
@@ -26,3 +28,5 @@ export async function discoverGreenhouseSource(source: CompanySource): Promise<S
   });
   return { jobs: normalized, complete: true };
 }
+
+export const discoverGreenhouseSource = discoverRegisteredSource;
