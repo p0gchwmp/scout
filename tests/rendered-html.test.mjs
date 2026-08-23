@@ -65,7 +65,7 @@ test("production build requires auth and renders Scout for an authenticated user
   assert.match(html, /Observed openings/);
   assert.match(html, /not personalized rankings/i);
   assert.match(html, /Safe outreach gate/i);
-  assert.match(html, /No send capability/i);
+  assert.match(html, /No autonomous submit or send worker enabled/i);
   assert.doesNotMatch(html, /Product Operations Intern|Razorpay|Meesho/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });
