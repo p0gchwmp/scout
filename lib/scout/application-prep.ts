@@ -25,7 +25,7 @@ export function buildApplicationPreparation(input: {
   const blockers: string[] = [];
   if (!input.job.currentSnapshotId) blockers.push("Current immutable job snapshot is missing");
   for (const key of requiredKeys) if (!verified.get(key)) blockers.push(`Missing verified profile field: ${key}`);
-  if (channel.id === "linkedin" || channel.id === "indeed" || channel.id === "naukri") blockers.push("Prefer the official company or ATS application URL before automation");
+  if (channel.requiresOfficialResolution) blockers.push("Prefer the official company or ATS application URL before automation");
   if (channel.id === "unknown") blockers.push("Application portal is not recognized");
 
   const approved = input.claims.filter((claim) => claim.status === "approved");
