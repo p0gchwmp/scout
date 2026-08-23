@@ -24,4 +24,10 @@
 .card p:not(.source) { margin: 0; color: #69726b; font-size: 12px; }
 .card a { color: #234d36; font-weight: 750; text-decoration: none; white-space: nowrap; }
 .empty { color: #69726b; }
-@media (max-width: 760px) { .shell { padding: 28px 16px 56px; } .header, .listHead, .card { align-items: stretch; flex-direction: column; } .composer { grid-template-columns: 1fr; } .channel { grid-column: auto; } .composer button { justify-self: stretch; } }
+.discovery { display: flex; justify-content: space-between; align-items: center; gap: 28px; margin: 24px 0 18px; padding: 22px; border: 1px solid #b8c9bd; background: #eff6f0; }
+.discovery h2 { margin: 5px 0 8px; font: 400 28px Georgia, serif; }
+.discovery p:not(.kicker) { margin: 0; max-width: 760px; color: #69726b; line-height: 1.55; font-size: 13px; }
+.discovery button { min-height: 44px; padding: 0 20px; border: 0; background: #234d36; color: white; font-weight: 750; cursor: pointer; white-space: nowrap; }
+.discovery button:disabled { opacity: .55; cursor: not-allowed; }
+.results { display: grid; gap: 10px; margin: 0 0 28px; }
+@media (max-width: 760px) { .shell { padding: 28px 16px 56px; } .header, .listHead, .card, .discovery { align-items: stretch; flex-direction: column; } .composer { grid-template-columns: 1fr; } .channel { grid-column: auto; } .composer button { justify-self: stretch; } .discovery button { width: 100%; } }
