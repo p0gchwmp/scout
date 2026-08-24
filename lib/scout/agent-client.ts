@@ -33,7 +33,7 @@ export type AgentClientOptions = {
 };
 
 export type AgentDiscoveryLead = {
-  provider: "greenhouse" | "lever";
+  provider: "greenhouse" | "lever" | "search_index";
   canonicalUrl: string;
   company: string;
   title: string;
@@ -151,7 +151,7 @@ function validateDiscovery(value: unknown): AgentDiscoveryResponse {
   }
   const leads = raw.leads.map((item) => {
     const lead = record(item);
-    if (lead.provider !== "greenhouse" && lead.provider !== "lever") throw new Error("Agent discovery provider is invalid");
+    if (lead.provider !== "greenhouse" && lead.provider !== "lever" && lead.provider !== "search_index") throw new Error("Agent discovery provider is invalid");
     const canonicalUrl = stringField(lead.canonicalUrl, "canonicalUrl", 2000);
     const sourceUrl = stringField(lead.sourceUrl, "sourceUrl", 2000);
     for (const url of [canonicalUrl, sourceUrl]) if (new URL(url).protocol !== "https:") throw new Error("Agent discovery URL must use HTTPS");
