@@ -23,6 +23,14 @@ function hasControlCharacters(value: string) {
   });
 }
 
+function hasUnsafeMultilineControlCharacters(value: string) {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (character === "\n" || character === "\r" || character === "\t") return false;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new PayloadValidationError("A JSON object is required");
@@ -34,6 +42,15 @@ function boundedString(value: unknown, field: string, max: number, singleLine = 
   if (typeof value !== "string") throw new PayloadValidationError(`${field} is required`);
   const normalized = value.trim();
   if (!normalized || normalized.length > max || hasControlCharacters(value) || (singleLine && /[\r\n]/.test(value))) {
+    throw new PayloadValidationError(`${field} is invalid or exceeds its size limit`);
+  }
+  return normalized;
+}
+
+function boundedMultilineString(value: unknown, field: string, max: number): string {
+  if (typeof value !== "string") throw new PayloadValidationError(`${field} is required`);
+  const normalized = value.replace(/\r\n/g, "\n").trim();
+  if (!normalized || normalized.length > max || hasUnsafeMultilineControlCharacters(value)) {
     throw new PayloadValidationError(`${field} is invalid or exceeds its size limit`);
   }
   return normalized;
@@ -144,10 +161,12 @@ export function parseProfileUpsertPayload(value: unknown) {
   const payload = record(value);
   const kind = boundedString(payload.kind, "Profile field", PROFILE_KEY_MAX, true);
   if (!ALLOWED_PROFILE_KEYS.has(kind)) throw new PayloadValidationError("Unsupported profile field");
-  const valueLimit = kind === "writing_sample" ? 6000 : PROFILE_VALUE_MAX;
+  const claim = kind === "writing_sample"
+    ? boundedMultilineString(payload.claim, "Profile value", 6000)
+    : boundedString(payload.claim, "Profile value", PROFILE_VALUE_MAX);
   return {
     kind,
-    claim: boundedString(payload.claim, "Profile value", valueLimit),
+    claim,
     evidence: boundedString(payload.evidence, "Profile evidence", PROFILE_EVIDENCE_MAX),
   };
 }
