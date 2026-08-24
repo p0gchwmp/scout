@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { buildAiOutreachEnvelope, type PublishedContactCandidate } from "../lib/scout/ai-agent.ts";
+import { buildAiApplicationAnswerEnvelope, buildAiOutreachEnvelope, type PublishedContactCandidate } from "../lib/scout/ai-agent.ts";
 import { AGENT_EXECUTION_CAPABILITIES, planAgentTasks } from "../lib/scout/agent-task-planner.ts";
 import { AGENT_SERVICE_CAPABILITIES, InMemoryAgentReplayGuard, verifyAgentServiceRequest } from "../lib/scout/agent-service-auth.ts";
 import { resolveControlledLead } from "../lib/scout/lead-resolution.ts";
@@ -50,6 +50,15 @@ function object(value: unknown, field: string) {
   return value as Record<string, unknown>;
 }
 
+function optionalVoice(raw: Record<string, unknown>) {
+  if (!raw.voice) return undefined;
+  const voice = object(raw.voice, "Voice");
+  return {
+    sample: typeof voice.sample === "string" ? voice.sample : null,
+    styleNote: typeof voice.styleNote === "string" ? voice.styleNote : null,
+  };
+}
+
 const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/health") {
@@ -60,7 +69,10 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    const allowedPaths = ["/v1/plan", "/v1/discover", "/v1/resolve", "/v1/research-contacts", "/v1/classify-contacts", "/v1/draft-outreach", "/v1/create-gmail-draft"];
+    const allowedPaths = [
+      "/v1/plan", "/v1/discover", "/v1/resolve", "/v1/research-contacts", "/v1/classify-contacts",
+      "/v1/draft-outreach", "/v1/draft-application-answers", "/v1/create-gmail-draft",
+    ];
     if (request.method !== "POST" || !allowedPaths.includes(request.url ?? "")) return json(response, 404, { error: "Not found" });
     const rawBody = await readBody(request);
     const verified = await verifyAgentServiceRequest(toWebRequest(request, rawBody), secret);
@@ -74,9 +86,11 @@ const server = createServer(async (request, response) => {
             ? "research_contacts"
             : request.url === "/v1/classify-contacts"
               ? "classify_contacts"
-              : request.url === "/v1/create-gmail-draft"
-                ? "create_gmail_draft"
-                : "draft_outreach";
+              : request.url === "/v1/draft-application-answers"
+                ? "draft_application_answers"
+                : request.url === "/v1/create-gmail-draft"
+                  ? "create_gmail_draft"
+                  : "draft_outreach";
     if (verified.auth.operation !== expectedOperation) return json(response, 409, { error: "Signed operation does not match this endpoint" });
     if (!replayGuard.accept(verified.auth)) return json(response, 409, { error: "Duplicate or replayed agent task" });
 
@@ -166,6 +180,7 @@ const server = createServer(async (request, response) => {
           reviewState: contact.reviewState as "accepted",
         },
         claims,
+        voice: optionalVoice(raw),
       });
       const draft = await createAgentAiProvider().draftOutreach(envelope);
       return json(response, 200, {
@@ -176,6 +191,44 @@ const server = createServer(async (request, response) => {
         jobSnapshotId: envelope.jobSnapshotId,
         contactId: envelope.contact.id,
         ...draft,
+      });
+    }
+
+    if (request.url === "/v1/draft-application-answers") {
+      const raw = payload as Record<string, unknown>;
+      if (!Array.isArray(raw.claims) || !Array.isArray(raw.questions)) {
+        return json(response, 400, { error: "Approved claims and non-sensitive questions are required" });
+      }
+      const claims = raw.claims.map((claim, index) => {
+        const item = object(claim, `Claim ${index + 1}`);
+        return { id: String(item.id ?? ""), statement: String(item.statement ?? ""), status: item.status as "approved" };
+      });
+      const questions = raw.questions.map((question, index) => {
+        const item = object(question, `Question ${index + 1}`);
+        return {
+          id: String(item.id ?? ""),
+          label: String(item.label ?? ""),
+          maxLength: item.maxLength === null || item.maxLength === undefined ? null : Number(item.maxLength),
+        };
+      });
+      const envelope = buildAiApplicationAnswerEnvelope({
+        jobSnapshotId: String(raw.jobSnapshotId ?? ""),
+        companyName: String(raw.companyName ?? ""),
+        roleTitle: String(raw.roleTitle ?? ""),
+        jobDescription: String(raw.jobDescription ?? ""),
+        candidateName: String(raw.candidateName ?? ""),
+        questions,
+        claims,
+        voice: optionalVoice(raw),
+      });
+      const answers = await createAgentAiProvider().draftApplicationAnswers(envelope);
+      return json(response, 200, {
+        taskId: verified.auth.taskId,
+        idempotencyKey: verified.auth.idempotencyKey,
+        schemaVersion: 1,
+        model: process.env.SCOUT_AI_MODEL ?? "",
+        jobSnapshotId: envelope.jobSnapshotId,
+        answers,
       });
     }
 
