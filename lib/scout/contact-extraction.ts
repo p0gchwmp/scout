@@ -1,3 +1,5 @@
+import type { AtsProvider } from "./types";
+
 export type ContactSuitability = "high" | "review";
 export type ContactReviewState = "needs_review" | "accepted" | "rejected";
 export type ContactSourceType = "official_job_posting" | "official_careers" | "official_contact" | "official_company" | "official_team" | "official_event" | "official_press";
@@ -20,7 +22,7 @@ export type ContactRejection = {
 };
 
 const GREENHOUSE_HOSTS = new Set(["boards.greenhouse.io", "job-boards.greenhouse.io"]);
-const BOARD_TOKEN_PATTERN = /^[A-Za-z0-9_-]{2,80}$/;
+const SOURCE_TOKEN_PATTERN = /^[A-Za-z0-9._-]{2,100}$/;
 const EXTERNAL_ID_PATTERN = /^[0-9]+$/;
 const COMPANY_DOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 const CONSUMER_DOMAINS = new Set([
@@ -29,31 +31,33 @@ const CONSUMER_DOMAINS = new Set([
 ]);
 const EMAIL_PATTERN = /\b[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+\b/gi;
 
-function decodePathSegment(value: string) {
+function decodePathSegment(value: string, provider = "ATS") {
   try {
     return decodeURIComponent(value);
   } catch {
-    throw new Error("Greenhouse evidence URL has invalid encoding");
+    throw new Error(`${provider} evidence URL has invalid encoding`);
   }
 }
 
+function exactPublicJobUrl(raw: string, provider: string) {
+  let url: URL;
+  try { url = new URL(raw); }
+  catch { throw new Error(`${provider} evidence URL is invalid`); }
+  if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) {
+    throw new Error(`${provider} evidence URL must be an exact HTTPS job URL`);
+  }
+  return url;
+}
+
 export function validateGreenhouseEvidenceUrl(raw: string, boardToken: string, externalId: string) {
-  if (!BOARD_TOKEN_PATTERN.test(boardToken)) throw new Error("Registered Greenhouse board token is invalid");
+  if (!SOURCE_TOKEN_PATTERN.test(boardToken)) throw new Error("Registered Greenhouse board token is invalid");
   if (!EXTERNAL_ID_PATTERN.test(externalId)) throw new Error("Greenhouse external id must be numeric");
 
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error("Greenhouse evidence URL is invalid");
-  }
-  if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) {
-    throw new Error("Greenhouse evidence URL must be an exact HTTPS job URL");
-  }
+  const url = exactPublicJobUrl(raw, "Greenhouse");
   if (!GREENHOUSE_HOSTS.has(url.hostname.toLowerCase())) {
     throw new Error("Greenhouse evidence URL host is not trusted");
   }
-  const parts = url.pathname.split("/").filter(Boolean).map(decodePathSegment);
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodePathSegment(part, "Greenhouse"));
   if (parts.length !== 3 || parts[1] !== "jobs") {
     throw new Error("Greenhouse evidence URL path is invalid");
   }
@@ -66,18 +70,51 @@ const LEVER_HOST = "jobs.lever.co";
 const LEVER_EXTERNAL_ID_PATTERN = /^[A-Za-z0-9-]{8,128}$/;
 
 export function validateLeverEvidenceUrl(raw: string, site: string, externalId: string) {
-  if (!BOARD_TOKEN_PATTERN.test(site)) throw new Error("Registered Lever site token is invalid");
+  if (!SOURCE_TOKEN_PATTERN.test(site)) throw new Error("Registered Lever site token is invalid");
   if (!LEVER_EXTERNAL_ID_PATTERN.test(externalId)) throw new Error("Lever external id is invalid");
-  let url: URL;
-  try { url = new URL(raw); } catch { throw new Error("Lever evidence URL is invalid"); }
-  if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash) {
-    throw new Error("Lever evidence URL must be an exact HTTPS job URL");
-  }
-  const parts = url.pathname.split("/").filter(Boolean).map(decodePathSegment);
-  if (url.hostname.toLowerCase() !== LEVER_HOST || parts.length < 2 || parts[0] !== site || parts[1] !== externalId) {
+  const url = exactPublicJobUrl(raw, "Lever");
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodePathSegment(part, "Lever"));
+  if (url.hostname.toLowerCase() !== LEVER_HOST || parts.length !== 2 || parts[0] !== site || parts[1] !== externalId) {
     throw new Error("Lever evidence URL does not match the registered source");
   }
   return url;
+}
+
+const ASHBY_HOST = "jobs.ashbyhq.com";
+const ASHBY_EXTERNAL_ID_PATTERN = /^[A-Za-z0-9_-]{3,160}$/;
+
+export function validateAshbyEvidenceUrl(raw: string, jobBoardName: string, externalId: string) {
+  if (!SOURCE_TOKEN_PATTERN.test(jobBoardName)) throw new Error("Registered Ashby job-board name is invalid");
+  if (!ASHBY_EXTERNAL_ID_PATTERN.test(externalId)) throw new Error("Ashby external id is invalid");
+  const url = exactPublicJobUrl(raw, "Ashby");
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodePathSegment(part, "Ashby"));
+  if (url.hostname.toLowerCase() !== ASHBY_HOST || parts.length !== 2 || parts[0] !== jobBoardName || parts[1] !== externalId) {
+    throw new Error("Ashby evidence URL does not match the registered source");
+  }
+  return url;
+}
+
+const WORKABLE_HOST = "apply.workable.com";
+const WORKABLE_EXTERNAL_ID_PATTERN = /^[A-Za-z0-9_-]{3,100}$/;
+
+export function validateWorkableEvidenceUrl(raw: string, subdomain: string, externalId: string) {
+  if (!SOURCE_TOKEN_PATTERN.test(subdomain)) throw new Error("Registered Workable account subdomain is invalid");
+  if (!WORKABLE_EXTERNAL_ID_PATTERN.test(externalId)) throw new Error("Workable external id is invalid");
+  const url = exactPublicJobUrl(raw, "Workable");
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodePathSegment(part, "Workable"));
+  if (url.hostname.toLowerCase() !== WORKABLE_HOST || parts.length !== 3 || parts[0] !== subdomain || parts[1] !== "j" || parts[2] !== externalId) {
+    throw new Error("Workable evidence URL does not match the registered source");
+  }
+  return url;
+}
+
+function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken: string, externalId: string) {
+  switch (provider) {
+    case "greenhouse": return validateGreenhouseEvidenceUrl(raw, sourceToken, externalId);
+    case "lever": return validateLeverEvidenceUrl(raw, sourceToken, externalId);
+    case "ashby": return validateAshbyEvidenceUrl(raw, sourceToken, externalId);
+    case "workable": return validateWorkableEvidenceUrl(raw, sourceToken, externalId);
+  }
 }
 
 function normalizedCompanyDomain(raw: string) {
@@ -126,13 +163,11 @@ export function extractPublishedBusinessEmails(options: {
   boardToken: string;
   externalId: string;
   companyDomain: string;
-  provider?: "greenhouse" | "lever";
+  provider?: AtsProvider;
   now?: () => string;
 }) {
   if (options.persistedContent.length > 1_000_000) throw new Error("Persisted snapshot content exceeds extraction limit");
-  const sourceUrl = (options.provider === "lever"
-    ? validateLeverEvidenceUrl(options.evidenceUrl, options.boardToken, options.externalId)
-    : validateGreenhouseEvidenceUrl(options.evidenceUrl, options.boardToken, options.externalId)).href;
+  const sourceUrl = validateAtsEvidenceUrl(options.provider ?? "greenhouse", options.evidenceUrl, options.boardToken, options.externalId).href;
   normalizedCompanyDomain(options.companyDomain);
   const now = options.now ?? (() => new Date().toISOString());
   const text = contentToText(options.persistedContent);
