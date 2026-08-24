@@ -46,13 +46,9 @@ export type DiscoveredInternshipLead = ReturnType<typeof normalizeInternshipLead
 };
 
 const INTERNSHIP_PATTERN = /\b(intern|internship|trainee|apprentice|co-?op)\b/i;
-const INDIA_OR_REMOTE_PATTERN = /\b(india|bengaluru|bangalore|chennai|hyderabad|noida|gurugram|gurgaon|mumbai|delhi|pune|kolkata|remote)\b/i;
 
-function isRelevantInternship(job: NormalizedJob) {
-  const roleText = `${job.title}\n${job.description}`;
-  if (!INTERNSHIP_PATTERN.test(roleText)) return false;
-  const locationText = `${job.location}\n${job.workplaceType}\n${job.description.slice(0, 1200)}`;
-  return INDIA_OR_REMOTE_PATTERN.test(locationText);
+function isInternship(job: NormalizedJob) {
+  return INTERNSHIP_PATTERN.test(`${job.title}\n${job.description}`);
 }
 
 async function discoverSource(source: DiscoverySource): Promise<NormalizedJob[]> {
@@ -89,7 +85,7 @@ async function discoverSettledByProvider(sources: readonly DiscoverySource[]) {
         const jobs = await discoverSource(source);
         settled[index] = {
           status: "fulfilled",
-          value: jobs.filter(isRelevantInternship).map((job) => ({ source, job })),
+          value: jobs.filter(isInternship).map((job) => ({ source, job })),
         };
       } catch (reason) {
         settled[index] = { status: "rejected", reason };
@@ -148,5 +144,7 @@ export async function discoverControlledInternships() {
     return rightDate - leftDate || left.company.localeCompare(right.company);
   });
 
-  return { leads: deduped.slice(0, 60), failures };
+  // Scout is globally open by default. India-specific discovery is added through
+  // dedicated controlled sources/search lanes rather than excluding overseas roles.
+  return { leads: deduped.slice(0, 100), failures };
 }
