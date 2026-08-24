@@ -18,6 +18,18 @@ type Application = {
   };
   job: Job | null;
 };
+type ContactEvidence = {
+  id: string;
+  jobId: string;
+  jobSnapshotId: string;
+  email: string;
+  sourceUrl: string;
+  excerpt: string;
+  sourceType?: string;
+  suitability: string;
+  suitabilityReason: string;
+  reviewState: "needs_review" | "accepted" | "rejected";
+};
 type OutreachRevision = {
   id: string;
   version: number;
@@ -46,6 +58,7 @@ type GmailDraftResult = {
 export function ReviewQueue() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [contacts, setContacts] = useState<ContactEvidence[]>([]);
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -53,19 +66,23 @@ export function ReviewQueue() {
 
   const load = useCallback(async () => {
     setError("");
-    const [jobsResponse, applicationsResponse, outreachResponse] = await Promise.all([
+    const [jobsResponse, applicationsResponse, contactsResponse, outreachResponse] = await Promise.all([
       fetch("/api/jobs"),
       fetch("/api/applications"),
+      fetch("/api/contacts"),
       fetch("/api/outreach"),
     ]);
     const jobsPayload = await jobsResponse.json() as { jobs?: Job[]; error?: string };
     const applicationsPayload = await applicationsResponse.json() as { applications?: Application[]; error?: string };
+    const contactsPayload = await contactsResponse.json() as { contacts?: ContactEvidence[]; error?: string };
     const outreachPayload = await outreachResponse.json() as { drafts?: OutreachDraft[]; error?: string };
     if (!jobsResponse.ok) throw new Error(jobsPayload.error ?? "Unable to load jobs");
     if (!applicationsResponse.ok) throw new Error(applicationsPayload.error ?? "Unable to load applications");
+    if (!contactsResponse.ok) throw new Error(contactsPayload.error ?? "Unable to load contacts");
     if (!outreachResponse.ok) throw new Error(outreachPayload.error ?? "Unable to load outreach drafts");
     setJobs(jobsPayload.jobs ?? []);
     setApplications(applicationsPayload.applications ?? []);
+    setContacts(contactsPayload.contacts ?? []);
     setDrafts(outreachPayload.drafts ?? []);
   }, []);
 
@@ -79,8 +96,46 @@ export function ReviewQueue() {
   const jobById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const readyApplications = applications.filter((application) => application.status === "ready_for_review");
   const blockedApplications = applications.filter((application) => application.status !== "ready_for_review");
+  const contactsNeedReview = contacts.filter((contact) => contact.reviewState === "needs_review");
+  const acceptedContacts = contacts.filter((contact) => contact.reviewState === "accepted");
   const pendingDrafts = drafts.filter((draft) => draft.state === "draft");
   const approvedDrafts = drafts.filter((draft) => draft.state === "approved");
+
+  async function reviewContact(contact: ContactEvidence, reviewState: "accepted" | "rejected") {
+    setBusy(`contact-${contact.id}`); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/contacts", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: contact.id, reviewState }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to review contact evidence");
+      setNotice(reviewState === "accepted"
+        ? "Published contact evidence accepted. You can now create a humanized outreach draft; nothing was sent."
+        : "Contact evidence rejected. Nothing was sent.");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to review contact evidence");
+    } finally { setBusy(null); }
+  }
+
+  async function draftFromContact(contact: ContactEvidence) {
+    setBusy(`contact-draft-${contact.id}`); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/agent/draft-outreach/auto", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contactId: contact.id }),
+      });
+      const payload = await response.json() as { draft?: { id?: string; voiceSampleUsed?: boolean }; error?: string };
+      if (!response.ok || !payload.draft) throw new Error(payload.error ?? "Unable to create humanized outreach draft");
+      setNotice(`Humanized outreach draft created${payload.draft.voiceSampleUsed ? " using your verified writing sample" : ""}. Review the exact revision below before approving it.`);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create humanized outreach draft");
+    } finally { setBusy(null); }
+  }
 
   async function reviewDraft(draft: OutreachDraft, action: "approve" | "reject") {
     const revision = draft.revisions.at(-1);
@@ -126,7 +181,7 @@ export function ReviewQueue() {
       <div>
         <p className={styles.kicker}>SCOUT / REVIEW QUEUE</p>
         <h1>Only the decisions that need you.</h1>
-        <p>Review outreach, create Gmail drafts after approval, and hand ready applications to Safe Fill. Scout still has no email-send or application-submit action.</p>
+        <p>Review published contacts and outreach, create Gmail drafts after approval, and hand ready applications to Safe Fill. Scout still has no email-send or application-submit action.</p>
       </div>
       <nav className={styles.links} aria-label="Scout review navigation">
         <Link href="/">Dashboard</Link>
@@ -140,10 +195,38 @@ export function ReviewQueue() {
     {error && <div className={`${styles.notice} ${styles.error}`}>{error}</div>}
 
     <section className={styles.summary} aria-label="Review queue summary">
+      <div><strong>{contactsNeedReview.length}</strong><span>contacts to review</span></div>
       <div><strong>{pendingDrafts.length}</strong><span>outreach drafts to review</span></div>
       <div><strong>{approvedDrafts.length}</strong><span>approved outreach drafts</span></div>
       <div><strong>{readyApplications.length}</strong><span>applications ready for assist</span></div>
       <div><strong>{blockedApplications.length}</strong><span>applications needing input</span></div>
+    </section>
+
+    <section className={styles.section}>
+      <div className={styles.sectionHead}><div><p className={styles.kicker}>PUBLISHED CONTACT EVIDENCE</p><h2>Accept the channel, not a guess</h2></div><p>{acceptedContacts.length} accepted · {contactsNeedReview.length} need review</p></div>
+      <div className={styles.list}>
+        {!contacts.length && <div className={styles.empty}>No published recruiting/business contacts found yet.</div>}
+        {contacts.filter((contact) => contact.reviewState !== "rejected").map((contact) => {
+          const job = jobById.get(contact.jobId);
+          return <article className={styles.card} key={contact.id}>
+            <div className={styles.cardMain}>
+              <div className={styles.meta}>{contact.reviewState} · {contact.suitability} · {contact.sourceType ?? "official source"}</div>
+              <h3>{contact.email}</h3>
+              <p>{job ? `${job.company} — ${job.title}` : "Pinned internship"}</p>
+              <p>{contact.excerpt}</p>
+              <small>{contact.suitabilityReason}</small>
+            </div>
+            <div className={styles.actions}>
+              {contact.reviewState === "needs_review" && <>
+                <button disabled={busy !== null} onClick={() => void reviewContact(contact, "accepted")}>Accept published evidence</button>
+                <button className={styles.secondary} disabled={busy !== null} onClick={() => void reviewContact(contact, "rejected")}>Reject</button>
+              </>}
+              {contact.reviewState === "accepted" && <button disabled={busy !== null} onClick={() => void draftFromContact(contact)}>{busy === `contact-draft-${contact.id}` ? "Drafting…" : "Create humanized outreach"}</button>}
+              <a href={contact.sourceUrl} target="_blank" rel="noreferrer">Exact source ↗</a>
+            </div>
+          </article>;
+        })}
+      </div>
     </section>
 
     <section className={styles.section}>
