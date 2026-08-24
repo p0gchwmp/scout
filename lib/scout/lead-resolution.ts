@@ -1,6 +1,7 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
 import { RecruiteePublicCareersAdapter } from "../recruitee-adapter.ts";
+import { parseTeamtailorPublicJobUrl, TeamtailorOfficialPageAdapter } from "../teamtailor-adapter.ts";
 import { WorkdayPublicCxsAdapter } from "../workday-adapter.ts";
 import {
   validateAshbyEvidenceUrl,
@@ -9,6 +10,7 @@ import {
   validateLeverEvidenceUrl,
   validateRecruiteeEvidenceUrl,
   validateSmartRecruitersEvidenceUrl,
+  validateTeamtailorEvidenceUrl,
   validateWorkableEvidenceUrl,
   validateWorkdayEvidenceUrl,
 } from "./contact-extraction.ts";
@@ -27,6 +29,7 @@ export const LEAD_RESOLUTION_CAPABILITIES = Object.freeze({
   workday: true,
   bamboohr: true,
   recruitee: true,
+  teamtailor: true,
   arbitraryUrlFetch: false,
   submit: false,
   send: false,
@@ -56,6 +59,7 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "workday": return validateWorkdayEvidenceUrl(raw, token, externalId);
     case "bamboohr": return validateBambooHrEvidenceUrl(raw, token, externalId);
     case "recruitee": return validateRecruiteeEvidenceUrl(raw, token, externalId);
+    case "teamtailor": return validateTeamtailorEvidenceUrl(raw, token, externalId);
   }
 }
 
@@ -79,6 +83,10 @@ async function discover(provider: AtsProvider, token: string, externalId: string
     }
     case "recruitee": {
       const job = await new RecruiteePublicCareersAdapter().discoverPosting(token, externalId);
+      return job ? [job] : [];
+    }
+    case "teamtailor": {
+      const job = await new TeamtailorOfficialPageAdapter().discoverPosting(token, externalId);
       return job ? [job] : [];
     }
   }
@@ -121,6 +129,11 @@ export async function resolveControlledLead(canonicalUrl: string) {
     provider = "workday";
     slug = parsed.boardToken;
     externalId = parsed.externalPath;
+  } else if (hostname.endsWith(".teamtailor.com")) {
+    const parsed = parseTeamtailorPublicJobUrl(url.href);
+    provider = "teamtailor";
+    slug = parsed.tenant;
+    externalId = parsed.externalId;
   } else {
     const bamboo = hostname.match(BAMBOOHR_HOST_PATTERN);
     if (bamboo && parts.length === 2 && parts[0] === "careers") {
