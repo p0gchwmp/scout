@@ -32,12 +32,43 @@ test("contact research stays on official company pages and preserves exact publi
   assert.equal(calls.some((url) => url.includes("evil.example")), false);
 });
 
+test("contact research starts from a verified same-domain careers subdomain when supplied", async () => {
+  const { calls, fetcher } = fakeFetch({
+    "https://careers.acme.example/openings": "Recruiting: internships@acme.example",
+    "https://acme.example/": "",
+    "https://acme.example/careers": "",
+    "https://acme.example/jobs": "",
+    "https://acme.example/contact": "",
+    "https://acme.example/contact-us": "",
+  });
+  const result = await researchPublishedCompanyContacts({
+    companyDomain: "acme.example",
+    jobSnapshotId: "snapshot-1",
+    careersUrl: "https://careers.acme.example/openings",
+    fetcher,
+  });
+  assert.equal(calls[0], "https://careers.acme.example/openings");
+  assert.equal(result.candidates[0]?.email, "internships@acme.example");
+  assert.equal(result.candidates[0]?.sourceType, "official_careers");
+});
+
+test("contact research rejects an off-domain careers seed instead of following it", async () => {
+  const { fetcher } = fakeFetch({});
+  await assert.rejects(() => researchPublishedCompanyContacts({
+    companyDomain: "acme.example",
+    jobSnapshotId: "snapshot-1",
+    careersUrl: "https://evil.example/careers",
+    fetcher,
+  }), /escaped the registered company domain/);
+});
+
 test("contact research never guesses addresses and rejects private or malformed company domains", async () => {
   const { fetcher } = fakeFetch({ "https://acme.example/": "Talk to our recruiting team. No email is published." });
   const result = await researchPublishedCompanyContacts({ companyDomain: "acme.example", jobSnapshotId: "snapshot-1", fetcher });
   assert.deepEqual(result.candidates, []);
   await assert.rejects(() => researchPublishedCompanyContacts({ companyDomain: "localhost", jobSnapshotId: "snapshot-1", fetcher }), /domain is invalid/);
   await assert.rejects(() => researchPublishedCompanyContacts({ companyDomain: "10.0.0.1", jobSnapshotId: "snapshot-1", fetcher }), /domain is invalid/);
+  assert.equal(CONTACT_RESEARCH_CAPABILITIES.verifiedCareersSeedSupported, true);
   assert.equal(CONTACT_RESEARCH_CAPABILITIES.guessEmail, false);
   assert.equal(CONTACT_RESEARCH_CAPABILITIES.linkedinScrape, false);
   assert.equal(CONTACT_RESEARCH_CAPABILITIES.personalDataHarvest, false);
