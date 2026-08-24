@@ -1,16 +1,36 @@
-import { GreenhouseAdapter, LeverAdapter } from "../adapters";
-import { validateGreenhouseEvidenceUrl, validateLeverEvidenceUrl } from "./contact-extraction";
+import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, WorkablePublicAdapter } from "../adapters";
+import {
+  validateAshbyEvidenceUrl,
+  validateGreenhouseEvidenceUrl,
+  validateLeverEvidenceUrl,
+  validateWorkableEvidenceUrl,
+} from "./contact-extraction";
 import type { SyncDiscoveryResult } from "./sync";
-import type { CompanySource } from "./types";
+import type { AtsProvider, CompanySource } from "./types";
+
+function adapterFor(provider: AtsProvider) {
+  switch (provider) {
+    case "greenhouse": return new GreenhouseAdapter();
+    case "lever": return new LeverAdapter();
+    case "ashby": return new AshbyAdapter();
+    case "workable": return new WorkablePublicAdapter();
+  }
+}
+
+function validateEvidence(provider: AtsProvider, raw: string, token: string, externalId: string) {
+  switch (provider) {
+    case "greenhouse": return validateGreenhouseEvidenceUrl(raw, token, externalId);
+    case "lever": return validateLeverEvidenceUrl(raw, token, externalId);
+    case "ashby": return validateAshbyEvidenceUrl(raw, token, externalId);
+    case "workable": return validateWorkableEvidenceUrl(raw, token, externalId);
+  }
+}
 
 export async function discoverRegisteredSource(source: CompanySource): Promise<SyncDiscoveryResult> {
-  if (!/^[A-Za-z0-9_-]{2,80}$/.test(source.boardToken)) throw new Error("Registered ATS source token is invalid");
-  const discovered = source.provider === "greenhouse"
-    ? await new GreenhouseAdapter().discover(source.boardToken)
-    : await new LeverAdapter().discover(source.boardToken);
+  if (!/^[A-Za-z0-9._-]{2,100}$/.test(source.boardToken)) throw new Error("Registered ATS source token is invalid");
+  const discovered = await adapterFor(source.provider).discover(source.boardToken);
   const normalized = discovered.map((job) => {
-    if (source.provider === "greenhouse") validateGreenhouseEvidenceUrl(job.canonicalUrl, source.boardToken, job.externalId);
-    else validateLeverEvidenceUrl(job.canonicalUrl, source.boardToken, job.externalId);
+    validateEvidence(source.provider, job.canonicalUrl, source.boardToken, job.externalId);
     return {
       sourceProvider: source.provider,
       externalId: job.externalId,
