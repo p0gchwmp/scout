@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES, resolveSearchLeadToOfficialAts } from "../agent/official-resolution.ts";
 
-const NO_MATCH = /No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, or Workday posting/;
+const NO_MATCH = /No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, or BambooHR posting/;
 
 test("search lead resolution re-fetches a matched Greenhouse posting before returning a snapshot", async () => {
   const queries: string[] = [];
@@ -41,12 +41,13 @@ test("search lead resolution re-fetches a matched Greenhouse posting before retu
     async resolveCompanyDomain() { return null; },
   });
 
-  assert.equal(queries.length, 6);
+  assert.equal(queries.length, 7);
   assert.ok(queries.every((query) => query.includes('"Acme Labs"') && query.includes('"Product Intern"')));
   assert.ok(queries.some((query) => query.includes("site:jobs.ashbyhq.com")));
   assert.ok(queries.some((query) => query.includes("site:apply.workable.com")));
   assert.ok(queries.some((query) => query.includes("site:jobs.smartrecruiters.com")));
   assert.ok(queries.some((query) => query.includes("site:myworkdayjobs.com")));
+  assert.ok(queries.some((query) => query.includes("site:bamboohr.com/careers")));
   assert.equal(result.source.provider, "greenhouse");
   assert.equal(result.source.boardToken, "acmelabs");
   assert.equal(result.source.companyDomain, "unresolved.invalid");
@@ -188,6 +189,46 @@ test("search lead resolution promotes an exact observed Workday posting without 
   assert.match(result.contentHash, /^[a-f0-9]{64}$/);
 });
 
+test("search lead resolution promotes an exact BambooHR careers posting after detail re-fetch", async () => {
+  const jobUrl = "https://acme.bamboohr.com/careers/42";
+  const result = await resolveSearchLeadToOfficialAts({
+    leadUrl: "https://www.linkedin.com/jobs/view/bamboohr-lead",
+    company: "Acme Labs",
+    title: "Product Intern",
+  }, {
+    searchProvider: {
+      async searchFixedQuery(query) {
+        if (!query.includes("bamboohr.com/careers")) return [];
+        return [{ url: jobUrl, title: "Product Intern - Acme Labs", description: "Acme Labs product internship in Bengaluru", age: null }];
+      },
+    },
+    async discover(provider, slug, externalId) {
+      assert.equal(provider, "bamboohr");
+      assert.equal(slug, "acme");
+      assert.equal(externalId, "42");
+      return [{
+        source: "bamboohr",
+        externalId: "42",
+        canonicalUrl: jobUrl,
+        company: "acme",
+        title: "Product Intern",
+        description: "Work with product and operations teams.",
+        location: "Bengaluru, Karnataka, India",
+        workplaceType: "hybrid",
+        postedAt: "2026-08-23",
+      }];
+    },
+    async resolveCompanyDomain() { return null; },
+  });
+
+  assert.equal(result.source.provider, "bamboohr");
+  assert.equal(result.source.boardToken, "acme");
+  assert.equal(result.source.careersUrl, "https://acme.bamboohr.com/careers");
+  assert.equal(result.snapshot.externalId, "42");
+  assert.equal(result.snapshot.canonicalUrl, jobUrl);
+  assert.match(result.contentHash, /^[a-f0-9]{64}$/);
+});
+
 test("search lead resolution fails closed before using search evidence when persistence is disabled", async () => {
   let searches = 0;
   await assert.rejects(() => resolveSearchLeadToOfficialAts({ leadUrl: "https://www.linkedin.com/jobs/view/123", company: "Acme Labs", title: "Product Intern" }, {
@@ -242,7 +283,10 @@ test("official search resolution cannot fetch arbitrary result pages or submit",
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.workable, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.smartrecruiters, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.workday, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.bamboohr, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.workdayTenantGuessing, false);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.bamboohrTenantGuessing, false);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.bamboohrEmployerApiCredentials, false);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.refetchOfficialAts, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.resolveCompanyDomainFromConvergingEvidence, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.searchPersistenceGateRequired, true);
