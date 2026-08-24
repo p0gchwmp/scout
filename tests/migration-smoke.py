@@ -31,6 +31,8 @@ migration = (root / "0001_scout_vertical.sql").read_text(encoding="utf-8").repla
 connection.executescript(f"BEGIN;\n{migration}\nCOMMIT;")
 lever_migration = (root / "0002_lever_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
 connection.executescript(f"BEGIN;\n{lever_migration}\nCOMMIT;")
+contact_source_migration = (root / "0003_contact_source_type.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
+connection.executescript(f"BEGIN;\n{contact_source_migration}\nCOMMIT;")
 
 assert connection.execute("SELECT first_seen_at FROM jobs WHERE id = 'legacy-job'").fetchone() == ("2026-08-01T00:00:00Z",)
 assert connection.execute("SELECT job_id FROM applications WHERE id = 'legacy-application'").fetchone() == ("legacy-job",)
@@ -78,10 +80,10 @@ expect_integrity_error(
 expect_integrity_error(
     lambda: connection.execute("""
         INSERT INTO contact_evidence (
-          id, job_id, job_snapshot_id, email, source_url, excerpt, extracted_at, suitability, suitability_reason
+          id, job_id, job_snapshot_id, email, source_url, excerpt, source_type, extracted_at, suitability, suitability_reason
         ) VALUES (
           'contact-mismatch', 'job-b', 'snapshot-a', 'recruiting@b.example',
-          'https://job-boards.greenhouse.io/board-b/jobs/123', 'recruiting@b.example',
+          'https://job-boards.greenhouse.io/board-b/jobs/123', 'recruiting@b.example', 'official_job_posting',
           '2026-08-15T00:00:00Z', 'high', 'published'
         )
     """),
@@ -89,13 +91,20 @@ expect_integrity_error(
 )
 connection.execute("""
 INSERT INTO contact_evidence (
-  id, job_id, job_snapshot_id, email, source_url, excerpt, extracted_at, suitability, suitability_reason
+  id, job_id, job_snapshot_id, email, source_url, excerpt, source_type, extracted_at, suitability, suitability_reason
 ) VALUES (
   'contact-a', 'job-a', 'snapshot-a', 'recruiting@a.example',
-  'https://job-boards.greenhouse.io/board-a/jobs/123', 'Email recruiting@a.example',
+  'https://job-boards.greenhouse.io/board-a/jobs/123', 'Email recruiting@a.example', 'official_job_posting',
   '2026-08-15T00:00:00Z', 'high', 'Published first-party recruiting address'
 )
 """)
+assert connection.execute("SELECT source_type FROM contact_evidence WHERE id = 'contact-a'").fetchone() == ("official_job_posting",)
+# AI suitability may be refined while evidence is still under review; exact provenance must not move.
+connection.execute("UPDATE contact_evidence SET suitability = 'review', suitability_reason = 'AI classification pending human review' WHERE id = 'contact-a'")
+expect_integrity_error(
+    lambda: connection.execute("UPDATE contact_evidence SET source_type = 'official_contact' WHERE id = 'contact-a'"),
+    "contact source type provenance was mutable",
+)
 
 connection.execute("INSERT INTO candidate_claims(id, statement, evidence, status) VALUES ('claim', 'statement', 'evidence', 'draft')")
 assert connection.execute("SELECT version FROM candidate_claims WHERE id = 'claim'").fetchone() == (1,)
@@ -136,6 +145,10 @@ connection.execute("UPDATE jobs SET current_snapshot_id = 'snapshot-a' WHERE id 
 connection.execute("UPDATE outreach_drafts SET state = 'approved', approved_revision_id = 'revision-2' WHERE id = 'draft'")
 assert connection.execute("SELECT approved_revision_id FROM outreach_drafts WHERE id = 'draft'").fetchone() == ("revision-2",)
 expect_integrity_error(
+    lambda: connection.execute("UPDATE contact_evidence SET suitability = 'high' WHERE id = 'contact-a'"),
+    "approved contact evidence suitability was mutable",
+)
+expect_integrity_error(
     lambda: connection.execute("UPDATE contact_evidence SET review_state = 'rejected' WHERE id = 'contact-a'"),
     "approved contact evidence was mutable",
 )
@@ -145,10 +158,14 @@ expect_integrity_error(
 )
 
 # Exact evidence provenance itself is immutable even before approval.
-connection.execute("INSERT INTO contact_evidence(id, job_id, job_snapshot_id, email, source_url, excerpt, extracted_at, suitability, suitability_reason) VALUES ('contact-b', 'job-a', 'snapshot-a', 'talent@a.example', 'https://job-boards.greenhouse.io/board-a/jobs/123', 'talent@a.example', '2026-08-15T00:00:00Z', 'high', 'published')")
+connection.execute("INSERT INTO contact_evidence(id, job_id, job_snapshot_id, email, source_url, excerpt, source_type, extracted_at, suitability, suitability_reason) VALUES ('contact-b', 'job-a', 'snapshot-a', 'talent@a.example', 'https://job-boards.greenhouse.io/board-a/jobs/123', 'talent@a.example', 'official_job_posting', '2026-08-15T00:00:00Z', 'high', 'published')")
 expect_integrity_error(
     lambda: connection.execute("UPDATE contact_evidence SET source_url = 'https://example.invalid' WHERE id = 'contact-b'"),
     "contact provenance mutation was not blocked",
+)
+expect_integrity_error(
+    lambda: connection.execute("UPDATE contact_evidence SET source_type = 'official_contact' WHERE id = 'contact-b'"),
+    "contact source type mutation was not blocked",
 )
 
 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
@@ -171,4 +188,4 @@ expected_indexes = {
 assert expected_indexes <= indexes, expected_indexes - indexes
 foreign_key_errors = list(connection.execute("PRAGMA foreign_key_check"))
 assert not foreign_key_errors, foreign_key_errors
-print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; composite identity, overlap, claim CAS, review, revision approval, snapshot/provenance immutability, and foreign keys verified)")
+print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; composite identity, overlap, claim CAS, review, revision approval, source-type provenance, snapshot/provenance immutability, and foreign keys verified)")
