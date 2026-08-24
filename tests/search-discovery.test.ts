@@ -20,7 +20,7 @@ test("fixed search discovery covers major internship surfaces without caller-sup
     "typeform.com",
     "fillout.com",
     "forms.gle",
-  ]) assert.match(joined, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  ]) assert.ok(joined.includes(expected), `missing fixed discovery surface: ${expected}`);
 
   assert.ok(SEARCH_DISCOVERY_QUERIES.length >= 8);
   for (const item of SEARCH_DISCOVERY_QUERIES) {
