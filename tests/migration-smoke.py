@@ -41,6 +41,10 @@ bamboohr_migration = (root / "0007_bamboohr_sources.sql").read_text(encoding="ut
 connection.executescript(f"BEGIN;\n{bamboohr_migration}\nCOMMIT;")
 recruitee_migration = (root / "0008_recruitee_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
 connection.executescript(f"BEGIN;\n{recruitee_migration}\nCOMMIT;")
+teamtailor_migration = (root / "0009_teamtailor_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
+connection.executescript(f"BEGIN;\n{teamtailor_migration}\nCOMMIT;")
+breezy_migration = (root / "0010_breezy_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
+connection.executescript(f"BEGIN;\n{breezy_migration}\nCOMMIT;")
 
 assert connection.execute("SELECT first_seen_at FROM jobs WHERE id = 'legacy-job'").fetchone() == ("2026-08-01T00:00:00Z",)
 assert connection.execute("SELECT job_id FROM applications WHERE id = 'legacy-application'").fetchone() == ("legacy-job",)
@@ -54,6 +58,8 @@ connection.execute("INSERT INTO company_sources(id, provider, company_name, boar
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-workday', 'workday', 'Workday Co', 'acme.wd5.myworkdayjobs.com/en-US/External', 'workday.example')")
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-bamboohr', 'bamboohr', 'BambooHR Co', 'acme', 'bamboo.example')")
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-recruitee', 'recruitee', 'Recruitee Co', 'acmejobs', 'recruitee.example')")
+connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-teamtailor', 'teamtailor', 'Teamtailor Co', 'acme-team', 'teamtailor.example')")
+connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-breezy', 'breezy', 'Breezy Co', 'acme-breezy', 'breezy.example')")
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-lever'").fetchone() == ("lever",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-ashby'").fetchone() == ("ashby",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-workable'").fetchone() == ("workable",)
@@ -61,6 +67,8 @@ assert connection.execute("SELECT provider FROM company_sources WHERE id = 'sour
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-workday'").fetchone() == ("workday",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-bamboohr'").fetchone() == ("bamboohr",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-recruitee'").fetchone() == ("recruitee",)
+assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-teamtailor'").fetchone() == ("teamtailor",)
+assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-breezy'").fetchone() == ("breezy",)
 expect_integrity_error(
     lambda: connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-unsupported', 'icims', 'Unsupported', 'unsupported', 'unsupported.example')"),
     "unsupported ATS provider bypassed the company_sources provider constraint",
@@ -210,4 +218,4 @@ expected_indexes = {
 assert expected_indexes <= indexes, expected_indexes - indexes
 foreign_key_errors = list(connection.execute("PRAGMA foreign_key_check"))
 assert not foreign_key_errors, foreign_key_errors
-print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; eight ATS providers constrained; composite identity, overlap, claim CAS, review, revision approval, source-type provenance, snapshot/provenance immutability, and foreign keys verified)")
+print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; ten ATS providers constrained; composite identity, overlap, claim CAS, review, revision approval, source-type provenance, snapshot/provenance immutability, and foreign keys verified)")
