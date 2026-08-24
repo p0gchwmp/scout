@@ -6,6 +6,10 @@ import { parseContactExtractionPayload } from "../../../../lib/scout/api-validat
 import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-runtime";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
+function unresolvedDomain(value: string | null | undefined) {
+  return !value || value.endsWith(".invalid");
+}
+
 export async function POST(request: Request) {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
@@ -24,13 +28,30 @@ export async function POST(request: Request) {
     if (!lead.source.startsWith("lead:")) return Response.json({ error: "Only unresolved internship leads can be resolved" }, { status: 409 });
 
     const client = createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>);
-    const official = await client.resolveJob({ canonicalUrl: lead.canonicalUrl });
+    const resolveInput = { canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title };
+    const official = await client.resolveJob(resolveInput);
 
-    await db.insert(companySources).values(official.source).onConflictDoNothing();
-    const [source] = await db.select().from(companySources).where(and(
+    const [registered] = await db.select().from(companySources).where(and(
       eq(companySources.provider, official.source.provider),
       eq(companySources.boardToken, official.source.boardToken),
     )).limit(1);
+    if (registered && !registered.enabled) {
+      return Response.json({ error: "Resolved official source is disabled" }, { status: 409 });
+    }
+
+    let source = registered;
+    if (registered && unresolvedDomain(registered.companyDomain) && !unresolvedDomain(official.source.companyDomain)) {
+      const [upgraded] = await db.update(companySources).set({
+        companyName: official.source.companyName,
+        companyDomain: official.source.companyDomain,
+        careersUrl: official.source.careersUrl,
+      }).where(and(
+        eq(companySources.id, registered.id),
+        eq(companySources.companyDomain, registered.companyDomain),
+      )).returning();
+      source = upgraded ?? registered;
+    }
+    source ??= (await db.insert(companySources).values(official.source).returning())[0];
     if (!source?.enabled) return Response.json({ error: "Resolved official source is not enabled" }, { status: 409 });
 
     const observedAt = official.resolvedAt;
@@ -40,7 +61,7 @@ export async function POST(request: Request) {
       db.insert(syncRuns).values({
         id: runId,
         sourceId: source.id,
-        idempotencyKey: `agent-resolution:${lead.id}`,
+        idempotencyKey: `agent-resolution:${lead.id}:${official.contentHash.slice(0, 16)}`,
         status: "completed",
         observedAt,
         discoveredCount: 1,
@@ -93,6 +114,8 @@ export async function POST(request: Request) {
       jobSnapshotId: snapshotId,
       provider: official.source.provider,
       canonicalUrl: official.snapshot.canonicalUrl,
+      companyDomain: unresolvedDomain(source.companyDomain) ? null : source.companyDomain,
+      contactResearchReady: !unresolvedDomain(source.companyDomain),
     });
   } catch (error) {
     return scoutServerError("agent.resolve", error, "Cloud agent job resolution failed");
