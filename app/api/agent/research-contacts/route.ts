@@ -6,6 +6,10 @@ import { parseContactExtractionPayload } from "../../../../lib/scout/api-validat
 import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-runtime";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
+function unresolvedDomain(value: string | null | undefined) {
+  return !value || value.endsWith(".invalid");
+}
+
 export async function POST(request: Request) {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
@@ -25,15 +29,17 @@ export async function POST(request: Request) {
     const [snapshot] = await db.select().from(jobSnapshots)
       .where(and(eq(jobSnapshots.id, job.currentSnapshotId), eq(jobSnapshots.jobId, job.id))).limit(1);
     const [source] = await db.select().from(companySources).where(eq(companySources.id, job.sourceRegistryId)).limit(1);
-    if (!snapshot || !source?.enabled || !source.companyDomain) {
-      return Response.json({ error: "Enabled official company source is required before contact research" }, { status: 409 });
+    if (!snapshot || !source?.enabled || unresolvedDomain(source.companyDomain)) {
+      return Response.json({ error: "A verified official company domain is required before contact research" }, { status: 409 });
     }
 
     const client = createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>);
-    const research = await client.researchContacts({
+    const researchInput = {
       companyDomain: source.companyDomain,
       jobSnapshotId: snapshot.id,
-    });
+      careersUrl: source.careersUrl,
+    };
+    const research = await client.researchContacts(researchInput);
 
     if (research.candidates.length) {
       await db.batch(research.candidates.map((candidate) => db.insert(contactEvidence).values({
