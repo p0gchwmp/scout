@@ -1,6 +1,7 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../lib/bamboohr-adapter.ts";
 import { RecruiteePublicCareersAdapter } from "../lib/recruitee-adapter.ts";
+import { parseTeamtailorPublicJobUrl, TeamtailorOfficialPageAdapter } from "../lib/teamtailor-adapter.ts";
 import { WorkdayPublicCxsAdapter } from "../lib/workday-adapter.ts";
 import type { BraveSearchResult } from "../lib/scout/brave-search.ts";
 import { snapshotHash } from "../lib/scout/sync.ts";
@@ -19,12 +20,16 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   workday: true,
   bamboohr: true,
   recruitee: true,
+  teamtailor: true,
   refetchOfficialAts: true,
   workdayTenantGuessing: false,
   bamboohrTenantGuessing: false,
   bamboohrEmployerApiCredentials: false,
   recruiteeTenantGuessing: false,
   recruiteeCareersApiToken: false,
+  teamtailorTenantGuessing: false,
+  teamtailorApiKey: false,
+  teamtailorCustomDomainGuessing: false,
   resolveCompanyDomainFromConvergingEvidence: true,
   searchPersistenceGateRequired: true,
   arbitraryResultPageFetch: false,
@@ -99,6 +104,14 @@ function parseSupportedAtsUrl(value: string) {
       return null;
     }
   }
+  if (host.endsWith(".teamtailor.com")) {
+    try {
+      const teamtailor = parseTeamtailorPublicJobUrl(url.href);
+      return { provider: "teamtailor" as const, slug: teamtailor.tenant, externalId: teamtailor.externalId };
+    } catch {
+      return null;
+    }
+  }
   const bamboo = host.match(BAMBOOHR_HOST_PATTERN);
   if (bamboo && parts.length === 2 && parts[0] === "careers") {
     try {
@@ -155,6 +168,10 @@ async function defaultDiscover(provider: AtsProvider, slug: string, externalId: 
       const job = await new RecruiteePublicCareersAdapter().discoverPosting(slug, externalId);
       return job ? [job] : [];
     }
+    case "teamtailor": {
+      const job = await new TeamtailorOfficialPageAdapter().discoverPosting(slug, externalId);
+      return job ? [job] : [];
+    }
   }
 }
 
@@ -169,7 +186,7 @@ function searchQueries(company: string, title: string) {
     `"${safeCompany}" "${safeTitle}" site:apply.workable.com`,
     `"${safeCompany}" "${safeTitle}" site:jobs.smartrecruiters.com`,
     `"${safeCompany}" "${safeTitle}" site:myworkdayjobs.com OR site:myworkdaysite.com`,
-    `"${safeCompany}" "${safeTitle}" (site:bamboohr.com/careers OR site:recruitee.com/o/)`,
+    `"${safeCompany}" "${safeTitle}" (site:bamboohr.com/careers OR site:recruitee.com/o/ OR site:teamtailor.com/jobs/)`,
   ];
 }
 
@@ -183,6 +200,7 @@ function atsCareersUrl(provider: AtsProvider, slug: string) {
     case "workday": return `https://${slug}`;
     case "bamboohr": return `https://${slug}.bamboohr.com/careers`;
     case "recruitee": return `https://${slug}.recruitee.com/`;
+    case "teamtailor": return `https://${slug}.teamtailor.com/jobs`;
   }
 }
 
@@ -261,5 +279,5 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
   }
 
-  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, or BambooHR posting was found; no Recruitee posting matched either.");
+  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, or BambooHR posting was found; no Recruitee or Teamtailor posting matched either.");
 }
