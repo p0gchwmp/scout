@@ -27,6 +27,15 @@ test("company domain resolution requires two server-derived searches to converge
   assert.equal(resolved?.evidence.length, 2);
 });
 
+test("company domain resolution fails closed when search-result persistence is disabled", async () => {
+  let calls = 0;
+  await assert.rejects(() => resolveOfficialCompanyDomain("Acme Labs", {
+    allowResultPersistence: false,
+    async searchFixedQuery() { calls += 1; return []; },
+  }), /cannot be persisted until search result persistence is explicitly allowed/);
+  assert.equal(calls, 0);
+});
+
 test("company domain resolution handles common multipart public suffixes", async () => {
   const resolved = await resolveOfficialCompanyDomain("Example Health", {
     async searchFixedQuery(query) {
@@ -76,6 +85,7 @@ test("company domain resolver has no guessing, crawling, send, or submit capabil
   assert.equal(COMPANY_DOMAIN_RESOLUTION_CAPABILITIES.serverDerivedQueriesOnly, true);
   assert.equal(COMPANY_DOMAIN_RESOLUTION_CAPABILITIES.requiresConvergingSearchEvidence, true);
   assert.equal(COMPANY_DOMAIN_RESOLUTION_CAPABILITIES.excludesJobBoardsAndSocialPlatforms, true);
+  assert.equal(COMPANY_DOMAIN_RESOLUTION_CAPABILITIES.searchPersistenceGateRequired, true);
   assert.equal(COMPANY_DOMAIN_RESOLUTION_CAPABILITIES.companyDomainGuessing, false);
   assert.equal(COMPANY_DOMAIN_RESOLUTION_CAPABILITIES.arbitraryPageFetch, false);
   assert.equal(COMPANY_DOMAIN_RESOLUTION_CAPABILITIES.sendEmail, false);
