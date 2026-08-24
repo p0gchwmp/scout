@@ -261,5 +261,5 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
   }
 
-  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, BambooHR, or Recruitee posting was found for this lead");
+  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, or BambooHR posting was found; no Recruitee posting matched either.");
 }
