@@ -1,8 +1,9 @@
-import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, WorkablePublicAdapter } from "../adapters";
+import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters";
 import {
   validateAshbyEvidenceUrl,
   validateGreenhouseEvidenceUrl,
   validateLeverEvidenceUrl,
+  validateSmartRecruitersEvidenceUrl,
   validateWorkableEvidenceUrl,
 } from "./contact-extraction";
 import type { SyncDiscoveryResult } from "./sync";
@@ -14,6 +15,7 @@ function adapterFor(provider: AtsProvider) {
     case "lever": return new LeverAdapter();
     case "ashby": return new AshbyAdapter();
     case "workable": return new WorkablePublicAdapter();
+    case "smartrecruiters": return new SmartRecruitersAdapter();
   }
 }
 
@@ -23,6 +25,7 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "lever": return validateLeverEvidenceUrl(raw, token, externalId);
     case "ashby": return validateAshbyEvidenceUrl(raw, token, externalId);
     case "workable": return validateWorkableEvidenceUrl(raw, token, externalId);
+    case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, token, externalId);
   }
 }
 
