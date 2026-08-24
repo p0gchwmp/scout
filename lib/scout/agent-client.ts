@@ -106,7 +106,7 @@ export type AgentContactResearchResponse = {
 };
 
 function isAtsProvider(value: unknown): value is AtsProvider {
-  return value === "greenhouse" || value === "lever" || value === "ashby" || value === "workable" || value === "smartrecruiters";
+  return value === "greenhouse" || value === "lever" || value === "ashby" || value === "workable" || value === "smartrecruiters" || value === "workday";
 }
 
 function loopback(hostname: string) {
@@ -219,14 +219,14 @@ function validateResolvedJob(value: unknown): AgentResolvedJobResponse {
       id: stringField(source.id, "source id", 200),
       provider: source.provider,
       companyName: stringField(source.companyName, "source companyName", 200),
-      boardToken: stringField(source.boardToken, "source boardToken", 200),
+      boardToken: stringField(source.boardToken, "source boardToken", 600),
       companyDomain: stringField(source.companyDomain, "source companyDomain", 300),
       careersUrl,
       enabled: true,
     },
     snapshot: {
       sourceProvider: source.provider,
-      externalId: stringField(snapshot.externalId, "snapshot externalId", 300),
+      externalId: stringField(snapshot.externalId, "snapshot externalId", 1200),
       canonicalUrl,
       company: stringField(snapshot.company, "snapshot company", 200),
       title: stringField(snapshot.title, "snapshot title", 300),
