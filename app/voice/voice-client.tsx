@@ -109,6 +109,6 @@ export function WritingVoice() {
       </div>
     </section>
 
-    <section className={styles.safety}><strong>Style cannot override evidence.</strong> Scout's Humanizer-inspired pass must preserve approved claim IDs and rejects newly introduced numerical/contact anchors. Sensitive application questions remain manual.</section>
+    <section className={styles.safety}><strong>Style cannot override evidence.</strong> Scout&apos;s Humanizer-inspired pass must preserve approved claim IDs and rejects newly introduced numerical/contact anchors. Sensitive application questions remain manual.</section>
   </main>;
 }
