@@ -62,12 +62,18 @@ export async function POST(request: Request) {
   try { input = payload(await request.json()); }
   catch { return json({ error: "A valid handoff token and current application URL are required" }, 400); }
 
+  let verified: Awaited<ReturnType<typeof verifyBrowserHandoffToken>>;
   try {
-    const verified = await verifyBrowserHandoffToken({
+    verified = await verifyBrowserHandoffToken({
       token: input.token,
       currentUrl: input.currentUrl,
       secret: handoffSecret(),
     });
+  } catch {
+    return json({ error: "Browser handoff was invalid, expired, or pinned to a different page" }, 401);
+  }
+
+  try {
     const db = getDb();
     const [application] = await db.select().from(applications).where(and(
       eq(applications.id, verified.applicationId),
@@ -87,43 +93,52 @@ export async function POST(request: Request) {
     const draftableQuestions = input.questions.filter((question) => !isSensitiveApplicationQuestion(question.label));
     let aiDraftAnswers: Array<{ key: string; value: string; verified: false; aiDraft: true; sourceField: string; usedClaimIds: string[] }> = [];
     let aiModel: string | null = null;
+    let aiError: string | null = null;
 
     if (draftableQuestions.length) {
-      const packet = application.submittedFields as unknown as { claimIds?: unknown };
-      const claimIds = Array.isArray(packet.claimIds) ? packet.claimIds.filter((id): id is string => typeof id === "string").slice(0, 8) : [];
-      const [job, claims, voiceRows] = await Promise.all([
-        db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1).then((rows) => rows[0]),
-        claimIds.length ? db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)) : Promise.resolve([]),
-        db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
-      ]);
-      if (job?.currentSnapshotId && claims.length && claims.every((claim) => claim.status === "approved")) {
-        const candidateName = voiceRows.find((field) => field.kind === "full_name")?.claim;
-        if (candidateName) {
-          const envelope = buildAiApplicationAnswerEnvelope({
-            jobSnapshotId: job.currentSnapshotId,
-            companyName: job.company,
-            roleTitle: job.title,
-            jobDescription: job.description,
-            candidateName,
-            questions: draftableQuestions,
-            claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement, status: "approved" as const })),
-            voice: {
-              sample: voiceRows.find((field) => field.kind === "writing_sample")?.claim ?? null,
-              styleNote: voiceRows.find((field) => field.kind === "writing_style_note")?.claim ?? null,
-            },
-          });
-          const ai = await draftApplicationAnswersViaAgent(env as unknown as Record<string, unknown>, envelope);
-          aiModel = ai.model || null;
-          const byId = new Map(draftableQuestions.map((question) => [question.id, question]));
-          aiDraftAnswers = ai.answers.map((answer) => ({
-            key: byId.get(answer.questionId)!.label.toLowerCase(),
-            value: answer.answer,
-            verified: false as const,
-            aiDraft: true as const,
-            sourceField: `ai:${answer.questionId}`,
-            usedClaimIds: answer.usedClaimIds,
-          }));
+      try {
+        const packet = application.submittedFields as unknown as { claimIds?: unknown };
+        const claimIds = Array.isArray(packet.claimIds) ? packet.claimIds.filter((id): id is string => typeof id === "string").slice(0, 8) : [];
+        const [job, claims, voiceRows] = await Promise.all([
+          db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1).then((rows) => rows[0]),
+          claimIds.length ? db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)) : Promise.resolve([]),
+          db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
+        ]);
+        if (job?.currentSnapshotId && claims.length && claims.every((claim) => claim.status === "approved")) {
+          const candidateName = voiceRows.find((field) => field.kind === "full_name")?.claim;
+          if (candidateName) {
+            const envelope = buildAiApplicationAnswerEnvelope({
+              jobSnapshotId: job.currentSnapshotId,
+              companyName: job.company,
+              roleTitle: job.title,
+              jobDescription: job.description.slice(0, 12_000),
+              candidateName,
+              questions: draftableQuestions,
+              claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement, status: "approved" as const })),
+              voice: {
+                sample: voiceRows.find((field) => field.kind === "writing_sample")?.claim ?? null,
+                styleNote: voiceRows.find((field) => field.kind === "writing_style_note")?.claim ?? null,
+              },
+            });
+            const ai = await draftApplicationAnswersViaAgent(env as unknown as Record<string, unknown>, envelope);
+            aiModel = ai.model || null;
+            const byId = new Map(draftableQuestions.map((question) => [question.id, question]));
+            aiDraftAnswers = ai.answers.map((answer) => ({
+              key: byId.get(answer.questionId)!.label.toLowerCase(),
+              value: answer.answer,
+              verified: false as const,
+              aiDraft: true as const,
+              sourceField: `ai:${answer.questionId}`,
+              usedClaimIds: answer.usedClaimIds,
+            }));
+          } else {
+            aiError = "Verified full_name is required before Scout can draft free-text answers";
+          }
+        } else {
+          aiError = "Current snapshot and approved claim bindings are required before Scout can draft free-text answers";
         }
+      } catch {
+        aiError = "AI free-text drafting was unavailable; verified autofill remains usable";
       }
     }
 
@@ -133,7 +148,7 @@ export async function POST(request: Request) {
         answers: [...task.answers, ...aiDraftAnswers],
         aiDraftAnswersRequireReview: aiDraftAnswers.length > 0,
       },
-      ai: { model: aiModel, drafted: aiDraftAnswers.length },
+      ai: { model: aiModel, drafted: aiDraftAnswers.length, error: aiError },
       manualQuestions: manualQuestions.map((question) => ({ id: question.id, label: question.label, reason: "Sensitive or per-application confirmation required" })),
       safety: {
         bearerTokenContainsProfileData: false,
@@ -144,6 +159,6 @@ export async function POST(request: Request) {
       },
     });
   } catch {
-    return json({ error: "Browser handoff was invalid, expired, misconfigured, or pinned to a different page" }, 401);
+    return json({ error: "Unable to build the current browser assistance packet" }, 409);
   }
 }
