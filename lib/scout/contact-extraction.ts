@@ -1,3 +1,4 @@
+import { parseBreezyPublicJobUrl } from "../breezy-adapter.ts";
 import { parseTeamtailorPublicJobUrl } from "../teamtailor-adapter.ts";
 import type { AtsProvider } from "./types";
 import { normalizeWorkdayExternalPath, parseWorkdayBoardToken, parseWorkdayPublicUrl } from "./workday-source.ts";
@@ -187,6 +188,17 @@ export function validateTeamtailorEvidenceUrl(raw: string, tenantToken: string, 
   return new URL(identity.canonicalUrl);
 }
 
+export function validateBreezyEvidenceUrl(raw: string, tenantToken: string, externalId: string) {
+  const tenant = tenantToken.trim().toLowerCase();
+  if (!BAMBOOHR_SLUG_PATTERN.test(tenant) || tenant === "api" || tenant === "www") throw new Error("Registered Breezy tenant is invalid");
+  if (!/^[A-Za-z0-9]{6,64}$/.test(externalId)) throw new Error("Breezy external id is invalid");
+  const identity = parseBreezyPublicJobUrl(raw);
+  if (identity.tenant !== tenant || identity.externalId !== externalId.toLowerCase()) {
+    throw new Error("Breezy evidence URL does not match the registered public career-site source");
+  }
+  return new URL(identity.canonicalUrl);
+}
+
 function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return validateGreenhouseEvidenceUrl(raw, sourceToken, externalId);
@@ -198,6 +210,7 @@ function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken:
     case "bamboohr": return validateBambooHrEvidenceUrl(raw, sourceToken, externalId);
     case "recruitee": return validateRecruiteeEvidenceUrl(raw, sourceToken, externalId);
     case "teamtailor": return validateTeamtailorEvidenceUrl(raw, sourceToken, externalId);
+    case "breezy": return validateBreezyEvidenceUrl(raw, sourceToken, externalId);
   }
 }
 
