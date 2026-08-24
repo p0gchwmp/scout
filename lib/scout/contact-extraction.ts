@@ -1,10 +1,12 @@
 export type ContactSuitability = "high" | "review";
 export type ContactReviewState = "needs_review" | "accepted" | "rejected";
+export type ContactSourceType = "official_job_posting" | "official_careers" | "official_contact" | "official_company" | "official_team" | "official_event" | "official_press";
 
 export type ExtractedContact = {
   email: string;
   sourceUrl: string;
   excerpt: string;
+  sourceType: ContactSourceType;
   extractedAt: string;
   suitability: ContactSuitability;
   suitabilityReason: string;
@@ -153,6 +155,7 @@ export function extractPublishedBusinessEmails(options: {
       email,
       sourceUrl,
       excerpt,
+      sourceType: "official_job_posting",
       extractedAt: now(),
       reviewState: "needs_review",
       ...suitabilityFor(email, options.companyDomain),
