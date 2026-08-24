@@ -13,7 +13,7 @@ const PROFILE_VALUE_MAX = 2000;
 const PROFILE_EVIDENCE_MAX = 4000;
 const ALLOWED_PROFILE_KEYS = new Set([
   "full_name", "email", "phone", "current_location", "university", "program", "graduation_year",
-  "linkedin_url", "github_url", "portfolio_url", "resume_reference",
+  "linkedin_url", "github_url", "portfolio_url", "resume_reference", "writing_sample", "writing_style_note",
 ]);
 
 function hasControlCharacters(value: string) {
@@ -144,9 +144,10 @@ export function parseProfileUpsertPayload(value: unknown) {
   const payload = record(value);
   const kind = boundedString(payload.kind, "Profile field", PROFILE_KEY_MAX, true);
   if (!ALLOWED_PROFILE_KEYS.has(kind)) throw new PayloadValidationError("Unsupported profile field");
+  const valueLimit = kind === "writing_sample" ? 6000 : PROFILE_VALUE_MAX;
   return {
     kind,
-    claim: boundedString(payload.claim, "Profile value", PROFILE_VALUE_MAX),
+    claim: boundedString(payload.claim, "Profile value", valueLimit),
     evidence: boundedString(payload.evidence, "Profile evidence", PROFILE_EVIDENCE_MAX),
   };
 }
