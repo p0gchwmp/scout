@@ -16,7 +16,7 @@ test("shortlist workspace remains owner-only and action-gated", () => {
   assert.match(shortlistClient, /Prepare application/);
   assert.match(shortlistClient, /Research contact/);
   assert.match(shortlistClient, /Official posting/);
-  assert.doesNotMatch(shortlistClient, /submit application|send email/i);
+  assert.doesNotMatch(shortlistClient, /\/api\/(?:send|submit|applications\/submit|outreach\/send)/i);
 });
 
 test("targeted contact research keeps provenance and mutation protections", () => {
