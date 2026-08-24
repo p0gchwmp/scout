@@ -118,5 +118,29 @@
     "sourceUrl": "https://job-boards.greenhouse.io/phonepe",
     "focus": "fintech, product, operations, business",
     "companyDomain": "phonepe.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "razorpaysoftwareprivatelimited",
+    "company": "Razorpay",
+    "sourceUrl": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited",
+    "focus": "India fintech, product, business, operations, finance",
+    "companyDomain": "razorpay.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "drivetrain",
+    "company": "Drivetrain",
+    "sourceUrl": "https://jobs.lever.co/drivetrain",
+    "focus": "India and global finance, FP&A, product, operations, AI",
+    "companyDomain": "drivetrain.ai"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "freshprints",
+    "company": "Fresh Prints",
+    "sourceUrl": "https://job-boards.greenhouse.io/freshprints",
+    "focus": "India remote operations, growth, recruiting, business",
+    "companyDomain": "freshprints.com"
   }
 ]
