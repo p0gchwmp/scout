@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AshbyAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
+import { WorkdayPublicCxsAdapter } from "../lib/workday-adapter.ts";
 
 async function withFetch<T>(implementation: typeof fetch, run: () => Promise<T>) {
   const original = globalThis.fetch;
@@ -153,9 +154,48 @@ test("SmartRecruiters adapter uses only public posting endpoints and never sends
   }]);
 });
 
+test("Workday adapter re-fetches one exact observed candidate posting without auth or tenant guessing", async () => {
+  const boardToken = "acme.wd5.myworkdayjobs.com/en-US/External";
+  const externalPath = "/job/Bengaluru/Product-Intern_R123";
+  const calls: string[] = [];
+  const job = await withFetch((async (input, init) => {
+    const url = new URL(String(input));
+    calls.push(url.href);
+    assert.equal(init?.method, "GET");
+    assert.equal(url.href, "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/job/Bengaluru/Product-Intern_R123");
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.has("authorization"), false);
+    assert.equal(headers.get("referer"), "https://acme.wd5.myworkdayjobs.com/en-US/External");
+    return Response.json({
+      jobPostingInfo: {
+        title: "Product Intern",
+        jobDescription: "<p>Work with product and operations teams.</p>",
+        location: "Bengaluru, India",
+        additionalLocations: ["Remote"],
+        jobReqId: "R123",
+      },
+    });
+  }) as typeof fetch, () => new WorkdayPublicCxsAdapter().discoverPosting(boardToken, externalPath));
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(job, {
+    source: "workday",
+    externalId: externalPath,
+    canonicalUrl: "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Bengaluru/Product-Intern_R123",
+    company: "acme",
+    title: "Product Intern",
+    description: "Work with product and operations teams.",
+    location: "Bengaluru, India / Remote",
+    workplaceType: "remote",
+  });
+});
+
 test("public ATS adapters expose discovery but no submission capability", () => {
-  for (const adapter of [new AshbyAdapter(), new WorkablePublicAdapter(), new SmartRecruitersAdapter()]) {
+  for (const adapter of [new AshbyAdapter(), new WorkablePublicAdapter(), new SmartRecruitersAdapter(), new WorkdayPublicCxsAdapter()]) {
     assert.equal(adapter.capabilities.discovery, true);
     assert.equal(adapter.capabilities.submission, false);
   }
+  const workday = new WorkdayPublicCxsAdapter();
+  assert.equal(workday.capabilities.publicCandidateSiteOnly, true);
+  assert.equal(workday.capabilities.tenantGuessing, false);
 });
