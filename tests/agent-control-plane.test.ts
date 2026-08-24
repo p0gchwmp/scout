@@ -47,21 +47,29 @@ test("cloud discovery persists leads without caller-supplied fetch targets", asy
   assert.match(route, /Official immutable posting snapshot required/);
 });
 
-test("cloud resolution pins the stored lead to the agent-returned official snapshot", async () => {
+test("cloud resolution pins stored lead evidence to the agent-returned official snapshot", async () => {
   const route = await readFile(new URL("../app/api/agent/resolve/route.ts", import.meta.url), "utf8");
-  assert.match(route, /client\.resolveJob\(\{ canonicalUrl: lead\.canonicalUrl \}\)/);
+  assert.match(route, /const resolveInput = \{ canonicalUrl: lead\.canonicalUrl, company: lead\.company, title: lead\.title \}/);
+  assert.match(route, /client\.resolveJob\(resolveInput\)/);
   assert.match(route, /db\.insert\(jobSnapshots\)/);
   assert.match(route, /contentHash: official\.contentHash/);
   assert.match(route, /source: official\.source\.provider/);
   assert.match(route, /currentSnapshotId: snapshotId/);
   assert.match(route, /isNull\(jobs\.currentSnapshotId\)/);
+  assert.match(route, /unresolvedDomain\(registered\.companyDomain\) && !unresolvedDomain\(official\.source\.companyDomain\)/);
+  assert.match(route, /eq\(companySources\.companyDomain, registered\.companyDomain\)/);
+  assert.match(route, /contactResearchReady: !unresolvedDomain\(source\.companyDomain\)/);
 });
 
-test("cloud contact research is pinned to synced job snapshot and preserves source type", async () => {
+test("cloud contact research requires a verified domain and preserves the verified careers seed", async () => {
   const route = await readFile(new URL("../app/api/agent/research-contacts/route.ts", import.meta.url), "utf8");
   assert.match(route, /job\.currentSnapshotId/);
   assert.match(route, /job\.sourceRegistryId/);
-  assert.match(route, /source\.companyDomain/);
+  assert.match(route, /function unresolvedDomain/);
+  assert.match(route, /value\.endsWith\("\.invalid"\)/);
+  assert.match(route, /A verified official company domain is required/);
+  assert.match(route, /companyDomain: source\.companyDomain/);
+  assert.match(route, /careersUrl: source\.careersUrl/);
   assert.match(route, /sourceType: candidate\.sourceType/);
   assert.match(route, /reviewState: "needs_review"/);
   assert.match(route, /suitability: "review"/);
