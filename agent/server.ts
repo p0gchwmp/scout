@@ -135,10 +135,15 @@ const server = createServer(async (request, response) => {
       if (typeof raw.companyDomain !== "string" || typeof raw.jobSnapshotId !== "string") {
         return json(response, 400, { error: "companyDomain and jobSnapshotId are required" });
       }
-      if (Object.keys(raw).some((key) => key !== "companyDomain" && key !== "jobSnapshotId")) {
-        return json(response, 400, { error: "Contact research accepts only the registered company domain and pinned job snapshot id" });
+      const allowed = new Set(["companyDomain", "jobSnapshotId", "careersUrl"]);
+      if (Object.keys(raw).some((key) => !allowed.has(key)) || (raw.careersUrl !== undefined && raw.careersUrl !== null && typeof raw.careersUrl !== "string")) {
+        return json(response, 400, { error: "Contact research accepts only the registered company domain, pinned snapshot id, and optional verified careers URL" });
       }
-      const research = await researchPublishedCompanyContacts({ companyDomain: raw.companyDomain, jobSnapshotId: raw.jobSnapshotId });
+      const research = await researchPublishedCompanyContacts({
+        companyDomain: raw.companyDomain,
+        jobSnapshotId: raw.jobSnapshotId,
+        careersUrl: typeof raw.careersUrl === "string" ? raw.careersUrl : null,
+      });
       return json(response, 200, { taskId: verified.auth.taskId, idempotencyKey: verified.auth.idempotencyKey, ...research });
     }
 
