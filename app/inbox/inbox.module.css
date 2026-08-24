@@ -30,4 +30,9 @@
 .discovery button { min-height: 44px; padding: 0 20px; border: 0; background: #234d36; color: white; font-weight: 750; cursor: pointer; white-space: nowrap; }
 .discovery button:disabled { opacity: .55; cursor: not-allowed; }
 .results { display: grid; gap: 10px; margin: 0 0 28px; }
-@media (max-width: 760px) { .shell { padding: 28px 16px 56px; } .header, .listHead, .card, .discovery { align-items: stretch; flex-direction: column; } .composer { grid-template-columns: 1fr; } .channel { grid-column: auto; } .composer button { justify-self: stretch; } .discovery button { width: 100%; } }
+.regionFilters { display: flex; flex-wrap: wrap; gap: 8px; margin: -2px 0 4px; }
+.regionFilters button { border: 1px solid #c8c8bd; background: #fffdf7; color: #385342; padding: 8px 11px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.regionFilters button span { display: inline-block; margin-left: 5px; color: #7b817c; font-weight: 600; }
+.regionFilters .regionActive { border-color: #234d36; background: #234d36; color: #fff; }
+.regionFilters .regionActive span { color: #dce9df; }
+@media (max-width: 760px) { .shell { padding: 28px 16px 56px; } .header, .listHead, .card, .discovery { align-items: stretch; flex-direction: column; } .composer { grid-template-columns: 1fr; } .channel { grid-column: auto; } .composer button { justify-self: stretch; } .discovery button { width: 100%; } .regionFilters button { flex: 1 1 40%; } }
