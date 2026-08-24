@@ -4,44 +4,64 @@ import { createAgentSearchProvider } from "./search-runtime.ts";
 
 export const SEARCH_DISCOVERY_QUERIES = Object.freeze([
   {
-    id: "linkedin",
-    focus: "LinkedIn internship leads across Scout target functions",
-    query: "site:linkedin.com/jobs/view internship India remote product operations business finance policy health-tech",
+    id: "linkedin_global",
+    focus: "Global LinkedIn internship leads across Scout target functions",
+    query: "site:linkedin.com/jobs/view internship product operations business finance policy health-tech startup",
   },
   {
-    id: "glassdoor",
-    focus: "Glassdoor internship leads for India and remote roles",
-    query: "site:glassdoor.co.in internship India product operations business finance policy health OR site:glassdoor.com internship India remote",
+    id: "linkedin_india",
+    focus: "LinkedIn internship leads with explicit India context",
+    query: "site:linkedin.com/jobs/view internship India product operations business finance policy health-tech startup",
   },
   {
-    id: "internship_boards",
-    focus: "India internship boards and startups",
-    query: "internship India remote site:internshala.com/internship OR site:wellfound.com/jobs OR site:unstop.com/internships OR site:cutshort.io OR site:foundit.in",
+    id: "india_job_boards",
+    focus: "India internship boards and startup opportunities",
+    query: "internship India site:internshala.com/internship OR site:unstop.com/internships OR site:cutshort.io OR site:foundit.in OR site:naukri.com",
   },
   {
-    id: "workday_bamboo",
-    focus: "Workday and BambooHR employer postings",
-    query: "internship India remote site:myworkdayjobs.com OR site:myworkdaysite.com OR site:bamboohr.com/jobs",
+    id: "global_startup_boards",
+    focus: "Global startup and remote internship leads",
+    query: "internship remote startup site:wellfound.com/jobs OR site:linkedin.com/jobs/view OR site:glassdoor.com",
   },
   {
-    id: "modern_ats",
-    focus: "official modern ATS internships",
-    query: "intern India remote site:jobs.ashbyhq.com OR site:apply.workable.com OR site:jobs.smartrecruiters.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io",
+    id: "india_policy_public",
+    focus: "India public policy, governance and public-sector internship opportunities",
+    query: "internship public policy India site:prsindia.org OR site:niti.gov.in OR site:mygov.in",
+  },
+  {
+    id: "workday_bamboo_global",
+    focus: "Global Workday and BambooHR employer internships",
+    query: "internship site:myworkdayjobs.com OR site:myworkdaysite.com OR site:bamboohr.com/jobs",
+  },
+  {
+    id: "modern_ats_global",
+    focus: "Global official modern ATS internships",
+    query: "intern internship site:jobs.ashbyhq.com OR site:apply.workable.com OR site:jobs.smartrecruiters.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io",
+  },
+  {
+    id: "modern_ats_india",
+    focus: "India official modern ATS internships",
+    query: "intern internship India site:jobs.ashbyhq.com OR site:apply.workable.com OR site:jobs.smartrecruiters.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io",
   },
   {
     id: "ats_long_tail",
-    focus: "public employer ATS long tail",
-    query: "internship India site:teamtailor.com OR site:recruitee.com OR site:breezy.hr OR site:applytojob.com OR site:pinpointhq.com OR site:jobs.personio.de",
+    focus: "Public employer ATS long tail across global and India opportunities",
+    query: "internship site:teamtailor.com OR site:recruitee.com OR site:breezy.hr OR site:applytojob.com OR site:pinpointhq.com OR site:jobs.personio.de",
   },
   {
     id: "forms",
-    focus: "startup and direct application forms",
-    query: "internship India site:tally.so OR site:typeform.com OR site:fillout.com OR site:forms.gle OR site:jotform.com OR site:forms.office.com",
+    focus: "Startup and direct internship application forms",
+    query: "internship site:tally.so OR site:typeform.com OR site:fillout.com OR site:forms.gle OR site:jotform.com OR site:forms.office.com",
   },
   {
-    id: "company_careers",
-    focus: "direct company careers pages in Scout target functions",
-    query: "internship India remote product operations business finance public policy health tech careers jobs company",
+    id: "company_careers_global",
+    focus: "Direct company careers pages across Scout target functions",
+    query: "internship product operations business finance public policy health tech careers jobs company",
+  },
+  {
+    id: "company_careers_india",
+    focus: "Direct India company careers pages across Scout target functions",
+    query: "internship India product operations business finance public policy health tech careers jobs company",
   },
 ] as const);
 
@@ -60,7 +80,7 @@ export type SearchIndexLead = {
 
 function cleanTitle(value: string) {
   return value
-    .replace(/\s*[|–—-]\s*(LinkedIn|Glassdoor|Internshala|Indeed|Wellfound|Unstop|Foundit|Cutshort)\s*$/i, "")
+    .replace(/\s*[|–—-]\s*(LinkedIn|Glassdoor|Internshala|Indeed|Wellfound|Unstop|Foundit|Cutshort|Naukri)\s*$/i, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 300);
@@ -96,7 +116,7 @@ function inferCompanyAndTitle(result: BraveSearchResult, platformId: string, pla
 }
 
 function inferLocation(text: string) {
-  const matches = text.match(/\b(Remote|India|Bengaluru|Bangalore|Chennai|Hyderabad|Noida|Gurugram|Gurgaon|Mumbai|Delhi|Pune|Kolkata|Jammu)\b/gi) ?? [];
+  const matches = text.match(/\b(Remote|India|Bengaluru|Bangalore|Chennai|Hyderabad|Noida|Gurugram|Gurgaon|Mumbai|Delhi|New Delhi|Pune|Kolkata|Jammu|Ahmedabad|Jaipur|Chandigarh|Kochi|Cochin|Coimbatore|Indore|Bhubaneswar|Gurugram|Goa|Lucknow|Surat|Vadodara)\b/gi) ?? [];
   return [...new Set(matches.map((item) => item[0].toUpperCase() + item.slice(1).toLowerCase()))].slice(0, 3).join(" / ");
 }
 
@@ -153,6 +173,6 @@ export async function discoverSearchIndexInternships(environment: NodeJS.Process
     }
   });
 
-  const deduped = [...new Map(leads.map((lead) => [lead.canonicalUrl, lead])).values()].slice(0, 100);
+  const deduped = [...new Map(leads.map((lead) => [lead.canonicalUrl, lead])).values()].slice(0, 120);
   return { enabled: true, leads: deduped, failures };
 }
