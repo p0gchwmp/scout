@@ -1,6 +1,7 @@
-import { GreenhouseAdapter, LeverAdapter } from "../lib/adapters.ts";
+import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
 import type { BraveSearchResult } from "../lib/scout/brave-search.ts";
 import { snapshotHash } from "../lib/scout/sync.ts";
+import type { AtsProvider } from "../lib/scout/types.ts";
 import { resolveOfficialCompanyDomain } from "./company-domain-resolution.ts";
 import { createAgentSearchProvider } from "./search-runtime.ts";
 
@@ -8,6 +9,8 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   serverDerivedQueriesOnly: true,
   greenhouse: true,
   lever: true,
+  ashby: true,
+  workable: true,
   refetchOfficialAts: true,
   resolveCompanyDomainFromConvergingEvidence: true,
   searchPersistenceGateRequired: true,
@@ -28,7 +31,7 @@ type DomainResolution = Awaited<ReturnType<typeof resolveOfficialCompanyDomain>>
 
 type ResolutionDependencies = {
   searchProvider?: SearchProvider | null;
-  discover?: (provider: "greenhouse" | "lever", slug: string) => Promise<ObservedJob[]>;
+  discover?: (provider: AtsProvider, slug: string) => Promise<ObservedJob[]>;
   resolveCompanyDomain?: (company: string, searchProvider: SearchProvider) => Promise<DomainResolution>;
 };
 
@@ -53,14 +56,20 @@ function tokenOverlap(expected: string[], observed: string[]) {
 function parseSupportedAtsUrl(value: string) {
   let url: URL;
   try { url = new URL(value); } catch { return null; }
-  if (url.protocol !== "https:" || url.username || url.password) return null;
+  if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
   const host = url.hostname.toLowerCase();
   const parts = url.pathname.split("/").filter(Boolean);
-  if ((host === "job-boards.greenhouse.io" || host === "boards.greenhouse.io") && parts.length >= 3 && parts[1] === "jobs") {
-    return { provider: "greenhouse" as const, slug: parts[0], externalId: parts[2], url: `${url.origin}/${parts[0]}/jobs/${parts[2]}` };
+  if ((host === "job-boards.greenhouse.io" || host === "boards.greenhouse.io") && parts.length === 3 && parts[1] === "jobs") {
+    return { provider: "greenhouse" as const, slug: parts[0], externalId: parts[2] };
   }
-  if (host === "jobs.lever.co" && parts.length >= 2) {
-    return { provider: "lever" as const, slug: parts[0], externalId: parts[1], url: `${url.origin}/${parts[0]}/${parts[1]}` };
+  if (host === "jobs.lever.co" && parts.length === 2) {
+    return { provider: "lever" as const, slug: parts[0], externalId: parts[1] };
+  }
+  if (host === "jobs.ashbyhq.com" && parts.length === 2) {
+    return { provider: "ashby" as const, slug: parts[0], externalId: parts[1] };
+  }
+  if (host === "apply.workable.com" && parts.length === 3 && parts[1] === "j") {
+    return { provider: "workable" as const, slug: parts[0], externalId: parts[2] };
   }
   return null;
 }
@@ -78,10 +87,13 @@ function roleEvidenceMatches(expectedTitle: string, observedTitle: string) {
   return tokenOverlap(expected, observed) >= 0.5;
 }
 
-async function defaultDiscover(provider: "greenhouse" | "lever", slug: string) {
-  return provider === "greenhouse"
-    ? new GreenhouseAdapter().discover(slug)
-    : new LeverAdapter().discover(slug);
+async function defaultDiscover(provider: AtsProvider, slug: string) {
+  switch (provider) {
+    case "greenhouse": return new GreenhouseAdapter().discover(slug);
+    case "lever": return new LeverAdapter().discover(slug);
+    case "ashby": return new AshbyAdapter().discover(slug);
+    case "workable": return new WorkablePublicAdapter().discover(slug);
+  }
 }
 
 function searchQueries(company: string, title: string) {
@@ -91,7 +103,18 @@ function searchQueries(company: string, title: string) {
   return [
     `"${safeCompany}" "${safeTitle}" site:job-boards.greenhouse.io`,
     `"${safeCompany}" "${safeTitle}" site:jobs.lever.co`,
+    `"${safeCompany}" "${safeTitle}" site:jobs.ashbyhq.com`,
+    `"${safeCompany}" "${safeTitle}" site:apply.workable.com`,
   ];
+}
+
+function atsCareersUrl(provider: AtsProvider, slug: string) {
+  switch (provider) {
+    case "greenhouse": return `https://job-boards.greenhouse.io/${slug}`;
+    case "lever": return `https://jobs.lever.co/${slug}`;
+    case "ashby": return `https://jobs.ashbyhq.com/${slug}`;
+    case "workable": return `https://apply.workable.com/${slug}/`;
+  }
 }
 
 export async function resolveSearchLeadToOfficialAts(input: {
@@ -107,7 +130,7 @@ export async function resolveSearchLeadToOfficialAts(input: {
   const discover = dependencies.discover ?? defaultDiscover;
   const resolveCompanyDomain = dependencies.resolveCompanyDomain ?? resolveOfficialCompanyDomain;
   const queries = searchQueries(input.company, input.title);
-  const results = (await Promise.all(queries.map((query) => provider.searchFixedQuery(query)))).flat().slice(0, 40);
+  const results = (await Promise.all(queries.map((query) => provider.searchFixedQuery(query)))).flat().slice(0, 80);
 
   for (const result of results) {
     const parsed = parseSupportedAtsUrl(result.url);
@@ -140,9 +163,6 @@ export async function resolveSearchLeadToOfficialAts(input: {
     catch {
       // ATS resolution is still useful when domain evidence is unavailable. Contact research remains disabled.
     }
-    const atsCareersUrl = parsed.provider === "greenhouse"
-      ? `https://job-boards.greenhouse.io/${parsed.slug}`
-      : `https://jobs.lever.co/${parsed.slug}`;
 
     return {
       source: {
@@ -151,7 +171,7 @@ export async function resolveSearchLeadToOfficialAts(input: {
         companyName: snapshot.company,
         boardToken: parsed.slug,
         companyDomain: companyDomain?.domain ?? "unresolved.invalid",
-        careersUrl: companyDomain?.careersUrl ?? atsCareersUrl,
+        careersUrl: companyDomain?.careersUrl ?? atsCareersUrl(parsed.provider, parsed.slug),
         enabled: true as const,
       },
       snapshot,
@@ -167,5 +187,5 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
   }
 
-  throw new Error("No sufficiently matched official Greenhouse or Lever posting was found for this lead");
+  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, or Workable posting was found for this lead");
 }
