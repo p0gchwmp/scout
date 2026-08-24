@@ -169,8 +169,7 @@ function searchQueries(company: string, title: string) {
     `"${safeCompany}" "${safeTitle}" site:apply.workable.com`,
     `"${safeCompany}" "${safeTitle}" site:jobs.smartrecruiters.com`,
     `"${safeCompany}" "${safeTitle}" site:myworkdayjobs.com OR site:myworkdaysite.com`,
-    `"${safeCompany}" "${safeTitle}" site:bamboohr.com/careers`,
-    `"${safeCompany}" "${safeTitle}" site:recruitee.com/o/`,
+    `"${safeCompany}" "${safeTitle}" (site:bamboohr.com/careers OR site:recruitee.com/o/)`,
   ];
 }
 
