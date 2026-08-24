@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
+import { buildAiOutreachEnvelope, type PublishedContactCandidate } from "../lib/scout/ai-agent.ts";
 import { AGENT_EXECUTION_CAPABILITIES, planAgentTasks } from "../lib/scout/agent-task-planner.ts";
 import { AGENT_SERVICE_CAPABILITIES, InMemoryAgentReplayGuard, verifyAgentServiceRequest } from "../lib/scout/agent-service-auth.ts";
 import { resolveControlledLead } from "../lib/scout/lead-resolution.ts";
+import { createAgentAiProvider } from "./ai-runtime.ts";
 import { runAgentDiscovery } from "./discovery.ts";
 import { researchPublishedCompanyContacts } from "./contact-research.ts";
 
@@ -42,6 +44,11 @@ async function readBody(request: import("node:http").IncomingMessage) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function object(value: unknown, field: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${field} must be an object`);
+  return value as Record<string, unknown>;
+}
+
 const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/health") {
@@ -52,7 +59,7 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    const allowedPaths = ["/v1/plan", "/v1/discover", "/v1/resolve", "/v1/research-contacts"];
+    const allowedPaths = ["/v1/plan", "/v1/discover", "/v1/resolve", "/v1/research-contacts", "/v1/classify-contacts", "/v1/draft-outreach"];
     if (request.method !== "POST" || !allowedPaths.includes(request.url ?? "")) return json(response, 404, { error: "Not found" });
     const rawBody = await readBody(request);
     const verified = await verifyAgentServiceRequest(toWebRequest(request, rawBody), secret);
@@ -62,7 +69,11 @@ const server = createServer(async (request, response) => {
         ? "discover_internships"
         : request.url === "/v1/resolve"
           ? "resolve_job"
-          : "research_contacts";
+          : request.url === "/v1/research-contacts"
+            ? "research_contacts"
+            : request.url === "/v1/classify-contacts"
+              ? "classify_contacts"
+              : "draft_outreach";
     if (verified.auth.operation !== expectedOperation) return json(response, 409, { error: "Signed operation does not match this endpoint" });
     if (!replayGuard.accept(verified.auth)) return json(response, 409, { error: "Duplicate or replayed agent task" });
 
@@ -104,6 +115,65 @@ const server = createServer(async (request, response) => {
       }
       const research = await researchPublishedCompanyContacts({ companyDomain: raw.companyDomain, jobSnapshotId: raw.jobSnapshotId });
       return json(response, 200, { taskId: verified.auth.taskId, idempotencyKey: verified.auth.idempotencyKey, ...research });
+    }
+
+    if (request.url === "/v1/classify-contacts") {
+      const raw = payload as Record<string, unknown>;
+      if (!Array.isArray(raw.candidates) || raw.candidates.length < 1 || raw.candidates.length > 50 || Object.keys(raw).some((key) => key !== "candidates")) {
+        return json(response, 400, { error: "Classify contacts accepts only 1-50 published contact candidates" });
+      }
+      const candidates = raw.candidates.map((candidate, index) => {
+        const item = object(candidate, `Candidate ${index + 1}`);
+        return {
+          id: String(item.id ?? ""),
+          email: String(item.email ?? ""),
+          sourceUrl: String(item.sourceUrl ?? ""),
+          excerpt: String(item.excerpt ?? ""),
+          sourceType: String(item.sourceType ?? ""),
+        } as PublishedContactCandidate;
+      });
+      const classifications = await createAgentAiProvider().classifyPublishedContacts(candidates);
+      return json(response, 200, {
+        taskId: verified.auth.taskId,
+        idempotencyKey: verified.auth.idempotencyKey,
+        schemaVersion: 1,
+        model: process.env.SCOUT_AI_MODEL ?? "",
+        classifications,
+      });
+    }
+
+    if (request.url === "/v1/draft-outreach") {
+      const raw = payload as Record<string, unknown>;
+      const contact = object(raw.contact, "Contact");
+      if (!Array.isArray(raw.claims)) return json(response, 400, { error: "Approved claims are required" });
+      const claims = raw.claims.map((claim, index) => {
+        const item = object(claim, `Claim ${index + 1}`);
+        return { id: String(item.id ?? ""), statement: String(item.statement ?? ""), status: item.status as "approved" };
+      });
+      const envelope = buildAiOutreachEnvelope({
+        jobSnapshotId: String(raw.jobSnapshotId ?? ""),
+        companyName: String(raw.companyName ?? ""),
+        roleTitle: String(raw.roleTitle ?? ""),
+        candidateName: String(raw.candidateName ?? ""),
+        contact: {
+          id: String(contact.id ?? ""),
+          email: String(contact.email ?? ""),
+          sourceUrl: String(contact.sourceUrl ?? ""),
+          excerpt: String(contact.excerpt ?? ""),
+          reviewState: contact.reviewState as "accepted",
+        },
+        claims,
+      });
+      const draft = await createAgentAiProvider().draftOutreach(envelope);
+      return json(response, 200, {
+        taskId: verified.auth.taskId,
+        idempotencyKey: verified.auth.idempotencyKey,
+        schemaVersion: 1,
+        model: process.env.SCOUT_AI_MODEL ?? "",
+        jobSnapshotId: envelope.jobSnapshotId,
+        contactId: envelope.contact.id,
+        ...draft,
+      });
     }
 
     const raw = payload as Record<string, unknown>;
