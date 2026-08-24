@@ -50,6 +50,21 @@ test("search lead resolution re-fetches a matched Greenhouse posting before retu
   assert.equal(result.resolutionEvidence.companyDomainResolved, false);
 });
 
+test("search lead resolution fails closed before using search evidence when persistence is disabled", async () => {
+  let searches = 0;
+  await assert.rejects(() => resolveSearchLeadToOfficialAts({
+    leadUrl: "https://www.linkedin.com/jobs/view/123",
+    company: "Acme Labs",
+    title: "Product Intern",
+  }, {
+    searchProvider: {
+      allowResultPersistence: false,
+      async searchFixedQuery() { searches += 1; return []; },
+    },
+  }), /cannot be persisted until search result persistence is explicitly allowed/);
+  assert.equal(searches, 0);
+});
+
 test("search lead resolution carries a verified company domain into the registered source", async () => {
   const result = await resolveSearchLeadToOfficialAts({
     leadUrl: "https://www.glassdoor.co.in/job-listing/acme-product-intern",
@@ -160,6 +175,7 @@ test("official search resolution cannot fetch arbitrary result pages or submit",
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.serverDerivedQueriesOnly, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.refetchOfficialAts, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.resolveCompanyDomainFromConvergingEvidence, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.searchPersistenceGateRequired, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.arbitraryResultPageFetch, false);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.linkedinScrape, false);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.companyDomainGuessing, false);
