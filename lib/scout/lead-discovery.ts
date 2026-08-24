@@ -1,5 +1,6 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
+import { BreezyOfficialPageAdapter } from "../breezy-adapter.ts";
 import { RecruiteePublicCareersAdapter } from "../recruitee-adapter.ts";
 import { TeamtailorOfficialPageAdapter } from "../teamtailor-adapter.ts";
 import type { NormalizedJob } from "../types.ts";
@@ -65,6 +66,7 @@ async function discoverSource(source: DiscoverySource): Promise<NormalizedJob[]>
     case "bamboohr": return new BambooHrPublicCareersAdapter().discover(source.slug);
     case "recruitee": return new RecruiteePublicCareersAdapter().discover(source.slug);
     case "teamtailor": return new TeamtailorOfficialPageAdapter().discover(source.slug);
+    case "breezy": return new BreezyOfficialPageAdapter().discover(source.slug);
   }
 }
 
