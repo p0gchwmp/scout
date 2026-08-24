@@ -90,6 +90,7 @@ export const contactEvidence = sqliteTable("contact_evidence", {
   email: text("email").notNull(),
   sourceUrl: text("source_url").notNull(),
   excerpt: text("excerpt").notNull(),
+  sourceType: text("source_type").$type<"official_job_posting" | "official_careers" | "official_contact" | "official_company" | "official_team" | "official_event" | "official_press">().notNull().default("official_job_posting"),
   extractedAt: text("extracted_at").notNull(),
   suitability: text("suitability").$type<"high" | "review">().notNull(),
   suitabilityReason: text("suitability_reason").notNull(),
