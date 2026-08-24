@@ -25,7 +25,7 @@ type Job = {
 
 type Source = {
   id: string;
-  provider: "greenhouse";
+  provider: "greenhouse" | "lever" | "ashby" | "workable";
   companyName: string;
   companyDomain: string;
   careersUrl: string | null;
@@ -180,287 +180,130 @@ export function Dashboard() {
   async function updateJob(id: string, state: "shortlisted" | "saved" | "rejected") {
     setBusy(id);
     try {
-      const response = await fetch("/api/jobs", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, state }),
-      });
-      const payload = await response.json() as { job?: Job; error?: string };
-      if (!response.ok || !payload.job) throw new Error(payload.error ?? "Update failed");
-      setJobs((items) => items.map((job) => job.id === id ? payload.job! : job));
-      setNotice(`Job marked ${state}. No application or message was sent.`);
+      const response = await fetch("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, state }) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Job update failed");
+      await loadData();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Update failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function extractContacts(job: Job) {
-    setBusy(job.id);
-    try {
-      const response = await fetch("/api/contacts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jobId: job.id }),
-      });
-      const payload = await response.json() as { contacts?: unknown[]; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Extraction failed");
-      setNotice(`${payload.contacts?.length ?? 0} published business contact record(s) stored with provenance. Nothing was sent.`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Extraction failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function prepareApplication(job: Job) {
-    setBusy(`apply-${job.id}`); setError("");
-    try {
-      const response = await fetch("/api/applications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: job.id }) });
-      const payload = await response.json() as { application?: PreparedApplication; error?: string };
-      if (!response.ok || !payload.application) throw new Error(payload.error ?? "Unable to prepare application");
-      setNotice(payload.application.status === "ready_for_review" ? "Application packet prepared and ready for review. Nothing was submitted." : `Application packet prepared with ${payload.application.blockers.length} blocker(s). Nothing was submitted.`);
-      await loadData(); setActiveTab("Apply");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to prepare application"); } finally { setBusy(null); }
+      setError(caught instanceof Error ? caught.message : "Job update failed");
+    } finally { setBusy(null); }
   }
 
   async function saveProfileField() {
-    if (!newProfile.claim.trim() || !newProfile.evidence.trim()) { setError("Profile value and evidence are required."); return; }
-    setBusy("profile-save"); setError("");
+    setBusy("profile:new");
+    setError(""); setNotice("");
     try {
-      const response = await fetch("/api/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(newProfile) });
-      const payload = await response.json() as { field?: ProfileField; error?: string };
-      if (!response.ok || !payload.field) throw new Error(payload.error ?? "Unable to save profile field");
-      setNewProfile((value) => ({ ...value, claim: "", evidence: "" })); await loadData(); setNotice("Application profile field saved as unverified. Review and verify it before Scout reuses it.");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to save profile field"); } finally { setBusy(null); }
-  }
-
-  async function reviewProfileField(field: ProfileField, action: "verify" | "unverify") {
-    setBusy(`profile-${field.id}`); setError("");
-    try {
-      const response = await fetch("/api/profile", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: field.id, action }) });
-      const payload = await response.json() as { field?: ProfileField; error?: string };
-      if (!response.ok || !payload.field) throw new Error(payload.error ?? "Unable to review profile field");
-      await loadData(); setNotice(action === "verify" ? "Profile field verified for safe repeated form preparation." : "Profile field unverified; Scout will stop reusing it.");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to review profile field"); } finally { setBusy(null); }
-  }
-
-  async function reviewContact(contact: ContactEvidence, reviewState: ContactEvidence["reviewState"]) {
-    setBusy(`contact-${contact.id}`); setError("");
-    try {
-      const response = await fetch("/api/contacts", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: contact.id, reviewState }) });
-      const payload = await response.json() as { contact?: ContactEvidence; error?: string };
-      if (!response.ok || !payload.contact) throw new Error(payload.error ?? "Unable to review contact");
-      await loadData(); setNotice(`Contact marked ${reviewState}. Nothing was sent.`);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to review contact"); } finally { setBusy(null); }
-  }
-
-  async function createOutreachDraft(contact: ContactEvidence) {
-    const job = jobs.find((item) => item.id === contact.jobId);
-    const candidateName = profileFields.find((field) => field.kind === "full_name" && field.verified)?.claim;
-    if (!job || !candidateName) { setError("A verified full_name profile field and matching job are required before drafting outreach."); return; }
-    const alignment = alignmentByJobId.get(job.id);
-    const claimIds = [...new Set(alignment?.supportingClaims.flatMap((support) => support.claimIds) ?? [])].slice(0, 3);
-    if (!claimIds.length) { setError("No approved role-relevant claim IDs are available for this outreach draft."); return; }
-    setBusy(`draft-${contact.id}`); setError("");
-    try {
-      const response = await fetch("/api/outreach", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: job.id, contactId: contact.id, claimIds, candidateName }) });
+      const response = await fetch("/api/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "upsert", ...newProfile }) });
       const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to create outreach draft");
-      await loadData(); setNotice("Customized outreach draft created from the current job snapshot, accepted contact and exact approved claim IDs. Nothing was sent.");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to create outreach draft"); } finally { setBusy(null); }
+      if (!response.ok) throw new Error(payload.error ?? "Profile field save failed");
+      setNewProfile({ kind: "full_name", claim: "", evidence: "" });
+      setNotice("Profile evidence saved unverified. Verify it before Scout reuses it in application packets.");
+      await loadData();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Profile field save failed"); }
+    finally { setBusy(null); }
   }
 
-  async function createClaim() {
-    const statement = newClaim.statement.trim();
-    const evidence = newClaim.evidence.trim();
-    if (!statement || !evidence) {
-      setError("Claim statement and evidence are required.");
-      return;
-    }
-
-    setBusy("new-claim");
-    setError("");
+  async function verifyProfileField(id: string, verified: boolean) {
+    setBusy(`profile:${id}`);
     try {
-      const response = await fetch("/api/claims", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ statement, evidence }),
-      });
-      const payload = await response.json() as { claim?: ResumeClaim; error?: string };
-      if (!response.ok || !payload.claim) throw new Error(payload.error ?? "Unable to create claim");
-      setClaims((items) => [payload.claim!, ...items]);
-      setClaimEdits((items) => ({ ...items, [payload.claim!.id]: { statement: payload.claim!.statement, evidence: payload.claim!.evidence } }));
-      setNewClaim({ statement: "", evidence: "" });
-      setNotice("Draft claim created. It will not affect resume alignment or outreach until you approve it.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to create claim");
-    } finally {
-      setBusy(null);
-    }
+      const response = await fetch("/api/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "verify", id, verified }) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Profile verification failed");
+      await loadData();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Profile verification failed"); }
+    finally { setBusy(null); }
   }
 
-  async function mutateClaim(claim: ResumeClaim, action: "edit" | "approve" | "reject") {
-    const busyKey = `claim-${claim.id}-${action}`;
-    const edit = claimEdits[claim.id] ?? { statement: claim.statement, evidence: claim.evidence };
-    setBusy(busyKey);
-    setError("");
+  async function prepareApplication(jobId: string) {
+    setBusy(`apply:${jobId}`); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/claims", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(action === "edit"
-          ? { id: claim.id, action, expectedVersion: claim.version, statement: edit.statement, evidence: edit.evidence }
-          : { id: claim.id, action, expectedVersion: claim.version }),
-      });
-      const payload = await response.json() as { claim?: ResumeClaim; error?: string };
-      if (response.status === 409) {
-        await loadData();
-        setError("That claim changed before this action completed. Scout refreshed the latest version; review it before retrying.");
-        return;
-      }
-      if (!response.ok || !payload.claim) throw new Error(payload.error ?? "Unable to update claim");
-
-      setClaims((items) => items.map((item) => item.id === claim.id ? payload.claim! : item));
-      if (payload.claim.status === "draft") {
-        setClaimEdits((items) => ({ ...items, [claim.id]: { statement: payload.claim!.statement, evidence: payload.claim!.evidence } }));
-      } else {
-        setClaimEdits((items) => {
-          const next = { ...items };
-          delete next[claim.id];
-          return next;
-        });
-      }
-      setNotice(action === "edit"
-        ? `Draft claim saved as version ${payload.claim.version}.`
-        : `Claim ${action === "approve" ? "approved" : "rejected"}. ${action === "approve" ? "The approved version can now support resume alignment and drafts." : "Rejected claims are ignored by resume alignment."}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to update claim");
-    } finally {
-      setBusy(null);
-    }
+      const response = await fetch("/api/applications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "prepare", jobId }) });
+      const payload = await response.json() as { application?: { status: string }; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Application preparation failed");
+      setNotice(`Application packet ${payload.application?.status === "ready_for_review" ? "is ready for your review" : "was prepared but still needs your input"}. No submission was attempted.`);
+      await loadData();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Application preparation failed"); }
+    finally { setBusy(null); }
   }
 
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="Scout home"><span className="brand-mark">S</span><span>Scout</span></a>
-        <nav className="main-nav" aria-label="Primary navigation">
-          {tabs.map((tab) => <button key={tab} className={activeTab === tab ? "nav-active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}
-        </nav>
-        <div className="header-actions"><a className="details-link" href="/inbox">Internship Inbox</a><span className="sync-dot"><i /> Persisted D1 data</span><button className="avatar" aria-label="Local MVP">MVP</button></div>
-      </header>
+  async function refreshApplication(applicationId: string) {
+    setBusy(`application:${applicationId}`); setError(""); setNotice("");
+    try {
+      const application = applications.find((item) => item.id === applicationId);
+      if (!application) throw new Error("Application not found");
+      const response = await fetch("/api/applications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "refresh", id: applicationId, expectedVersion: application.artifactVersion }) });
+      const payload = await response.json() as { application?: { status: string }; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Application refresh failed");
+      setNotice(`Application packet refreshed (${payload.application?.status ?? "unknown"}). No application was submitted.`);
+      await loadData();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Application refresh failed"); }
+    finally { setBusy(null); }
+  }
 
-      <main id="top">
-        <section className="hero">
-          <div>
-            <p className="eyebrow">CONTROLLED DISCOVERY · {hasResumeLens ? "APPROVED RESUME LENS" : "PROVENANCE FIRST"}</p>
-            <h1>{hasResumeLens ? <>Resume evidence,<br /><em>without invented fit.</em></> : <>Observed openings,<br /><em>not personalized rankings.</em></>}</h1>
-            <p className="hero-copy">{hasResumeLens ? <>Scout compares posting text only with approved resume claims, shows the exact claim IDs behind each evidence theme and calls out unsupported requirements. Alignment is not proof of eligibility. <strong>It cannot send messages or apply.</strong></> : <>Scout currently reads only registered Greenhouse boards and keeps immutable job snapshots. Jobs remain explicitly unranked until approved resume claims are configured. <strong>It cannot send messages or apply.</strong></>}</p>
-          </div>
-          <div className="hero-stats" aria-label="Current persisted summary">
-            <div><span>{jobs.filter((job) => job.lifecycleState === "active").length}</span><p>active jobs</p></div>
-            <div><span>{sources.filter((source) => source.enabled).length}</span><p>enabled sources</p></div>
-            <div><span>{hasResumeLens ? approvedClaims.length : runs.filter((run) => run.status === "completed").length}</span><p>{hasResumeLens ? "approved claims" : "recent syncs"}</p></div>
-          </div>
-        </section>
+  async function reviewContact(contactId: string, reviewState: "accepted" | "rejected") {
+    setBusy(`contact:${contactId}`); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/contacts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: contactId, reviewState }) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Contact review failed");
+      setNotice(reviewState === "accepted" ? "Contact evidence accepted for drafting. Nothing was sent." : "Contact evidence rejected and cannot be used for outreach.");
+      await loadData();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Contact review failed"); }
+    finally { setBusy(null); }
+  }
 
-        {notice && <div className="notice" role="status"><span>✓</span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notification">×</button></div>}
-        {error && <div className="notice error-notice" role="alert"><span>!</span>{error}<button onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
+  async function generateDraft(jobId: string, contactId: string) {
+    const alignment = alignmentByJobId.get(jobId);
+    const claimIds = [...new Set((alignment?.supportingClaims ?? []).flatMap((support) => support.claimIds))];
+    setBusy(`draft:${jobId}`); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/outreach", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "generate", jobId, contactId, claimIds }) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Draft generation failed");
+      setNotice("Customized outreach draft created from the current job snapshot, accepted contact evidence, and exact approved role-relevant claims. Nothing was sent.");
+      await loadData();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Draft generation failed"); }
+    finally { setBusy(null); }
+  }
 
-        {activeTab === "Jobs" && <>
-          <section className="control-strip" aria-label="Job filters"><div className="filters">{["Active", "Saved", "Closed", "All"].map((item) => <button key={item} className={filter === item ? "filter-active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div><div className="batch-actions"><span>{visibleJobs.length} persisted result(s)</span></div></section>
-          <section className="queue-heading"><div><p className="section-kicker">CURRENT DATABASE</p><h2>{hasResumeLens ? "Resume-aware shortlist" : "Discovered jobs"}</h2></div><p>{hasResumeLens ? "Evidence overlap · exact claim IDs · explicit gaps" : "Composite source identity · versioned snapshots · lifecycle tracking"}</p></section>
-          <section className="job-list" aria-label="Persisted jobs">
-            {loading && <div className="empty-state">Loading persisted jobs…</div>}
-            {!loading && !visibleJobs.length && <div className="empty-state">No jobs match this view. Register a Greenhouse source in D1, then sync it from the Sources tab.</div>}
-            {visibleJobs.map((job) => {
-              const alignment = alignmentByJobId.get(job.id)!;
-              return <article className="job-card" key={job.id}>
-                <div className="company-logo">{job.company.slice(0, 2).toUpperCase()}</div>
-                <div className="job-main">
-                  <div className="job-title-row"><div><p className="company-name">{job.company}</p><h3>{job.title}</h3></div><span className={`sync-dot alignment-${alignment.band}`}>{alignment.label}</span></div>
-                  <p className="job-meta"><span>⌖</span>{job.location || "Location unspecified"}<b>·</b>{job.workplaceType}<b>·</b>{job.source}<b>·</b>{job.lifecycleState}</p>
-                  <div className="reason-row">{hasResumeLens ? <>
-                    {alignment.supportingClaims.map((support) => <span className="reason" key={support.theme}>✓ {support.theme}<small>Claims: {support.claimIds.join(", ")}</small></span>)}
-                    {alignment.gaps.map((risk) => <span className="risk" key={risk}>! {risk}</span>)}
-                    <span className="alignment-basis">Based on {alignment.basis}</span>
-                  </> : <>
-                    {job.scoreExplanation.map((reason) => <span className="reason" key={reason}>✓ {reason}</span>)}
-                    {job.eligibilityRisks.map((risk) => <span className="risk" key={risk}>! {risk}</span>)}
-                  </>}</div>
-                  {hasResumeLens && <p className="alignment-caveat">Not checked: {alignment.notChecked.join(" · ")}. Review the official posting before treating alignment as eligibility.</p>}
-                </div>
-                <div className="card-actions"><button className="primary-action" disabled={busy === `apply-${job.id}` || !job.currentSnapshotId} onClick={() => void prepareApplication(job)}>Prepare application</button><button className="ghost-action" disabled={busy === job.id || !job.currentSnapshotId} onClick={() => void extractContacts(job)}>Extract contacts</button><button className="ghost-action" disabled={busy === job.id} onClick={() => void updateJob(job.id, job.state === "saved" ? "shortlisted" : "saved")}>{job.state === "saved" ? "Unsave" : "Save"}</button><button className="ghost-action" disabled={busy === job.id} onClick={() => void updateJob(job.id, "rejected")}>Reject</button><a className="details-link" href={job.canonicalUrl} target="_blank" rel="noreferrer">Stored official URL ↗</a></div>
-              </article>;
-            })}
-          </section>
-        </>}
+  if (loading) return <main className="dashboard"><p>Loading Scout…</p></main>;
 
-        {activeTab === "Apply" && <>
-          <section className="queue-heading"><div><p className="section-kicker">APPLICATION PREP QUEUE</p><h2>Prepare once, reuse safely</h2></div><p>{applications.length} prepared packet(s) · no submission worker enabled</p></section>
-          <section className="source-list">
-            {!applications.length && <div className="empty-state">No application packets yet. Use “Prepare application” on a job. Scout will classify the site, reuse only verified profile fields and pin approved claim IDs.</div>}
-            {applications.map((application) => { const packet = application.submittedFields as { channel?: { label?: string; automation?: string; note?: string }; claimIds?: string[]; safeFields?: Record<string, string>; alwaysConfirmPerApplication?: string[]; applicationUrl?: string }; return <article className="source-card" key={application.id}><div><p className="company-name">{packet.channel?.label ?? "Application"} · {application.status}</p><h3>{application.job?.company} — {application.job?.title}</h3><p>{packet.channel?.note}</p><small>Packet v{application.artifactVersion} · {Object.keys(packet.safeFields ?? {}).length} verified reusable field(s) · Claims: {(packet.claimIds ?? []).join(", ") || "none"}</small>{application.blockers.length > 0 && <div className="reason-row">{application.blockers.map((blocker) => <span className="risk" key={blocker}>! {blocker}</span>)}</div>}<p className="alignment-caveat">Per-application confirmation remains required for: {(packet.alwaysConfirmPerApplication ?? []).join(" · ")}</p></div><div className="card-actions"><button className="primary-action" disabled={!application.job || busy === `apply-${application.jobId}`} onClick={() => application.job && void prepareApplication(application.job)}>Refresh packet</button><a className="details-link" href={packet.applicationUrl ?? application.job?.canonicalUrl ?? "#"} target="_blank" rel="noreferrer">Open application ↗</a></div></article>; })}
-          </section>
-        </>}
+  return <main className="dashboard">
+    <header className="hero">
+      <div><p className="eyebrow">SCOUT · PRIVATE INTERNSHIP COPILOT</p><h1>Review evidence. Decide what moves.</h1><p>Discovery, provenance, resume alignment, application prep, and outreach drafts in one owner-only workspace.</p><p><a href="/inbox">Internship Inbox →</a> · <a href="/review">Review Queue →</a> · <a href="/assist">Safe Fill →</a> · <a href="/voice">Writing voice →</a></p></div>
+      <aside><strong>Hard boundary</strong><span>Scout prepares. It does not submit applications or send email.</span></aside>
+    </header>
 
-        {activeTab === "Profile" && <>
-          <section className="queue-heading"><div><p className="section-kicker">REUSABLE APPLICATION PROFILE</p><h2>Verified autofill facts</h2></div><p>{profileFields.filter((field) => field.verified).length} verified field(s)</p></section>
-          <section className="claim-composer"><div><p className="section-kicker">ADD / UPDATE</p><h3>Save a reusable application field</h3><p>New or edited values are unverified until you explicitly verify them. Verified fields must be unverified before editing.</p></div><label>Field<select value={newProfile.kind} onChange={(event) => setNewProfile((value) => ({ ...value, kind: event.target.value }))}>{profileOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label><label>Value<textarea value={newProfile.claim} onChange={(event) => setNewProfile((value) => ({ ...value, claim: event.target.value }))} placeholder="Exact value Scout may reuse" /></label><label>Evidence / source<textarea value={newProfile.evidence} onChange={(event) => setNewProfile((value) => ({ ...value, evidence: event.target.value }))} placeholder="Where this value came from or how you verified it" /></label><button className="primary-action" disabled={busy === "profile-save"} onClick={() => void saveProfileField()}>Save unverified</button></section>
-          <section className="claim-list">{profileFields.map((field) => <article className={`claim-card ${field.verified ? "claim-approved" : "claim-draft"}`} key={field.id}><div className="claim-card-head"><div><span className={`claim-status ${field.verified ? "status-approved" : "status-draft"}`}>{field.verified ? "verified" : "unverified"}</span><code className="claim-id">{field.kind}</code></div></div><div className="claim-readonly"><span>Value</span><p>{field.claim}</p></div><div className="claim-readonly"><span>Evidence</span><p>{field.evidence}</p></div><div className="claim-actions"><button className={field.verified ? "danger-action" : "primary-action"} disabled={busy === `profile-${field.id}`} onClick={() => void reviewProfileField(field, field.verified ? "unverify" : "verify")}>{field.verified ? "Unverify to edit" : "Verify for reuse"}</button></div></article>)}</section>
-        </>}
+    {error && <div className="alert error">{error}</div>}
+    {notice && <div className="alert success">{notice}</div>}
 
-        {activeTab === "Outreach" && <>
-          <section className="queue-heading"><div><p className="section-kicker">PROVENANCE + CUSTOM DRAFTING</p><h2>Recruiter outreach</h2></div><p>{contacts.filter((contact) => contact.reviewState === "accepted").length} accepted contact(s) · {drafts.length} draft record(s)</p></section>
-          <section className="source-list">
-            {!contacts.length && <div className="empty-state">No public business contacts have been extracted yet. Extract from a stored posting first; broader official contact-page discovery is the next adapter layer.</div>}
-            {contacts.map((contact) => { const job = jobs.find((item) => item.id === contact.jobId); return <article className="source-card" key={contact.id}><div><p className="company-name">{contact.reviewState} · {contact.suitability}</p><h3>{contact.email}</h3><p>{job ? `${job.company} — ${job.title}` : "Pinned job"}</p><p>{contact.excerpt}</p><small>{contact.suitabilityReason}</small><br /><a className="details-link" href={contact.sourceUrl} target="_blank" rel="noreferrer">Exact source ↗</a></div><div className="card-actions"><button className="primary-action" disabled={busy === `contact-${contact.id}`} onClick={() => void reviewContact(contact, "accepted")}>Accept evidence</button><button className="danger-action" disabled={busy === `contact-${contact.id}`} onClick={() => void reviewContact(contact, "rejected")}>Reject</button><button className="ghost-action" disabled={contact.reviewState !== "accepted" || busy === `draft-${contact.id}`} onClick={() => void createOutreachDraft(contact)}>Create custom draft</button></div></article>; })}
-          </section>
-          <section className="source-list outreach-draft-list">{drafts.map((draft) => { const revision = draft.revisions.at(-1); const contact = revision ? contacts.find((item) => item.id === revision.contactId) : undefined; const job = jobs.find((item) => item.id === draft.jobId); return <article className="source-card" key={draft.id}><div><p className="company-name">Draft · {draft.state}</p><h3>{job?.company} — {job?.title}</h3>{revision && <><pre className="draft-preview">{revision.body}</pre><small>Claims: {revision.claimIds.join(", ")} · Snapshot: {revision.jobSnapshotId}</small></>}</div><div className="card-actions">{revision && contact && <a className="primary-action link-button" href={gmailComposeUrl({ to: contact.email, subject: `${job?.title ?? "Internship"} — Ryan Mahajan`, body: revision.body })} target="_blank" rel="noreferrer">Open in Gmail</a>}<span className="alignment-caveat">This pre-fills Gmail only. Review and press Send yourself.</span></div></article>; })}</section>
-        </>}
+    <nav className="tabs">{tabs.map((tab) => <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}</nav>
 
-        {activeTab === "Sources" && <>
-          <section className="queue-heading"><div><p className="section-kicker">CONTROLLED REGISTRY</p><h2>Approved discovery sources</h2></div><p>{sources.filter((source) => source.enabled).length} enabled · Greenhouse only</p></section>
-          <section className="source-list">
-            {!sources.length && <div className="empty-state">No controlled sources are registered yet. Add a reviewed Greenhouse board directly to D1; there is intentionally no public source-creation API.</div>}
-            {sources.map((source) => <article className="source-card" key={source.id}><div><p className="company-name">{source.provider}</p><h3>{source.companyName}</h3><p>{source.companyDomain}</p><small>{source.enabled ? "Enabled" : "Disabled"}</small></div><button className="primary-action" disabled={!source.enabled || busy === source.id} onClick={() => void syncSource(source)}>{busy === source.id ? "Syncing…" : "Sync source"}</button></article>)}
-          </section>
-          <section className="runs"><p className="section-kicker">RECENT RUNS</p>{runs.map((run) => <div className="run-row" key={run.id}><code>{run.id}</code><span>{run.status}</span><span>{run.discoveredCount} observed</span><span>{run.createdCount} new</span><span>{run.updatedCount} changed</span><span>{run.closedCount} closed</span></div>)}</section>
-        </>}
+    {activeTab === "Jobs" && <section>
+      <div className="toolbar"><div className="segmented">{["Active", "Saved", "Closed", "All"].map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div><span>{visibleJobs.length} roles</span></div>
+      {!hasResumeLens && <div className="alert">Resume match is unranked until you approve candidate claims in the Claims tab.</div>}
+      <div className="grid">{visibleJobs.map((job) => {
+        const alignment = alignmentByJobId.get(job.id)!;
+        return <article className="card" key={job.id}>
+          <div className="card-head"><span>{job.source}</span><strong className={`score band ${alignment.band}`}>{alignment.label}</strong></div>
+          <h2>{job.title}</h2><p className="company">{job.company} · {job.location || "Location not specified"} · {job.workplaceType}</p>
+          <p>{job.description.slice(0, 260)}{job.description.length > 260 ? "…" : ""}</p>
+          <div className="chips">{alignment.eligibilityGaps.map((risk) => <span className="chip risk" key={risk}>{risk}</span>)}</div>
+          <div className="match-box"><strong>Resume alignment</strong>{alignment.supportingClaims.length ? alignment.supportingClaims.map((support) => <p key={support.label}>{support.label}: {support.claimIds.join(", ")}</p>) : <p>{alignment.eligibilityGaps.length ? "No approved supporting claims matched this role yet." : "No approved resume claims configured yet."}</p>}</div>
+          {alignment.caveats.length > 0 && <div className="chips">{alignment.caveats.map((item) => <span className="chip" key={item}>{item}</span>)}</div>}
+          <div className="actions"><button disabled={busy === job.id} onClick={() => void updateJob(job.id, "saved")}>Save</button><button disabled={busy === job.id} onClick={() => void updateJob(job.id, "rejected")}>Reject</button><button disabled={busy === `apply:${job.id}` || !job.currentSnapshotId} onClick={() => void prepareApplication(job.id)}>Prepare application</button><a href={job.canonicalUrl} target="_blank" rel="noreferrer">Official posting</a></div>
+        </article>;
+      })}</div>
+    </section>}
 
-        {activeTab === "Claims" && <>
-          <section className="queue-heading claims-heading"><div><p className="section-kicker">CANDIDATE EVIDENCE</p><h2>Claims review</h2></div><p>{claims.filter((claim) => claim.status === "approved").length} approved · {claims.filter((claim) => claim.status === "draft").length} draft · {claims.filter((claim) => claim.status === "rejected").length} rejected</p></section>
-          <section className="claim-composer">
-            <div><p className="section-kicker">NEW CLAIM</p><h3>Create as draft</h3><p>New evidence never affects alignment or outreach until you explicitly approve it.</p></div>
-            <label>Statement<textarea value={newClaim.statement} onChange={(event) => setNewClaim((value) => ({ ...value, statement: event.target.value }))} placeholder="What the resume can honestly claim" /></label>
-            <label>Evidence<textarea value={newClaim.evidence} onChange={(event) => setNewClaim((value) => ({ ...value, evidence: event.target.value }))} placeholder="Source, artifact, or factual basis" /></label>
-            <button className="primary-action" disabled={busy === "new-claim"} onClick={() => void createClaim()}>{busy === "new-claim" ? "Creating…" : "Create draft claim"}</button>
-          </section>
-          <section className="claim-list">
-            {!claims.length && <div className="empty-state">No candidate claims are stored yet. Add evidence as a draft, review the exact wording, then approve the version you want Scout to use.</div>}
-            {claims.map((claim) => {
-              const edit = claimEdits[claim.id] ?? { statement: claim.statement, evidence: claim.evidence };
-              const changed = edit.statement !== claim.statement || edit.evidence !== claim.evidence;
-              return <article className={`claim-card claim-${claim.status}`} key={claim.id}>
-                <div className="claim-card-head"><div><span className={`claim-status status-${claim.status}`}>{claim.status}</span><code className="claim-id">{claim.id}</code></div><span className="claim-version">v{claim.version}</span></div>
-                {claim.status === "draft" ? <>
-                  <label>Statement<textarea value={edit.statement} onChange={(event) => setClaimEdits((items) => ({ ...items, [claim.id]: { ...edit, statement: event.target.value } }))} /></label>
-                  <label>Evidence<textarea value={edit.evidence} onChange={(event) => setClaimEdits((items) => ({ ...items, [claim.id]: { ...edit, evidence: event.target.value } }))} /></label>
-                  <div className="claim-actions"><button className="ghost-action" disabled={!changed || busy?.startsWith(`claim-${claim.id}`)} onClick={() => void mutateClaim(claim, "edit")}>Save draft</button><button className="primary-action" disabled={changed || busy?.startsWith(`claim-${claim.id}`)} title={changed ? "Save draft changes before approving this exact version" : "Approve the persisted reviewed version"} onClick={() => void mutateClaim(claim, "approve")}>Approve v{claim.version}</button><button className="danger-action" disabled={busy?.startsWith(`claim-${claim.id}`)} onClick={() => void mutateClaim(claim, "reject")}>Reject</button></div>
-                  {changed && <p className="alignment-caveat">Unsaved edits are not v{claim.version}. Save them first so approval can pin the reviewed version.</p>}
-                </> : <>
-                  <div className="claim-readonly"><span>Statement</span><p>{claim.statement}</p></div><div className="claim-readonly"><span>Evidence</span><p>{claim.evidence}</p></div><p className="claim-timestamp">{claim.status === "approved" ? `Approved ${formatTimestamp(claim.approvedAt)}` : "Rejected · ignored by alignment and new drafts"}</p>
-                </>}
-              </article>;
-            })}
-          </section>
-        </>}
+    {activeTab === "Apply" && <section><h2>Application action queue</h2><p className="section-intro">Scout prepares a conservative review packet from verified reusable profile fields and approved role-relevant claims. It never submits.</p><div className="grid">{applications.map((application) => <article className="card" key={application.id}><div className="card-head"><span>{String((application.submittedFields as Record<string, unknown>).platformLabel ?? "Application")}</span><strong className={`status ${application.status}`}>{application.status.replace(/_/g, " ")}</strong></div><h3>{application.job?.company} — {application.job?.title}</h3><p>{String((application.submittedFields as Record<string, unknown>).channelNote ?? "")}</p><p><strong>Verified fields:</strong> {Object.keys(((application.submittedFields as Record<string, unknown>).fields ?? {}) as object).join(", ") || "none"}</p><p><strong>Supporting claim IDs:</strong> {(((application.submittedFields as Record<string, unknown>).claimIds ?? []) as string[]).join(", ") || "none"}</p>{application.blockers.length > 0 && <div className="chips">{application.blockers.map((item) => <span className="chip risk" key={item}>{item}</span>)}</div>}<p><strong>Confirm manually:</strong> {(((application.submittedFields as Record<string, unknown>).confirmations ?? []) as string[]).join(" · ")}</p><div className="actions"><button disabled={busy === `application:${application.id}`} onClick={() => void refreshApplication(application.id)}>Refresh packet</button>{application.job?.canonicalUrl && <a href={application.job.canonicalUrl} target="_blank" rel="noreferrer">Open application</a>}</div><small>Artifact version {application.artifactVersion} · submission capability disabled</small></article>)}</div></section>}
 
-        <section className="safety-panel"><div className="safety-icon">◎</div><div><p className="section-kicker">SAFE OUTREACH GATE</p><h2>Scout knows when to stop.</h2><p>Application packets reuse only verified profile fields and approved claims. Contact evidence still requires provenance and explicit acceptance; customized email drafts remain pinned to approved evidence.</p></div><div className="safety-steps"><span className="done">1 <b>Discover</b></span><i /><span className="done">2 <b>Prepare</b></span><i /><span>3 <b>Draft</b></span><i /><span>4 <b>Review</b></span></div></section>
-      </main>
-      <footer><span>SCOUT / INTERNSHIP ACTION QUEUE</span><p>Application preparation + customized Gmail compose. No autonomous submit or send worker enabled.</p><span>MULTI-SITE PREP</span></footer>
-    </div>
-  );
+    {activeTab === "Outreach" && <section><h2>Contact evidence + outreach drafts</h2><p className="section-intro">Accept only published business/recruiting evidence you trust. Drafts are then pinned to that evidence, the current job snapshot, and approved claim IDs.</p><div className="grid">{contacts.map((contact) => <article className="card" key={contact.id}><div className="card-head"><span>{contact.suitability}</span><strong className={`status ${contact.reviewState}`}>{contact.reviewState.replace(/_/g, " ")}</strong></div><h3>{contact.email}</h3><p>{contact.excerpt}</p><a href={contact.sourceUrl} target="_blank" rel="noreferrer">Evidence source</a><p>{contact.suitabilityReason}</p>{contact.reviewState === "needs_review" && <div className="actions"><button disabled={busy === `contact:${contact.id}`} onClick={() => void reviewContact(contact.id, "accepted")}>Accept evidence</button><button disabled={busy === `contact:${contact.id}`} onClick={() => void reviewContact(contact.id, "rejected")}>Reject</button></div>}{contact.reviewState === "accepted" && <button disabled={busy === `draft:${contact.jobId}`} onClick={() => void generateDraft(contact.jobId, contact.id)}>Create custom draft</button>}</article>)}</div>{drafts.map((draft) => { const revision = draft.revisions.at(-1); const parsed = revision ? gmailComposeUrl({ to: contacts.find((item) => item.id === revision.contactId)?.email ?? "", subject: revision.body.match(/^Subject:\s*(.+)$/m)?.[1] ?? "", body: revision.body.replace(/^To:.*\nSubject:.*\n\n/s, "") }) : "#"; return <article className="card draft" key={draft.id}><div className="card-head"><span>Draft</span><strong className={`status ${draft.state}`}>{draft.state}</strong></div><pre>{revision?.body ?? "No revision"}</pre><p><strong>Claim IDs:</strong> {revision?.claimIds.join(", ")}</p><div className="actions"><a href={parsed} target="_blank" rel="noreferrer">Open in Gmail</a></div></article>; })}</section>}
+
+    {activeTab === "Profile" && <section><h2>Application profile evidence</h2><p className="section-intro">These are reusable form values, not inferred facts. New values stay unverified until you explicitly verify them.</p><div className="editor"><select value={newProfile.kind} onChange={(event) => setNewProfile((value) => ({ ...value, kind: event.target.value }))}>{profileOptions.map((kind) => <option key={kind}>{kind}</option>)}</select><input placeholder="Exact value" value={newProfile.claim} onChange={(event) => setNewProfile((value) => ({ ...value, claim: event.target.value }))} /><input placeholder="Evidence / where verified" value={newProfile.evidence} onChange={(event) => setNewProfile((value) => ({ ...value, evidence: event.target.value }))} /><button disabled={busy === "profile:new"} onClick={() => void saveProfileField()}>Save unverified</button></div><div className="grid">{profileFields.map((field) => <article className="card" key={field.id}><div className="card-head"><span>{field.kind}</span><strong className={`status ${field.verified ? "approved" : "draft"}`}>{field.verified ? "verified" : "unverified"}</strong></div><h3>{field.claim}</h3><p>{field.evidence}</p><button disabled={busy === `profile:${field.id}`} onClick={() => void verifyProfileField(field.id, !field.verified)}>{field.verified ? "Mark unverified" : "Verify"}</button></article>)}</div></section>}
+
+    {activeTab === "Sources" && <section><h2>Controlled discovery sources</h2><div className="grid">{sources.map((source) => <article className="card" key={source.id}><div className="card-head"><span>{source.provider}</span><strong className={`status ${source.enabled ? "active" : "closed"}`}>{source.enabled ? "enabled" : "disabled"}</strong></div><h3>{source.companyName}</h3><p>{source.companyDomain}</p><a href={source.careersUrl ?? "#"} target="_blank" rel="noreferrer">Official careers source</a><button disabled={busy === source.id || !source.enabled} onClick={() => void syncSource(source)}>Sync now</button><div className="run-list">{runs.filter((run) => run.sourceId === source.id).slice(0, 3).map((run) => <small key={run.id}>{run.status} · {run.discoveredCount} found · {run.createdCount} new · {formatTimestamp(run.completedAt)}</small>)}</div></article>)}</div></section>}
+
+    {activeTab === "Claims" && <section><h2>Candidate claims</h2><p className="section-intro">Only approved claims can support resume alignment, application preparation, or outreach. Draft edits use expected-version checks so stale browser state cannot overwrite newer decisions.</p><div className="editor claim-editor"><textarea placeholder="Claim statement" value={newClaim.statement} onChange={(event) => setNewClaim((value) => ({ ...value, statement: event.target.value }))} /><textarea placeholder="Evidence / source" value={newClaim.evidence} onChange={(event) => setNewClaim((value) => ({ ...value, evidence: event.target.value }))} /><button disabled={busy === "claim:new"} onClick={async () => { setBusy("claim:new"); try { const response = await fetch("/api/claims", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", ...newClaim }) }); const payload = await response.json() as { error?: string }; if (!response.ok) throw new Error(payload.error ?? "Claim creation failed"); setNewClaim({ statement: "", evidence: "" }); await loadData(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Claim creation failed"); } finally { setBusy(null); } }}>Add draft claim</button></div><div className="grid">{claims.map((claim) => { const edit = claimEdits[claim.id] ?? { statement: claim.statement, evidence: claim.evidence }; const dirty = edit.statement !== claim.statement || edit.evidence !== claim.evidence; return <article className="card" key={claim.id}><div className="card-head"><span>v{claim.version}</span><strong className={`status ${claim.status}`}>{claim.status}</strong></div>{claim.status === "draft" ? <><textarea value={edit.statement} onChange={(event) => setClaimEdits((value) => ({ ...value, [claim.id]: { ...edit, statement: event.target.value } }))} /><textarea value={edit.evidence} onChange={(event) => setClaimEdits((value) => ({ ...value, [claim.id]: { ...edit, evidence: event.target.value } }))} /><div className="actions"><button disabled={!dirty || busy === `claim:${claim.id}`} onClick={async () => { setBusy(`claim:${claim.id}`); try { const response = await fetch("/api/claims", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "edit", id: claim.id, expectedVersion: claim.version, ...edit }) }); const payload = await response.json() as { error?: string }; if (!response.ok) throw new Error(payload.error ?? "Claim edit failed"); await loadData(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Claim edit failed"); } finally { setBusy(null); } }}>Save edit</button><button disabled={dirty || busy === `claim:${claim.id}`} title={dirty ? "Save or discard edits before approval" : ""} onClick={async () => { setBusy(`claim:${claim.id}`); try { const response = await fetch("/api/claims", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approve", id: claim.id, expectedVersion: claim.version }) }); const payload = await response.json() as { error?: string }; if (!response.ok) throw new Error(payload.error ?? "Claim approval failed"); await loadData(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Claim approval failed"); } finally { setBusy(null); } }}>Approve</button><button disabled={busy === `claim:${claim.id}`} onClick={async () => { setBusy(`claim:${claim.id}`); try { const response = await fetch("/api/claims", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reject", id: claim.id, expectedVersion: claim.version }) }); const payload = await response.json() as { error?: string }; if (!response.ok) throw new Error(payload.error ?? "Claim rejection failed"); await loadData(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Claim rejection failed"); } finally { setBusy(null); } }}>Reject</button></div></> : <><h3>{claim.statement}</h3><p>{claim.evidence}</p><small>{claim.status === "approved" ? `Approved ${formatTimestamp(claim.approvedAt)}` : "Rejected — ignored by matching and drafting"}</small></>}</article>; })}</div></section>}
+  </main>;
 }
