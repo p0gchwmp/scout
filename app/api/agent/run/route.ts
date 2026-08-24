@@ -219,7 +219,8 @@ export async function POST(request: Request) {
     const domainFailures: Array<{ jobId: string; reason: string }> = [];
     for (const { job, source } of domainCandidates.slice(0, MAX_DOMAIN_ENRICHMENT_PER_RUN)) {
       try {
-        const official = await client.resolveJob({ canonicalUrl: job.canonicalUrl, company: job.company, title: job.title });
+        const domainResolveInput = { canonicalUrl: job.canonicalUrl, company: job.company, title: job.title };
+        const official = await client.resolveJob(domainResolveInput);
         if (official.source.provider !== source.provider || official.source.boardToken !== source.boardToken) {
           throw new Error("Domain enrichment resolved to a different ATS source");
         }
