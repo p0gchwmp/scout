@@ -3,7 +3,7 @@ const SAFE_ID = /^[A-Za-z0-9._:-]{3,160}$/;
 const MAX_CLOCK_SKEW_MS = 60_000;
 const MAX_WINDOW_MS = 10 * 60_000;
 
-export type AgentServiceOperation = "plan_job" | "discover_internships" | "resolve_job" | "research_contacts" | "draft_outreach" | "create_gmail_draft";
+export type AgentServiceOperation = "plan_job" | "discover_internships" | "resolve_job" | "research_contacts" | "classify_contacts" | "draft_outreach" | "create_gmail_draft";
 
 export type AgentServiceAuth = {
   taskId: string;
@@ -111,7 +111,7 @@ export async function verifyAgentServiceRequest(request: Request, secret: string
   const issued = cleanIso(request.headers.get("x-scout-agent-issued-at"), "Agent issued timestamp");
   const expires = cleanIso(request.headers.get("x-scout-agent-expires-at"), "Agent expiry timestamp");
   const operation = request.headers.get("x-scout-agent-operation") as AgentServiceOperation | null;
-  if (!operation || !["plan_job", "discover_internships", "resolve_job", "research_contacts", "draft_outreach", "create_gmail_draft"].includes(operation)) {
+  if (!operation || !["plan_job", "discover_internships", "resolve_job", "research_contacts", "classify_contacts", "draft_outreach", "create_gmail_draft"].includes(operation)) {
     throw new Error("Agent operation is invalid");
   }
   if (issued.timestamp > now + MAX_CLOCK_SKEW_MS) throw new Error("Agent request was issued in the future");
