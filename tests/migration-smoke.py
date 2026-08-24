@@ -26,8 +26,6 @@ INSERT INTO jobs (
 connection.execute("INSERT INTO applications(id, job_id) VALUES ('legacy-application', 'legacy-job')")
 connection.commit()
 migration = (root / "0001_scout_vertical.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
-# D1 applies a migration as a transaction. Wrapping the SQLite smoke the same way
-# ensures defer_foreign_keys is exercised instead of silently relying on FK disablement.
 connection.executescript(f"BEGIN;\n{migration}\nCOMMIT;")
 lever_migration = (root / "0002_lever_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
 connection.executescript(f"BEGIN;\n{lever_migration}\nCOMMIT;")
@@ -35,6 +33,8 @@ contact_source_migration = (root / "0003_contact_source_type.sql").read_text(enc
 connection.executescript(f"BEGIN;\n{contact_source_migration}\nCOMMIT;")
 provider_migration = (root / "0004_expand_ats_providers.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
 connection.executescript(f"BEGIN;\n{provider_migration}\nCOMMIT;")
+smartrecruiters_migration = (root / "0005_smartrecruiters_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
+connection.executescript(f"BEGIN;\n{smartrecruiters_migration}\nCOMMIT;")
 
 assert connection.execute("SELECT first_seen_at FROM jobs WHERE id = 'legacy-job'").fetchone() == ("2026-08-01T00:00:00Z",)
 assert connection.execute("SELECT job_id FROM applications WHERE id = 'legacy-application'").fetchone() == ("legacy-job",)
@@ -44,11 +44,13 @@ connection.execute("INSERT INTO company_sources(id, provider, company_name, boar
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-lever', 'lever', 'Lever Co', 'lever-site', 'lever.example')")
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-ashby', 'ashby', 'Ashby Co', 'ashby-board', 'ashby.example')")
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-workable', 'workable', 'Workable Co', 'workable-account', 'workable.example')")
+connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-smartrecruiters', 'smartrecruiters', 'SmartRecruiters Co', 'smart-company', 'smart.example')")
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-lever'").fetchone() == ("lever",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-ashby'").fetchone() == ("ashby",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-workable'").fetchone() == ("workable",)
+assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-smartrecruiters'").fetchone() == ("smartrecruiters",)
 expect_integrity_error(
-    lambda: connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-unsupported', 'smartrecruiters', 'Unsupported', 'unsupported', 'unsupported.example')"),
+    lambda: connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-unsupported', 'icims', 'Unsupported', 'unsupported', 'unsupported.example')"),
     "unsupported ATS provider bypassed the company_sources provider constraint",
 )
 connection.execute("INSERT INTO sync_runs(id, source_id, idempotency_key, status, observed_at) VALUES ('run-a', 'source-a', 'run-a', 'completed', '2026-08-15T00:00:00Z')")
@@ -109,7 +111,6 @@ INSERT INTO contact_evidence (
 )
 """)
 assert connection.execute("SELECT source_type FROM contact_evidence WHERE id = 'contact-a'").fetchone() == ("official_job_posting",)
-# AI suitability may be refined while evidence is still under review; exact provenance must not move.
 connection.execute("UPDATE contact_evidence SET suitability = 'review', suitability_reason = 'AI classification pending human review' WHERE id = 'contact-a'")
 expect_integrity_error(
     lambda: connection.execute("UPDATE contact_evidence SET source_type = 'official_contact' WHERE id = 'contact-a'"),
@@ -167,7 +168,6 @@ expect_integrity_error(
     "approved draft was mutable",
 )
 
-# Exact evidence provenance itself is immutable even before approval.
 connection.execute("INSERT INTO contact_evidence(id, job_id, job_snapshot_id, email, source_url, excerpt, source_type, extracted_at, suitability, suitability_reason) VALUES ('contact-b', 'job-a', 'snapshot-a', 'talent@a.example', 'https://job-boards.greenhouse.io/board-a/jobs/123', 'talent@a.example', 'official_job_posting', '2026-08-15T00:00:00Z', 'high', 'published')")
 expect_integrity_error(
     lambda: connection.execute("UPDATE contact_evidence SET source_url = 'https://example.invalid' WHERE id = 'contact-b'"),
@@ -198,4 +198,4 @@ expected_indexes = {
 assert expected_indexes <= indexes, expected_indexes - indexes
 foreign_key_errors = list(connection.execute("PRAGMA foreign_key_check"))
 assert not foreign_key_errors, foreign_key_errors
-print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; four ATS providers constrained; composite identity, overlap, claim CAS, review, revision approval, source-type provenance, snapshot/provenance immutability, and foreign keys verified)")
+print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; five ATS providers constrained; composite identity, overlap, claim CAS, review, revision approval, source-type provenance, snapshot/provenance immutability, and foreign keys verified)")
