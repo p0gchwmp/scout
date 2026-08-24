@@ -150,7 +150,7 @@ test("npm dev wrapper bootstraps only a fresh local shell and worker injects aut
   const injection = worker.indexOf("const localAuth = resolveLocalDevWorkerAuth");
   const gate = worker.indexOf("if (OWNER_PAGE_PATHS.has(url.pathname)");
   assert.ok(injection >= 0 && gate > injection, "local auth must be injected before page/API route gating");
-  assert.match(worker, /OWNER_PAGE_PATHS = new Set\(\["\/", "\/inbox", "\/assist", "\/voice"\]\)/);
+  assert.match(worker, /OWNER_PAGE_PATHS = new Set\(\["\/", "\/inbox", "\/assist", "\/voice", "\/review"\]\)/);
 });
 
 
