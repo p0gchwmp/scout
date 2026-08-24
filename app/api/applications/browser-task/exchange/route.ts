@@ -1,7 +1,9 @@
 import { env } from "cloudflare:workers";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../../db";
-import { applications } from "../../../../../db/schema";
+import { applications, candidateClaims, jobs, profileEvidence } from "../../../../../db/schema";
+import { buildAiApplicationAnswerEnvelope, isSensitiveApplicationQuestion, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
+import { draftApplicationAnswersViaAgent } from "../../../../../lib/scout/application-answer-runtime";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
 
@@ -23,13 +25,32 @@ function handoffSecret() {
   return secret;
 }
 
+function cleanQuestions(value: unknown): ApplicationQuestion[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) throw new Error("Too many application questions");
+  return value.map((raw, index) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Application question is invalid");
+    const record = raw as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id.trim() : "";
+    const label = typeof record.label === "string" ? record.label.replace(/\s+/g, " ").trim() : "";
+    if (!id || id.length > 200 || !label || label.length > 1000) throw new Error(`Application question ${index + 1} is invalid`);
+    let maxLength: number | null = null;
+    if (record.maxLength !== null && record.maxLength !== undefined) {
+      const parsed = Number(record.maxLength);
+      if (!Number.isInteger(parsed) || parsed < 40 || parsed > 5000) throw new Error("Application question maxLength is invalid");
+      maxLength = parsed;
+    }
+    return { id, label, maxLength };
+  });
+}
+
 function payload(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("A JSON object is required");
   const record = value as Record<string, unknown>;
   if (typeof record.token !== "string" || record.token.length < 40 || record.token.length > 4000) throw new Error("Handoff token is invalid");
   if (typeof record.currentUrl !== "string" || record.currentUrl.length < 10 || record.currentUrl.length > 2000) throw new Error("Current application URL is invalid");
-  if (Object.keys(record).some((key) => key !== "token" && key !== "currentUrl")) throw new Error("Unexpected browser handoff field");
-  return { token: record.token, currentUrl: record.currentUrl };
+  if (Object.keys(record).some((key) => key !== "token" && key !== "currentUrl" && key !== "questions")) throw new Error("Unexpected browser handoff field");
+  return { token: record.token, currentUrl: record.currentUrl, questions: cleanQuestions(record.questions) };
 }
 
 export async function OPTIONS() {
@@ -62,16 +83,67 @@ export async function POST(request: Request) {
     });
     if (task.allowedUrl !== verified.allowedUrl) return json({ error: "The application URL changed after the handoff was minted" }, 409);
 
+    const manualQuestions = input.questions.filter((question) => isSensitiveApplicationQuestion(question.label));
+    const draftableQuestions = input.questions.filter((question) => !isSensitiveApplicationQuestion(question.label));
+    let aiDraftAnswers: Array<{ key: string; value: string; verified: false; aiDraft: true; sourceField: string; usedClaimIds: string[] }> = [];
+    let aiModel: string | null = null;
+
+    if (draftableQuestions.length) {
+      const packet = application.submittedFields as unknown as { claimIds?: unknown };
+      const claimIds = Array.isArray(packet.claimIds) ? packet.claimIds.filter((id): id is string => typeof id === "string").slice(0, 8) : [];
+      const [job, claims, voiceRows] = await Promise.all([
+        db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1).then((rows) => rows[0]),
+        claimIds.length ? db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)) : Promise.resolve([]),
+        db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
+      ]);
+      if (job?.currentSnapshotId && claims.length && claims.every((claim) => claim.status === "approved")) {
+        const candidateName = voiceRows.find((field) => field.kind === "full_name")?.claim;
+        if (candidateName) {
+          const envelope = buildAiApplicationAnswerEnvelope({
+            jobSnapshotId: job.currentSnapshotId,
+            companyName: job.company,
+            roleTitle: job.title,
+            jobDescription: job.description,
+            candidateName,
+            questions: draftableQuestions,
+            claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement, status: "approved" as const })),
+            voice: {
+              sample: voiceRows.find((field) => field.kind === "writing_sample")?.claim ?? null,
+              styleNote: voiceRows.find((field) => field.kind === "writing_style_note")?.claim ?? null,
+            },
+          });
+          const ai = await draftApplicationAnswersViaAgent(env as unknown as Record<string, unknown>, envelope);
+          aiModel = ai.model || null;
+          const byId = new Map(draftableQuestions.map((question) => [question.id, question]));
+          aiDraftAnswers = ai.answers.map((answer) => ({
+            key: byId.get(answer.questionId)!.label.toLowerCase(),
+            value: answer.answer,
+            verified: false as const,
+            aiDraft: true as const,
+            sourceField: `ai:${answer.questionId}`,
+            usedClaimIds: answer.usedClaimIds,
+          }));
+        }
+      }
+    }
+
     return json({
-      task,
+      task: {
+        ...task,
+        answers: [...task.answers, ...aiDraftAnswers],
+        aiDraftAnswersRequireReview: aiDraftAnswers.length > 0,
+      },
+      ai: { model: aiModel, drafted: aiDraftAnswers.length },
+      manualQuestions: manualQuestions.map((question) => ({ id: question.id, label: question.label, reason: "Sensitive or per-application confirmation required" })),
       safety: {
         bearerTokenContainsProfileData: false,
         sensitiveQuestionsRequireReview: true,
+        aiAnswersAreDrafts: true,
         solveCaptcha: false,
         submitApplication: false,
       },
     });
   } catch {
-    return json({ error: "Browser handoff was invalid, expired, or pinned to a different page" }, 401);
+    return json({ error: "Browser handoff was invalid, expired, misconfigured, or pinned to a different page" }, 401);
   }
 }
