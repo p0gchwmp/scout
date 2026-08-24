@@ -12,6 +12,7 @@ test("lead resolution only fetches controlled Greenhouse postings and preserves 
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.lever, true);
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.ashby, true);
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.workable, true);
+  assert.equal(LEAD_RESOLUTION_CAPABILITIES.smartrecruiters, true);
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.submit, false);
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.send, false);
 
@@ -71,5 +72,6 @@ test("lead resolution refuses arbitrary and unregistered URLs without fetching",
   await assert.rejects(() => resolveControlledLead("https://jobs.lever.co/notregistered/abc"), /controlled discovery source/i);
   await assert.rejects(() => resolveControlledLead("https://jobs.ashbyhq.com/notregistered/abc-123"), /controlled discovery source/i);
   await assert.rejects(() => resolveControlledLead("https://apply.workable.com/notregistered/j/AB12CD/"), /controlled discovery source/i);
+  await assert.rejects(() => resolveControlledLead("https://jobs.smartrecruiters.com/notregistered/74944235-product-intern"), /controlled discovery source/i);
   assert.equal(fetches, 0);
 });
