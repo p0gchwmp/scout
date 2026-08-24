@@ -9,6 +9,7 @@ export type ResumeAlignmentBand = "strong" | "partial" | "stretch" | "unranked";
 
 export type ResumeSupportingClaims = {
   theme: string;
+  label: string;
   claimIds: string[];
 };
 
@@ -18,8 +19,10 @@ export type ResumeAlignment = {
   matches: string[];
   supportingClaims: ResumeSupportingClaims[];
   gaps: string[];
+  eligibilityGaps: string[];
   basis: string;
   notChecked: string[];
+  caveats: string[];
 };
 
 type JobText = {
@@ -103,8 +106,10 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
       matches: [],
       supportingClaims: [],
       gaps: [],
+      eligibilityGaps: [],
       basis: "No approved resume claims",
       notChecked: [...NOT_CHECKED],
+      caveats: [...NOT_CHECKED],
     };
   }
 
@@ -115,7 +120,7 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
       .filter((claim) => theme.claim.test(`${claim.statement} ${claim.evidence}`))
       .map((claim) => claim.id)
       .sort();
-    return claimIds.length ? [{ theme: theme.label, claimIds }] : [];
+    return claimIds.length ? [{ theme: theme.label, label: theme.label, claimIds }] : [];
   });
   const matches = supportingClaims.map((match) => match.theme);
   const approvedClaimText = approvedClaims.map((claim) => `${claim.statement} ${claim.evidence}`).join(" ");
@@ -143,7 +148,9 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
     matches,
     supportingClaims,
     gaps,
+    eligibilityGaps: gaps,
     basis: `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}`,
     notChecked: [...NOT_CHECKED],
+    caveats: [...NOT_CHECKED],
   };
 }
