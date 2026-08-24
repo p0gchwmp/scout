@@ -7,6 +7,7 @@ import { createAgentAiProvider } from "./ai-runtime.ts";
 import { runAgentDiscovery } from "./discovery.ts";
 import { researchPublishedCompanyContacts } from "./contact-research.ts";
 import { createOrReuseGmailDraft } from "./gmail-drafts.ts";
+import { resolveSearchLeadToOfficialAts } from "./official-resolution.ts";
 
 const port = Number(process.env.PORT ?? process.env.SCOUT_AGENT_PORT ?? 8788);
 const secret = process.env.SCOUT_AGENT_SHARED_SECRET?.trim() ?? "";
@@ -109,10 +110,17 @@ const server = createServer(async (request, response) => {
 
     if (request.url === "/v1/resolve") {
       const raw = payload as Record<string, unknown>;
-      if (typeof raw.canonicalUrl !== "string" || Object.keys(raw).some((key) => key !== "canonicalUrl")) {
-        return json(response, 400, { error: "Resolve accepts only canonicalUrl" });
+      const allowed = new Set(["canonicalUrl", "company", "title"]);
+      if (typeof raw.canonicalUrl !== "string" || Object.keys(raw).some((key) => !allowed.has(key))) {
+        return json(response, 400, { error: "Resolve accepts canonicalUrl plus optional stored lead company/title evidence" });
       }
-      const resolved = await resolveControlledLead(raw.canonicalUrl);
+      let resolved: Awaited<ReturnType<typeof resolveControlledLead>> | Awaited<ReturnType<typeof resolveSearchLeadToOfficialAts>>;
+      try {
+        resolved = await resolveControlledLead(raw.canonicalUrl);
+      } catch (directError) {
+        if (typeof raw.company !== "string" || typeof raw.title !== "string") throw directError;
+        resolved = await resolveSearchLeadToOfficialAts({ leadUrl: raw.canonicalUrl, company: raw.company, title: raw.title });
+      }
       return json(response, 200, {
         taskId: verified.auth.taskId,
         idempotencyKey: verified.auth.idempotencyKey,
