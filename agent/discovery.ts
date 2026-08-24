@@ -1,4 +1,5 @@
 import { discoverControlledInternships } from "../lib/scout/lead-discovery.ts";
+import type { AtsProvider } from "../lib/scout/types.ts";
 import { discoverSearchIndexInternships } from "./search-discovery.ts";
 
 export const AGENT_DISCOVERY_CAPABILITIES = Object.freeze({
@@ -27,7 +28,7 @@ export async function runAgentDiscovery(
   ]);
 
   const controlledLeads = controlled.leads.map((lead) => ({
-    provider: lead.provider as "greenhouse" | "lever" | "search_index",
+    provider: lead.provider as AtsProvider | "search_index",
     canonicalUrl: lead.canonicalUrl,
     company: lead.company,
     title: lead.title,
