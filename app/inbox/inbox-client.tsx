@@ -31,6 +31,7 @@ type RunScoutResponse = {
     discovery?: { found?: number; created?: number; existing?: number; failures?: Array<{ company: string; reason?: string }>; leads?: DiscoveryLead[] };
     resolution?: { attempted?: number; resolved?: number; deferred?: number; failures?: unknown[] };
     applications?: { prepared?: number; readyForReview?: number; needsInput?: number };
+    companyDomains?: { attempted?: number; enriched?: number; pending?: number; failures?: unknown[] };
     contacts?: { jobsResearched?: number; candidatesSaved?: number; classified?: number; failures?: unknown[] };
     reviewQueue?: { applicationsReady?: number; applicationsNeedInput?: number; contactsNeedReview?: number };
   };
@@ -106,9 +107,11 @@ export function InternshipInbox() {
       setDiscovered(run.discovery?.leads ?? []);
       await loadLeads();
       const sourceFailures = run.discovery?.failures?.length ?? 0;
-      const pipelineFailures = (run.resolution?.failures?.length ?? 0) + (run.contacts?.failures?.length ?? 0);
+      const pipelineFailures = (run.resolution?.failures?.length ?? 0)
+        + (run.companyDomains?.failures?.length ?? 0)
+        + (run.contacts?.failures?.length ?? 0);
       setNotice(
-        `Scout found ${run.discovery?.found ?? 0} relevant internship lead(s), saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}`,
+        `Scout found ${run.discovery?.found ?? 0} relevant internship lead(s), saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), verified/enriched ${run.companyDomains?.enriched ?? 0} company domain(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}`,
       );
     } catch (caught) {
       if (!isLoopbackBrowser()) {
@@ -155,23 +158,23 @@ export function InternshipInbox() {
 
   return <main className={styles.shell}>
     <header className={styles.header}>
-      <div><p className={styles.kicker}>SCOUT / INTERNSHIP INBOX</p><h1>Let Scout do the repetitive part.</h1><p>Run active internship discovery, official ATS resolution, application preparation and public recruiting-contact research. Scout stops where your review or missing information is actually required.</p></div>
-      <Link href="/" className={styles.back}>← Dashboard</Link>
+      <div><p className={styles.kicker}>SCOUT / INTERNSHIP INBOX</p><h1>Let Scout do the repetitive part.</h1><p>Run active internship discovery, official-source resolution, application preparation and public recruiting-contact research. Scout stops where your review or missing information is actually required.</p></div>
+      <div><Link href="/review" className={styles.back}>Review Queue</Link><Link href="/" className={styles.back}>← Dashboard</Link></div>
     </header>
 
     {notice && <div className={styles.notice}>{notice}</div>}
     {error && <div className={`${styles.notice} ${styles.error}`}>{error}</div>}
 
     <section className={styles.discovery}>
-      <div><p className={styles.kicker}>CLOUD AGENT PIPELINE</p><h2>Run Scout now</h2><p>Scout scans controlled public internship sources, upgrades supported Greenhouse/Lever leads into immutable official snapshots, prepares applications, researches explicitly published company contacts, and AI-triages those contacts. No application is submitted and no email is sent.</p></div>
+      <div><p className={styles.kicker}>CLOUD AGENT PIPELINE</p><h2>Run Scout now</h2><p>Scout scans controlled ATS sources and configured search-index sources, resolves supported leads to official Greenhouse/Lever evidence, verifies company domains when independent search evidence converges, prepares applications, researches explicitly published company contacts, and AI-triages those contacts. No application is submitted and no email is sent.</p></div>
       <button disabled={discovering} onClick={() => void runScoutNow()}>{discovering ? "Scout is working…" : "Run Scout now"}</button>
     </section>
 
     {discovered.length > 0 && <section className={styles.results}>
-      <div className={styles.listHead}><div><p className={styles.kicker}>LATEST DISCOVERY</p><h2>{discovered.length} matching lead(s)</h2></div><p>Supported leads continue automatically until a review gate.</p></div>
+      <div className={styles.listHead}><div><p className={styles.kicker}>LATEST DISCOVERY</p><h2>{discovered.length} matching lead(s)</h2></div><p>Discovery is a lead stage. Scout separately resolves trustworthy official posting evidence before application preparation.</p></div>
       {discovered.slice(0, 12).map((lead) => <article className={styles.card} key={lead.canonicalUrl}>
         <div><p className={styles.source}>{lead.provider.toUpperCase()} · {lead.location || "Location unspecified"}</p><h3>{lead.company} — {lead.title}</h3><p>{lead.focus}</p></div>
-        <a href={lead.canonicalUrl} target="_blank" rel="noreferrer">Official posting ↗</a>
+        <a href={lead.canonicalUrl} target="_blank" rel="noreferrer">Open discovered lead ↗</a>
       </article>)}
     </section>}
 
