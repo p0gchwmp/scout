@@ -16,6 +16,11 @@ if (configured.length === 0) {
   console.log("Scout local dev auth: loopback-only owner enabled for this dev process.");
 }
 
+const browserHandoffSecret = env.SCOUT_BROWSER_HANDOFF_SECRET?.trim() || randomBytes(32).toString("hex");
+if (!/^[a-f0-9]{64}$/i.test(browserHandoffSecret)) throw new Error("SCOUT_BROWSER_HANDOFF_SECRET must be 64 hex characters when configured");
+env.SCOUT_BROWSER_HANDOFF_SECRET = browserHandoffSecret;
+console.log("Scout browser handoff: ephemeral local signing key enabled for this dev process.");
+
 const DISCOVERY_HOST = "127.0.0.1";
 const DISCOVERY_PORT = 43119;
 const DISCOVERY_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
