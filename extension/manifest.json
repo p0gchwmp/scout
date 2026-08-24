@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Scout Safe Fill",
-  "version": "0.2.0",
-  "description": "Fills only user-approved, verified application fields and stops on sensitive questions.",
+  "version": "0.3.0",
+  "description": "Fills only Scout-approved application fields and stops on sensitive questions.",
   "permissions": ["activeTab", "scripting", "storage"],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
+  ],
   "host_permissions": [
     "https://boards.greenhouse.io/*",
     "https://job-boards.greenhouse.io/*",
