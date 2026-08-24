@@ -1,4 +1,5 @@
 import type { AtsProvider } from "./types";
+import { normalizeWorkdayExternalPath, parseWorkdayBoardToken, parseWorkdayPublicUrl } from "./workday-source";
 
 export type ContactSuitability = "high" | "review";
 export type ContactReviewState = "needs_review" | "accepted" | "rejected";
@@ -128,6 +129,22 @@ export function validateSmartRecruitersEvidenceUrl(raw: string, companyIdentifie
   return url;
 }
 
+export function validateWorkdayEvidenceUrl(raw: string, boardToken: string, externalId: string) {
+  const board = parseWorkdayBoardToken(boardToken);
+  const job = parseWorkdayPublicUrl(raw);
+  const expectedPath = normalizeWorkdayExternalPath(externalId);
+  if (!job.externalPath) throw new Error("Workday evidence URL must identify an exact job posting");
+  if (
+    job.hostname !== board.hostname ||
+    job.site !== board.site ||
+    job.locale !== board.locale ||
+    job.externalPath !== expectedPath
+  ) {
+    throw new Error("Workday evidence URL does not match the registered candidate-site source");
+  }
+  return new URL(job.canonicalUrl);
+}
+
 function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return validateGreenhouseEvidenceUrl(raw, sourceToken, externalId);
@@ -135,6 +152,7 @@ function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken:
     case "ashby": return validateAshbyEvidenceUrl(raw, sourceToken, externalId);
     case "workable": return validateWorkableEvidenceUrl(raw, sourceToken, externalId);
     case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, sourceToken, externalId);
+    case "workday": return validateWorkdayEvidenceUrl(raw, sourceToken, externalId);
   }
 }
 
