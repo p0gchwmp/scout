@@ -1,11 +1,13 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
+import { RecruiteePublicCareersAdapter } from "../recruitee-adapter.ts";
 import { WorkdayPublicCxsAdapter } from "../workday-adapter.ts";
 import {
   validateAshbyEvidenceUrl,
   validateBambooHrEvidenceUrl,
   validateGreenhouseEvidenceUrl,
   validateLeverEvidenceUrl,
+  validateRecruiteeEvidenceUrl,
   validateSmartRecruitersEvidenceUrl,
   validateWorkableEvidenceUrl,
   validateWorkdayEvidenceUrl,
@@ -23,6 +25,7 @@ function adapterFor(provider: AtsProvider) {
     case "smartrecruiters": return new SmartRecruitersAdapter();
     case "workday": return new WorkdayPublicCxsAdapter();
     case "bamboohr": return new BambooHrPublicCareersAdapter();
+    case "recruitee": return new RecruiteePublicCareersAdapter();
   }
 }
 
@@ -35,6 +38,7 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, token, externalId);
     case "workday": return validateWorkdayEvidenceUrl(raw, token, externalId);
     case "bamboohr": return validateBambooHrEvidenceUrl(raw, token, externalId);
+    case "recruitee": return validateRecruiteeEvidenceUrl(raw, token, externalId);
   }
 }
 
