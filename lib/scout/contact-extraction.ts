@@ -108,12 +108,33 @@ export function validateWorkableEvidenceUrl(raw: string, subdomain: string, exte
   return url;
 }
 
+const SMARTRECRUITERS_HOST = "jobs.smartrecruiters.com";
+const SMARTRECRUITERS_EXTERNAL_ID_PATTERN = /^[0-9]{4,32}$/;
+
+export function validateSmartRecruitersEvidenceUrl(raw: string, companyIdentifier: string, externalId: string) {
+  if (!SOURCE_TOKEN_PATTERN.test(companyIdentifier)) throw new Error("Registered SmartRecruiters company identifier is invalid");
+  if (!SMARTRECRUITERS_EXTERNAL_ID_PATTERN.test(externalId)) throw new Error("SmartRecruiters external id is invalid");
+  const url = exactPublicJobUrl(raw, "SmartRecruiters");
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodePathSegment(part, "SmartRecruiters"));
+  const postingSegment = parts[1] ?? "";
+  if (
+    url.hostname.toLowerCase() !== SMARTRECRUITERS_HOST ||
+    parts.length !== 2 ||
+    parts[0] !== companyIdentifier ||
+    !(postingSegment === externalId || postingSegment.startsWith(`${externalId}-`))
+  ) {
+    throw new Error("SmartRecruiters evidence URL does not match the registered source");
+  }
+  return url;
+}
+
 function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return validateGreenhouseEvidenceUrl(raw, sourceToken, externalId);
     case "lever": return validateLeverEvidenceUrl(raw, sourceToken, externalId);
     case "ashby": return validateAshbyEvidenceUrl(raw, sourceToken, externalId);
     case "workable": return validateWorkableEvidenceUrl(raw, sourceToken, externalId);
+    case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, sourceToken, externalId);
   }
 }
 
