@@ -17,6 +17,7 @@ test("parseBreezyPublicJobUrl admits only exact hosted public position URLs", ()
   assert.throws(() => parseBreezyPublicJobUrl("https://api.breezy.hr/v3/company/acme/positions"), /host is not a supported/);
   assert.throws(() => parseBreezyPublicJobUrl("https://codebase.breezy.hr/p/abe2d2b35511-marketing?ref=linkedin"), /exact HTTPS candidate-site URL/);
   assert.throws(() => parseBreezyPublicJobUrl("https://codebase.breezy.hr/"), /path is invalid/);
+  assert.throws(() => parseBreezyPublicJobUrl("https://codebase.breezy.hr/p/abe2d2b35511-marketing%00bad"), /invalid position segment/);
 });
 
 test("Breezy adapter resolves exact public JobPosting metadata", async () => {
