@@ -49,3 +49,59 @@ test("controlled discovery filters to India/remote internship leads and preserve
   assert.ok(result.leads.every((lead) => lead.canonicalUrl.startsWith("https://")));
   assert.ok(result.leads.every((lead) => lead.snapshotRequired));
 });
+
+test("controlled discovery does not burst registered boards at the same ATS provider", async () => {
+  assert.equal(LEAD_DISCOVERY_CAPABILITIES.providerBoundedConcurrency, true);
+  assert.equal(LEAD_DISCOVERY_CAPABILITIES.maxConcurrentRequestsPerProvider, 1);
+  const active = new Map<string, number>();
+  const maxActive = new Map<string, number>();
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    const provider = url.hostname === "boards-api.greenhouse.io" ? "greenhouse" : "lever";
+    const current = (active.get(provider) ?? 0) + 1;
+    active.set(provider, current);
+    maxActive.set(provider, Math.max(maxActive.get(provider) ?? 0, current));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    active.set(provider, (active.get(provider) ?? 1) - 1);
+
+    if (provider === "greenhouse") {
+      const slug = url.pathname.split("/")[3];
+      return Response.json({ jobs: [{
+        id: `${slug}-1`,
+        absolute_url: `https://job-boards.greenhouse.io/${slug}/jobs/123`,
+        title: "Product Operations Intern",
+        content: "Internship in Bengaluru, India",
+        location: { name: "Bengaluru, India" },
+        updated_at: "2026-08-25T00:00:00Z",
+      }] });
+    }
+    const slug = url.pathname.split("/").pop();
+    return Response.json([{
+      id: `${slug}-1`,
+      hostedUrl: `https://jobs.lever.co/${slug}/abc`,
+      text: "Revenue Operations Intern",
+      descriptionPlain: "Remote India internship",
+      categories: { location: "Remote, India" },
+      workplaceType: "remote",
+    }]);
+  }) as typeof fetch;
+
+  const result = await discoverControlledInternships();
+  assert.equal(result.failures.length, 0);
+  assert.equal(result.leads.length, CONTROLLED_DISCOVERY_SOURCES.length);
+  assert.equal(maxActive.get("greenhouse"), 1);
+  assert.equal(maxActive.get("lever"), 1);
+});
+
+test("controlled discovery distinguishes stale sources from provider rate limits", async () => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    return new Response("", { status: url.hostname === "boards-api.greenhouse.io" ? 404 : 429 });
+  }) as typeof fetch;
+
+  const result = await discoverControlledInternships();
+  assert.equal(result.leads.length, 0);
+  assert.ok(result.failures.some((failure) => failure.reason.includes("catalog review")));
+  assert.ok(result.failures.some((failure) => failure.reason.includes("rate-limited")));
+});
