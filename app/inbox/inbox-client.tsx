@@ -28,7 +28,7 @@ type DiscoveryLead = {
 
 type RunScoutResponse = {
   run?: {
-    discovery?: { found?: number; created?: number; existing?: number; failures?: Array<{ company: string; reason?: string }>; leads?: DiscoveryLead[] };
+    discovery?: { found?: number; created?: number; existing?: number; failures?: Array<{ company: string; provider?: string; reason?: string }>; leads?: DiscoveryLead[] };
     resolution?: { attempted?: number; resolved?: number; deferred?: number; failures?: unknown[] };
     applications?: { prepared?: number; readyForReview?: number; needsInput?: number };
     companyDomains?: { attempted?: number; enriched?: number; pending?: number; failures?: unknown[] };
@@ -106,12 +106,18 @@ export function InternshipInbox() {
       const run = payload.run;
       setDiscovered(run.discovery?.leads ?? []);
       await loadLeads();
-      const sourceFailures = run.discovery?.failures?.length ?? 0;
+      const discoveryFailures = run.discovery?.failures ?? [];
+      const sourceFailures = discoveryFailures.length;
       const pipelineFailures = (run.resolution?.failures?.length ?? 0)
         + (run.companyDomains?.failures?.length ?? 0)
         + (run.contacts?.failures?.length ?? 0);
+      const sourceDetails = discoveryFailures.slice(0, 4).map((failure) => {
+        const provider = failure.provider ? `/${failure.provider}` : "";
+        return `${failure.company}${provider}: ${failure.reason ?? "temporarily unavailable"}`;
+      }).join("; ");
+      const remainingSourceFailures = Math.max(0, sourceFailures - 4);
       setNotice(
-        `Scout found ${run.discovery?.found ?? 0} relevant internship lead(s), saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), verified/enriched ${run.companyDomains?.enriched ?? 0} company domain(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}`,
+        `Scout found ${run.discovery?.found ?? 0} relevant internship lead(s), saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), verified/enriched ${run.companyDomains?.enriched ?? 0} company domain(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}${sourceDetails ? ` Discovery source details: ${sourceDetails}${remainingSourceFailures ? `; +${remainingSourceFailures} more` : ""}.` : ""}`,
       );
     } catch (caught) {
       if (!isLoopbackBrowser()) {
