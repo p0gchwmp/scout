@@ -28,11 +28,27 @@ test("local discovery import verifies HMAC, catalog identity and internship poli
   assert.match(snapshot.contentHash, /^[a-f0-9]{64}$/);
 });
 
+test("local discovery import accepts legitimate internships outside India and remote", async () => {
+  const overseas = {
+    ...greenhouseLead,
+    externalId: "456",
+    canonicalUrl: "https://job-boards.greenhouse.io/fourkites/jobs/456",
+    title: "Business Operations Intern",
+    description: "Internship based in London",
+    location: "London, United Kingdom",
+  };
+  const verified = await verifyLocalDiscoveryEnvelope(signed([overseas]), secret, Date.parse("2026-08-24T00:05:00Z"));
+  assert.equal(verified.leads.length, 1);
+  assert.equal(verified.leads[0].location, "London, United Kingdom");
+});
+
 test("local discovery import rejects tampering, arbitrary sources and stale payloads", async () => {
   const envelope = signed([greenhouseLead]);
   await assert.rejects(() => verifyLocalDiscoveryEnvelope({ ...envelope, payload: envelope.payload.replace("FourKites", "EvilCorp") }, secret, Date.parse("2026-08-24T00:05:00Z")), /signature verification failed/);
   const arbitrary = { ...greenhouseLead, slug: "not-controlled", canonicalUrl: "https://job-boards.greenhouse.io/not-controlled/jobs/123" };
   await assert.rejects(() => verifyLocalDiscoveryEnvelope(signed([arbitrary]), secret, Date.parse("2026-08-24T00:05:00Z")), /not controlled/);
+  const nonInternship = { ...greenhouseLead, title: "Senior Product Manager", description: "Full-time role" };
+  await assert.rejects(() => verifyLocalDiscoveryEnvelope(signed([nonInternship]), secret, Date.parse("2026-08-24T00:05:00Z")), /internship policy/);
   await assert.rejects(() => verifyLocalDiscoveryEnvelope(envelope, secret, Date.parse("2026-08-24T01:00:00Z")), /stale/);
 });
 
