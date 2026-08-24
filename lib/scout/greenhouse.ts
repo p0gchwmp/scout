@@ -1,5 +1,5 @@
-import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters";
-import { WorkdayPublicCxsAdapter } from "../workday-adapter";
+import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
+import { WorkdayPublicCxsAdapter } from "../workday-adapter.ts";
 import {
   validateAshbyEvidenceUrl,
   validateGreenhouseEvidenceUrl,
@@ -7,8 +7,8 @@ import {
   validateSmartRecruitersEvidenceUrl,
   validateWorkableEvidenceUrl,
   validateWorkdayEvidenceUrl,
-} from "./contact-extraction";
-import { parseWorkdayBoardToken } from "./workday-source";
+} from "./contact-extraction.ts";
+import { parseWorkdayBoardToken } from "./workday-source.ts";
 import type { SyncDiscoveryResult } from "./sync";
 import type { AtsProvider, CompanySource } from "./types";
 
