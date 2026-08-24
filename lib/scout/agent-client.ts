@@ -106,7 +106,7 @@ export type AgentContactResearchResponse = {
 };
 
 function isAtsProvider(value: unknown): value is AtsProvider {
-  return value === "greenhouse" || value === "lever" || value === "ashby" || value === "workable" || value === "smartrecruiters" || value === "workday";
+  return value === "greenhouse" || value === "lever" || value === "ashby" || value === "workable" || value === "smartrecruiters" || value === "workday" || value === "bamboohr";
 }
 
 function loopback(hostname: string) {
