@@ -145,6 +145,21 @@ export function validateWorkdayEvidenceUrl(raw: string, boardToken: string, exte
   return new URL(job.canonicalUrl);
 }
 
+const BAMBOOHR_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+const BAMBOOHR_JOB_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
+
+export function validateBambooHrEvidenceUrl(raw: string, tenantSlug: string, externalId: string) {
+  const slug = tenantSlug.trim().toLowerCase();
+  if (!BAMBOOHR_SLUG_PATTERN.test(slug)) throw new Error("Registered BambooHR tenant slug is invalid");
+  if (!BAMBOOHR_JOB_ID_PATTERN.test(externalId)) throw new Error("BambooHR external id is invalid");
+  const url = exactPublicJobUrl(raw, "BambooHR");
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodePathSegment(part, "BambooHR"));
+  if (url.hostname.toLowerCase() !== `${slug}.bamboohr.com` || parts.length !== 2 || parts[0] !== "careers" || parts[1] !== externalId) {
+    throw new Error("BambooHR evidence URL does not match the registered public careers source");
+  }
+  return url;
+}
+
 function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return validateGreenhouseEvidenceUrl(raw, sourceToken, externalId);
@@ -153,6 +168,7 @@ function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken:
     case "workable": return validateWorkableEvidenceUrl(raw, sourceToken, externalId);
     case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, sourceToken, externalId);
     case "workday": return validateWorkdayEvidenceUrl(raw, sourceToken, externalId);
+    case "bamboohr": return validateBambooHrEvidenceUrl(raw, sourceToken, externalId);
   }
 }
 
