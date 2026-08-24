@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { AGENT_EXECUTION_CAPABILITIES, planAgentTasks } from "../lib/scout/agent-task-planner.ts";
 import { AGENT_SERVICE_CAPABILITIES, InMemoryAgentReplayGuard, verifyAgentServiceRequest } from "../lib/scout/agent-service-auth.ts";
+import { resolveControlledLead } from "../lib/scout/lead-resolution.ts";
 import { runAgentDiscovery } from "./discovery.ts";
 import { researchPublishedCompanyContacts } from "./contact-research.ts";
 
@@ -51,10 +52,17 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    if (request.method !== "POST" || !["/v1/plan", "/v1/discover", "/v1/research-contacts"].includes(request.url ?? "")) return json(response, 404, { error: "Not found" });
+    const allowedPaths = ["/v1/plan", "/v1/discover", "/v1/resolve", "/v1/research-contacts"];
+    if (request.method !== "POST" || !allowedPaths.includes(request.url ?? "")) return json(response, 404, { error: "Not found" });
     const rawBody = await readBody(request);
     const verified = await verifyAgentServiceRequest(toWebRequest(request, rawBody), secret);
-    const expectedOperation = request.url === "/v1/plan" ? "plan_job" : request.url === "/v1/discover" ? "discover_internships" : "research_contacts";
+    const expectedOperation = request.url === "/v1/plan"
+      ? "plan_job"
+      : request.url === "/v1/discover"
+        ? "discover_internships"
+        : request.url === "/v1/resolve"
+          ? "resolve_job"
+          : "research_contacts";
     if (verified.auth.operation !== expectedOperation) return json(response, 409, { error: "Signed operation does not match this endpoint" });
     if (!replayGuard.accept(verified.auth)) return json(response, 409, { error: "Duplicate or replayed agent task" });
 
@@ -69,6 +77,21 @@ const server = createServer(async (request, response) => {
       }
       const discovery = await runAgentDiscovery();
       return json(response, 200, { taskId: verified.auth.taskId, idempotencyKey: verified.auth.idempotencyKey, ...discovery });
+    }
+
+    if (request.url === "/v1/resolve") {
+      const raw = payload as Record<string, unknown>;
+      if (typeof raw.canonicalUrl !== "string" || Object.keys(raw).some((key) => key !== "canonicalUrl")) {
+        return json(response, 400, { error: "Resolve accepts only canonicalUrl" });
+      }
+      const resolved = await resolveControlledLead(raw.canonicalUrl);
+      return json(response, 200, {
+        taskId: verified.auth.taskId,
+        idempotencyKey: verified.auth.idempotencyKey,
+        schemaVersion: 1,
+        resolvedAt: new Date().toISOString(),
+        ...resolved,
+      });
     }
 
     if (request.url === "/v1/research-contacts") {
