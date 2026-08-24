@@ -24,6 +24,10 @@ function shortError(error: unknown) {
   return (error instanceof Error ? error.message : "Unknown failure").replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
+function unresolvedDomain(value: string | null | undefined) {
+  return !value || value.endsWith(".invalid");
+}
+
 export async function POST(request: Request) {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
@@ -97,7 +101,20 @@ export async function POST(request: Request) {
           resolutionFailures.push({ jobId: lead.id, reason: "Registered source is disabled" });
           continue;
         }
-        const source = registered ?? (await db.insert(companySources).values(official.source).returning())[0];
+
+        let source = registered;
+        if (registered && unresolvedDomain(registered.companyDomain) && !unresolvedDomain(official.source.companyDomain)) {
+          const [upgraded] = await db.update(companySources).set({
+            companyName: official.source.companyName,
+            companyDomain: official.source.companyDomain,
+            careersUrl: official.source.careersUrl,
+          }).where(and(
+            eq(companySources.id, registered.id),
+            eq(companySources.companyDomain, registered.companyDomain),
+          )).returning();
+          source = upgraded ?? registered;
+        }
+        source ??= (await db.insert(companySources).values(official.source).returning())[0];
         if (!source) throw new Error("Unable to register controlled source");
 
         const observedAt = official.resolvedAt || new Date().toISOString();
@@ -200,7 +217,7 @@ export async function POST(request: Request) {
     for (const job of currentJobs.slice(0, MAX_CONTACT_RESEARCH_PER_RUN)) {
       if (!job.currentSnapshotId || !job.sourceRegistryId) continue;
       const [source] = await db.select().from(companySources).where(eq(companySources.id, job.sourceRegistryId)).limit(1);
-      if (!source?.enabled || !source.companyDomain || source.companyDomain.endsWith(".invalid")) continue;
+      if (!source?.enabled || unresolvedDomain(source.companyDomain)) continue;
       let contacts = await db.select().from(contactEvidence).where(and(
         eq(contactEvidence.jobId, job.id),
         eq(contactEvidence.jobSnapshotId, job.currentSnapshotId),
