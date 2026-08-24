@@ -77,7 +77,8 @@ async function loadApprovedTask() {
   handoffInput.value = "";
   const aiCount = payload.ai?.drafted ?? 0;
   const manualCount = payload.manualQuestions?.length ?? 0;
-  status.textContent = `Task loaded. ${aiCount} non-sensitive free-text answer draft(s) prepared; ${manualCount} question(s) require you. Review everything before submitting.`;
+  const aiNote = payload.ai?.error ? ` ${payload.ai.error}.` : "";
+  status.textContent = `Task loaded. ${aiCount} non-sensitive free-text answer draft(s) prepared; ${manualCount} question(s) require you.${aiNote} Review everything before submitting.`;
   fillButton.disabled = false;
 }
 
