@@ -1,5 +1,6 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../lib/bamboohr-adapter.ts";
+import { parseBreezyPublicJobUrl, BreezyOfficialPageAdapter } from "../lib/breezy-adapter.ts";
 import { RecruiteePublicCareersAdapter } from "../lib/recruitee-adapter.ts";
 import { parseTeamtailorPublicJobUrl, TeamtailorOfficialPageAdapter } from "../lib/teamtailor-adapter.ts";
 import { WorkdayPublicCxsAdapter } from "../lib/workday-adapter.ts";
@@ -21,6 +22,7 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   bamboohr: true,
   recruitee: true,
   teamtailor: true,
+  breezy: true,
   refetchOfficialAts: true,
   workdayTenantGuessing: false,
   bamboohrTenantGuessing: false,
@@ -30,6 +32,9 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   teamtailorTenantGuessing: false,
   teamtailorApiKey: false,
   teamtailorCustomDomainGuessing: false,
+  breezyTenantGuessing: false,
+  breezyEmployerApiCredentials: false,
+  breezyCustomDomainGuessing: false,
   resolveCompanyDomainFromConvergingEvidence: true,
   searchPersistenceGateRequired: true,
   arbitraryResultPageFetch: false,
@@ -112,6 +117,14 @@ function parseSupportedAtsUrl(value: string) {
       return null;
     }
   }
+  if (host.endsWith(".breezy.hr")) {
+    try {
+      const breezy = parseBreezyPublicJobUrl(url.href);
+      return { provider: "breezy" as const, slug: breezy.tenant, externalId: breezy.externalId };
+    } catch {
+      return null;
+    }
+  }
   const bamboo = host.match(BAMBOOHR_HOST_PATTERN);
   if (bamboo && parts.length === 2 && parts[0] === "careers") {
     try {
@@ -172,6 +185,10 @@ async function defaultDiscover(provider: AtsProvider, slug: string, externalId: 
       const job = await new TeamtailorOfficialPageAdapter().discoverPosting(slug, externalId);
       return job ? [job] : [];
     }
+    case "breezy": {
+      const job = await new BreezyOfficialPageAdapter().discoverPosting(slug, externalId);
+      return job ? [job] : [];
+    }
   }
 }
 
@@ -186,7 +203,7 @@ function searchQueries(company: string, title: string) {
     `"${safeCompany}" "${safeTitle}" site:apply.workable.com`,
     `"${safeCompany}" "${safeTitle}" site:jobs.smartrecruiters.com`,
     `"${safeCompany}" "${safeTitle}" site:myworkdayjobs.com OR site:myworkdaysite.com`,
-    `"${safeCompany}" "${safeTitle}" (site:bamboohr.com/careers OR site:recruitee.com/o/ OR site:teamtailor.com/jobs/)`,
+    `"${safeCompany}" "${safeTitle}" (site:bamboohr.com/careers OR site:recruitee.com/o/ OR site:teamtailor.com/jobs/ OR site:breezy.hr/p/)`,
   ];
 }
 
@@ -201,6 +218,7 @@ function atsCareersUrl(provider: AtsProvider, slug: string) {
     case "bamboohr": return `https://${slug}.bamboohr.com/careers`;
     case "recruitee": return `https://${slug}.recruitee.com/`;
     case "teamtailor": return `https://${slug}.teamtailor.com/jobs`;
+    case "breezy": return `https://${slug}.breezy.hr/`;
   }
 }
 
@@ -279,5 +297,5 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
   }
 
-  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, or BambooHR posting was found; no Recruitee or Teamtailor posting matched either.");
+  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, BambooHR, Recruitee, Teamtailor, or Breezy posting was found.");
 }
