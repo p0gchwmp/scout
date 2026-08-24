@@ -130,11 +130,19 @@ function jsonLdWorkplace(job: Record<string, unknown>, description: string): Wor
   return workplaceFromText(`${String(job.employmentType ?? "")} ${description}`);
 }
 
+function hasControlCharacters(value: string) {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint <= 0x1f || codePoint === 0x7f) return true;
+  }
+  return false;
+}
+
 function canonicalJobSegment(raw: string) {
   let decoded: string;
   try { decoded = decodeURIComponent(raw); }
   catch { throw new Error("Breezy job URL contains invalid encoding"); }
-  if (decoded.includes("/") || decoded.includes("\\") || /[\u0000-\u001F\u007F]/.test(decoded)) {
+  if (decoded.includes("/") || decoded.includes("\\") || hasControlCharacters(decoded)) {
     throw new Error("Breezy job URL contains an invalid position segment");
   }
   const match = decoded.match(BREEZY_POSITION_SEGMENT_PATTERN);
