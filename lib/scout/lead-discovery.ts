@@ -9,6 +9,8 @@ import type { AtsProvider } from "./types.ts";
 export const LEAD_DISCOVERY_CAPABILITIES = Object.freeze({
   controlledSourcesOnly: true,
   publicAtsFetch: true,
+  providerBoundedConcurrency: true,
+  maxConcurrentRequestsPerProvider: 1,
   arbitraryUrlFetch: false,
   linkedinScrape: false,
   contactScrape: false,
@@ -64,11 +66,45 @@ async function discoverSource(source: DiscoverySource): Promise<NormalizedJob[]>
   }
 }
 
-export async function discoverControlledInternships() {
-  const settled = await Promise.allSettled(CONTROLLED_DISCOVERY_SOURCES.map(async (source) => {
-    const jobs = await discoverSource(source);
-    return jobs.filter(isRelevantInternship).map((job) => ({ source, job }));
+async function discoverSettledByProvider(sources: readonly DiscoverySource[]) {
+  const settled = new Array<PromiseSettledResult<Array<{ source: DiscoverySource; job: NormalizedJob }>>>(sources.length);
+  const grouped = new Map<AtsProvider, Array<{ source: DiscoverySource; index: number }>>();
+
+  sources.forEach((source, index) => {
+    const group = grouped.get(source.provider) ?? [];
+    group.push({ source, index });
+    grouped.set(source.provider, group);
+  });
+
+  // Keep different ATS providers concurrent, but never burst one public provider with
+  // every registered board at once. This avoids turning a normal Scout run into a
+  // self-inflicted provider rate-limit spike while preserving source isolation.
+  await Promise.all([...grouped.values()].map(async (group) => {
+    for (const { source, index } of group) {
+      try {
+        const jobs = await discoverSource(source);
+        settled[index] = {
+          status: "fulfilled",
+          value: jobs.filter(isRelevantInternship).map((job) => ({ source, job })),
+        };
+      } catch (reason) {
+        settled[index] = { status: "rejected", reason };
+      }
+    }
   }));
+
+  return settled;
+}
+
+function stableDiscoveryFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/\(404\)/.test(message)) return "Registered public ATS source no longer resolves and needs catalog review";
+  if (/\(429\)/.test(message)) return "Public ATS source was rate-limited; retry on the next Scout run";
+  return "Public ATS source was temporarily unavailable";
+}
+
+export async function discoverControlledInternships() {
+  const settled = await discoverSettledByProvider(CONTROLLED_DISCOVERY_SOURCES);
 
   const leads: DiscoveredInternshipLead[] = [];
   const failures: Array<{ company: string; provider: string; reason: string }> = [];
@@ -76,7 +112,7 @@ export async function discoverControlledInternships() {
   settled.forEach((result, index) => {
     const source = CONTROLLED_DISCOVERY_SOURCES[index];
     if (result.status === "rejected") {
-      failures.push({ company: source.company, provider: source.provider, reason: "Public ATS source was temporarily unavailable" });
+      failures.push({ company: source.company, provider: source.provider, reason: stableDiscoveryFailure(result.reason) });
       return;
     }
     for (const { job } of result.value) {
