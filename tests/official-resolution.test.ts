@@ -39,8 +39,10 @@ test("search lead resolution re-fetches a matched Greenhouse posting before retu
     async resolveCompanyDomain() { return null; },
   });
 
-  assert.equal(queries.length, 2);
+  assert.equal(queries.length, 4);
   assert.ok(queries.every((query) => query.includes('"Acme Labs"') && query.includes('"Product Intern"')));
+  assert.ok(queries.some((query) => query.includes("site:jobs.ashbyhq.com")));
+  assert.ok(queries.some((query) => query.includes("site:apply.workable.com")));
   assert.equal(result.source.provider, "greenhouse");
   assert.equal(result.source.boardToken, "acmelabs");
   assert.equal(result.source.companyDomain, "unresolved.invalid");
@@ -48,6 +50,86 @@ test("search lead resolution re-fetches a matched Greenhouse posting before retu
   assert.equal(result.snapshot.company, "Acme Labs");
   assert.equal(result.resolutionEvidence.originalLeadUrl, "https://www.linkedin.com/jobs/view/123");
   assert.equal(result.resolutionEvidence.companyDomainResolved, false);
+});
+
+test("search lead resolution promotes a verified Ashby posting after public API re-fetch", async () => {
+  const result = await resolveSearchLeadToOfficialAts({
+    leadUrl: "https://www.linkedin.com/jobs/view/ashby-lead",
+    company: "Acme Labs",
+    title: "Product Intern",
+  }, {
+    searchProvider: {
+      async searchFixedQuery(query) {
+        if (!query.includes("ashbyhq.com")) return [];
+        return [{
+          url: "https://jobs.ashbyhq.com/acme/abc-123",
+          title: "Product Intern at Acme Labs",
+          description: "Acme Labs product internship in India",
+          age: null,
+        }];
+      },
+    },
+    async discover(provider, slug) {
+      assert.equal(provider, "ashby");
+      assert.equal(slug, "acme");
+      return [{
+        source: "ashby",
+        externalId: "abc-123",
+        canonicalUrl: "https://jobs.ashbyhq.com/acme/abc-123",
+        company: "acme",
+        title: "Product Intern",
+        description: "Product internship",
+        location: "Bengaluru, India",
+        workplaceType: "hybrid",
+      }];
+    },
+    async resolveCompanyDomain() { return null; },
+  });
+
+  assert.equal(result.source.provider, "ashby");
+  assert.equal(result.source.boardToken, "acme");
+  assert.equal(result.source.careersUrl, "https://jobs.ashbyhq.com/acme");
+  assert.equal(result.snapshot.externalId, "abc-123");
+});
+
+test("search lead resolution promotes a verified Workable posting after public API re-fetch", async () => {
+  const result = await resolveSearchLeadToOfficialAts({
+    leadUrl: "https://www.glassdoor.co.in/job-listing/acme-operations-intern",
+    company: "Acme Health",
+    title: "Operations Intern",
+  }, {
+    searchProvider: {
+      async searchFixedQuery(query) {
+        if (!query.includes("apply.workable.com")) return [];
+        return [{
+          url: "https://apply.workable.com/acme/j/AB12CD/",
+          title: "Operations Intern - Acme Health",
+          description: "Acme Health is hiring an Operations Intern in India",
+          age: null,
+        }];
+      },
+    },
+    async discover(provider, slug) {
+      assert.equal(provider, "workable");
+      assert.equal(slug, "acme");
+      return [{
+        source: "workable",
+        externalId: "AB12CD",
+        canonicalUrl: "https://apply.workable.com/acme/j/AB12CD/",
+        company: "Acme Health",
+        title: "Operations Intern",
+        description: "Operations internship",
+        location: "Bengaluru, Karnataka, India",
+        workplaceType: "on-site",
+      }];
+    },
+    async resolveCompanyDomain() { return null; },
+  });
+
+  assert.equal(result.source.provider, "workable");
+  assert.equal(result.source.boardToken, "acme");
+  assert.equal(result.source.careersUrl, "https://apply.workable.com/acme/");
+  assert.equal(result.snapshot.externalId, "AB12CD");
 });
 
 test("search lead resolution fails closed before using search evidence when persistence is disabled", async () => {
@@ -124,7 +206,7 @@ test("search lead resolution rejects a result whose company evidence does not ma
     searchProvider: {
       async searchFixedQuery() {
         return [{
-          url: "https://jobs.lever.co/othercompany/abc",
+          url: "https://jobs.lever.co/othercompany/abc-defgh",
           title: "Operations Intern at Other Company",
           description: "Other Company internship",
           age: null,
@@ -135,7 +217,7 @@ test("search lead resolution rejects a result whose company evidence does not ma
       throw new Error("ATS discovery should not run for mismatched company evidence");
     },
     async resolveCompanyDomain() { throw new Error("Domain resolution should not run"); },
-  }), /No sufficiently matched official Greenhouse or Lever posting/);
+  }), /No sufficiently matched official Greenhouse, Lever, Ashby, or Workable posting/);
 });
 
 test("search lead resolution rejects an ATS posting whose role does not match", async () => {
@@ -168,11 +250,15 @@ test("search lead resolution rejects an ATS posting whose role does not match", 
       }];
     },
     async resolveCompanyDomain() { throw new Error("Domain resolution should not run"); },
-  }), /No sufficiently matched official Greenhouse or Lever posting/);
+  }), /No sufficiently matched official Greenhouse, Lever, Ashby, or Workable posting/);
 });
 
 test("official search resolution cannot fetch arbitrary result pages or submit", () => {
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.serverDerivedQueriesOnly, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.greenhouse, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.lever, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.ashby, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.workable, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.refetchOfficialAts, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.resolveCompanyDomainFromConvergingEvidence, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.searchPersistenceGateRequired, true);
