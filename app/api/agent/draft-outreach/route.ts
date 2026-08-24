@@ -1,14 +1,14 @@
 import { env } from "cloudflare:workers";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreachDrafts } from "../../../../db/schema";
+import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreachDrafts, profileEvidence } from "../../../../db/schema";
 import { buildAiOutreachEnvelope } from "../../../../lib/scout/ai-agent";
 import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-runtime";
 import { parseOutreachCreatePayload, PayloadValidationError } from "../../../../lib/scout/api-validation";
 import { hashDraftBody } from "../../../../lib/scout/outreach";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
-const AI_OUTREACH_TEMPLATE_VERSION = 3;
+const AI_OUTREACH_TEMPLATE_VERSION = 4;
 
 export async function POST(request: Request) {
   const unauthorized = await requireScoutApiUser();
@@ -35,10 +35,15 @@ export async function POST(request: Request) {
     )).limit(1);
     if (!contact) return Response.json({ error: "Accepted contact evidence pinned to the current snapshot is required" }, { status: 409 });
 
-    const claims = await db.select().from(candidateClaims).where(inArray(candidateClaims.id, payload.claimIds));
+    const [claims, voiceRows] = await Promise.all([
+      db.select().from(candidateClaims).where(inArray(candidateClaims.id, payload.claimIds)),
+      db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
+    ]);
     if (claims.length !== payload.claimIds.length || claims.some((claim) => claim.status !== "approved")) {
       return Response.json({ error: "Every candidate claim supplied to AI must be approved" }, { status: 409 });
     }
+    const writingSample = voiceRows.find((field) => field.kind === "writing_sample")?.claim ?? null;
+    const writingStyleNote = voiceRows.find((field) => field.kind === "writing_style_note")?.claim ?? null;
 
     const envelope = buildAiOutreachEnvelope({
       jobSnapshotId: job.currentSnapshotId,
@@ -53,6 +58,7 @@ export async function POST(request: Request) {
         reviewState: "accepted",
       },
       claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement, status: "approved" as const })),
+      voice: { sample: writingSample, styleNote: writingStyleNote },
     });
     const client = createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>);
     const ai = await client.draftOutreach(envelope);
@@ -60,6 +66,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const draftId = crypto.randomUUID();
     const revisionId = crypto.randomUUID();
+    const bodyHash = await hashDraftBody(body);
 
     await db.batch([
       db.insert(outreachDrafts).values({ id: draftId, jobId: job.id, state: "draft", createdAt: now, updatedAt: now }),
@@ -72,7 +79,7 @@ export async function POST(request: Request) {
         contactId: contact.id,
         claimIds: ai.usedClaimIds,
         body,
-        bodyHash: await hashDraftBody(body),
+        bodyHash,
         createdAt: now,
       }),
     ]);
@@ -89,10 +96,10 @@ export async function POST(request: Request) {
           contactId: contact.id,
           claimIds: ai.usedClaimIds,
           body,
-          bodyHash: await hashDraftBody(body),
+          bodyHash,
           createdAt: now,
         },
-        ai: { model: ai.model },
+        ai: { model: ai.model, humanWritingStyleVersion: envelope.constraints.humanWritingStyleVersion, voiceSampleUsed: Boolean(envelope.voice.sample) },
       },
     }, { status: 201 });
   } catch (error) {
