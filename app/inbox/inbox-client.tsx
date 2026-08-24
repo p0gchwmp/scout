@@ -26,9 +26,15 @@ type DiscoveryLead = {
   postedAt: string | null;
 };
 
+type DiscoveryFailure = {
+  company: string;
+  provider?: string;
+  reason?: string;
+};
+
 type RunScoutResponse = {
   run?: {
-    discovery?: { found?: number; created?: number; existing?: number; failures?: Array<{ company: string; provider?: string; reason?: string }>; leads?: DiscoveryLead[] };
+    discovery?: { found?: number; created?: number; existing?: number; failures?: DiscoveryFailure[]; leads?: DiscoveryLead[] };
     resolution?: { attempted?: number; resolved?: number; deferred?: number; failures?: unknown[] };
     applications?: { prepared?: number; readyForReview?: number; needsInput?: number };
     companyDomains?: { attempted?: number; enriched?: number; pending?: number; failures?: unknown[] };
@@ -41,6 +47,15 @@ type RunScoutResponse = {
 function isLoopbackBrowser() {
   const hostname = window.location.hostname.toLowerCase();
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function sourceFailureDetails(failures: DiscoveryFailure[], limit = 6) {
+  const details = failures.slice(0, limit).map((failure) => {
+    const provider = failure.provider ? `/${failure.provider}` : "";
+    return `${failure.company}${provider}: ${failure.reason ?? "temporarily unavailable"}`;
+  }).join("; ");
+  const remaining = Math.max(0, failures.length - limit);
+  return details ? `${details}${remaining ? `; +${remaining} more` : ""}` : "";
 }
 
 export function InternshipInbox() {
@@ -81,9 +96,10 @@ export function InternshipInbox() {
     const imported = await importResponse.json() as {
       found?: number;
       created?: number;
+      upgraded?: number;
       existing?: number;
       leads?: DiscoveryLead[];
-      failures?: Array<{ company: string; reason?: string }>;
+      failures?: DiscoveryFailure[];
       error?: string;
     };
     if (!importResponse.ok) throw new Error(imported.error ?? "Unable to import local discovery results");
@@ -92,7 +108,11 @@ export function InternshipInbox() {
     if (!resolutionResponse.ok) throw new Error(resolution.error ?? "Unable to resolve official postings");
     setDiscovered(imported.leads ?? []);
     await loadLeads();
-    setNotice(`Development fallback found ${imported.found ?? 0} internship lead(s), saved ${imported.created ?? 0}, and upgraded ${resolution.resolved ?? 0} supported lead(s) to immutable snapshots. Cloud-agent application/contact stages were not run in this fallback.`);
+    const failures = imported.failures ?? [];
+    const details = sourceFailureDetails(failures);
+    setNotice(
+      `Development fallback found ${imported.found ?? 0} internship lead(s), saved ${imported.created ?? 0} new lead(s), upgraded ${imported.upgraded ?? 0} existing lead(s) to immutable official snapshots, and resolved ${resolution.resolved ?? 0} additional supported lead(s).${failures.length ? ` ${failures.length} source failure(s) were isolated.` : ""}${details ? ` Source details: ${details}.` : ""} Cloud-agent application/contact stages were not run in this fallback.`,
+    );
   }
 
   async function runScoutNow() {
@@ -111,13 +131,9 @@ export function InternshipInbox() {
       const pipelineFailures = (run.resolution?.failures?.length ?? 0)
         + (run.companyDomains?.failures?.length ?? 0)
         + (run.contacts?.failures?.length ?? 0);
-      const sourceDetails = discoveryFailures.slice(0, 4).map((failure) => {
-        const provider = failure.provider ? `/${failure.provider}` : "";
-        return `${failure.company}${provider}: ${failure.reason ?? "temporarily unavailable"}`;
-      }).join("; ");
-      const remainingSourceFailures = Math.max(0, sourceFailures - 4);
+      const sourceDetails = sourceFailureDetails(discoveryFailures, 4);
       setNotice(
-        `Scout found ${run.discovery?.found ?? 0} relevant internship lead(s), saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), verified/enriched ${run.companyDomains?.enriched ?? 0} company domain(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}${sourceDetails ? ` Discovery source details: ${sourceDetails}${remainingSourceFailures ? `; +${remainingSourceFailures} more` : ""}.` : ""}`,
+        `Scout found ${run.discovery?.found ?? 0} relevant internship lead(s), saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), verified/enriched ${run.companyDomains?.enriched ?? 0} company domain(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}${sourceDetails ? ` Discovery source details: ${sourceDetails}.` : ""}`,
       );
     } catch (caught) {
       if (!isLoopbackBrowser()) {
