@@ -160,6 +160,21 @@ export function validateBambooHrEvidenceUrl(raw: string, tenantSlug: string, ext
   return url;
 }
 
+const RECRUITEE_TENANT_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+const RECRUITEE_OFFER_SLUG_PATTERN = /^[A-Za-z0-9_-]{1,180}$/;
+
+export function validateRecruiteeEvidenceUrl(raw: string, tenantToken: string, externalId: string) {
+  const tenant = tenantToken.trim().toLowerCase();
+  if (!RECRUITEE_TENANT_PATTERN.test(tenant)) throw new Error("Registered Recruitee tenant is invalid");
+  if (!RECRUITEE_OFFER_SLUG_PATTERN.test(externalId)) throw new Error("Recruitee offer slug is invalid");
+  const url = exactPublicJobUrl(raw, "Recruitee");
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodePathSegment(part, "Recruitee"));
+  if (url.hostname.toLowerCase() !== `${tenant}.recruitee.com` || parts.length !== 2 || parts[0] !== "o" || parts[1] !== externalId) {
+    throw new Error("Recruitee evidence URL does not match the registered public careers source");
+  }
+  return url;
+}
+
 function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return validateGreenhouseEvidenceUrl(raw, sourceToken, externalId);
@@ -169,6 +184,7 @@ function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken:
     case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, sourceToken, externalId);
     case "workday": return validateWorkdayEvidenceUrl(raw, sourceToken, externalId);
     case "bamboohr": return validateBambooHrEvidenceUrl(raw, sourceToken, externalId);
+    case "recruitee": return validateRecruiteeEvidenceUrl(raw, sourceToken, externalId);
   }
 }
 
