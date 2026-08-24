@@ -71,7 +71,7 @@ export function BrowserAssist() {
   return <main className={styles.shell}>
     <header className={styles.header}>
       <div><p className={styles.kicker}>SCOUT / BROWSER ASSIST</p><h1>Hand the boring form fields to Scout.</h1><p>Generate a short-lived task for one reviewed application. The extension fills verified profile fields and can draft non-sensitive free-text answers from approved claims. CAPTCHA, sensitive questions and final submit stay with you.</p></div>
-      <div className={styles.links}><Link href="/">Dashboard</Link><Link href="/inbox">Internship Inbox</Link></div>
+      <div className={styles.links}><Link href="/">Dashboard</Link><Link href="/inbox">Internship Inbox</Link><Link href="/review">Review Queue</Link><Link href="/voice">Voice</Link></div>
     </header>
 
     {notice && <div className={styles.notice}>{notice}</div>}
