@@ -43,6 +43,7 @@ export async function POST(request: Request) {
         email: candidate.email,
         sourceUrl: candidate.sourceUrl,
         excerpt: candidate.excerpt,
+        sourceType: candidate.sourceType,
         extractedAt: research.researchedAt,
         suitability: "review",
         suitabilityReason: `Published on ${candidate.sourceType}; AI/contact review pending`,
