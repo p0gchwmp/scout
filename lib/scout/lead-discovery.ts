@@ -1,5 +1,6 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
+import { RecruiteePublicCareersAdapter } from "../recruitee-adapter.ts";
 import type { NormalizedJob } from "../types.ts";
 import { WorkdayPublicCxsAdapter } from "../workday-adapter.ts";
 import { normalizeInternshipLead } from "./job-intake.ts";
@@ -59,6 +60,7 @@ async function discoverSource(source: DiscoverySource): Promise<NormalizedJob[]>
     case "smartrecruiters": return new SmartRecruitersAdapter().discover(source.slug);
     case "workday": return new WorkdayPublicCxsAdapter().discover(source.slug);
     case "bamboohr": return new BambooHrPublicCareersAdapter().discover(source.slug);
+    case "recruitee": return new RecruiteePublicCareersAdapter().discover(source.slug);
   }
 }
 
