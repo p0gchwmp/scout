@@ -6,6 +6,7 @@ import { resolveControlledLead } from "../lib/scout/lead-resolution.ts";
 import { createAgentAiProvider } from "./ai-runtime.ts";
 import { runAgentDiscovery } from "./discovery.ts";
 import { researchPublishedCompanyContacts } from "./contact-research.ts";
+import { createOrReuseGmailDraft } from "./gmail-drafts.ts";
 
 const port = Number(process.env.PORT ?? process.env.SCOUT_AGENT_PORT ?? 8788);
 const secret = process.env.SCOUT_AGENT_SHARED_SECRET?.trim() ?? "";
@@ -59,7 +60,7 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    const allowedPaths = ["/v1/plan", "/v1/discover", "/v1/resolve", "/v1/research-contacts", "/v1/classify-contacts", "/v1/draft-outreach"];
+    const allowedPaths = ["/v1/plan", "/v1/discover", "/v1/resolve", "/v1/research-contacts", "/v1/classify-contacts", "/v1/draft-outreach", "/v1/create-gmail-draft"];
     if (request.method !== "POST" || !allowedPaths.includes(request.url ?? "")) return json(response, 404, { error: "Not found" });
     const rawBody = await readBody(request);
     const verified = await verifyAgentServiceRequest(toWebRequest(request, rawBody), secret);
@@ -73,7 +74,9 @@ const server = createServer(async (request, response) => {
             ? "research_contacts"
             : request.url === "/v1/classify-contacts"
               ? "classify_contacts"
-              : "draft_outreach";
+              : request.url === "/v1/create-gmail-draft"
+                ? "create_gmail_draft"
+                : "draft_outreach";
     if (verified.auth.operation !== expectedOperation) return json(response, 409, { error: "Signed operation does not match this endpoint" });
     if (!replayGuard.accept(verified.auth)) return json(response, 409, { error: "Duplicate or replayed agent task" });
 
@@ -172,6 +175,27 @@ const server = createServer(async (request, response) => {
         model: process.env.SCOUT_AI_MODEL ?? "",
         jobSnapshotId: envelope.jobSnapshotId,
         contactId: envelope.contact.id,
+        ...draft,
+      });
+    }
+
+    if (request.url === "/v1/create-gmail-draft") {
+      const raw = payload as Record<string, unknown>;
+      const allowed = new Set(["revisionId", "to", "subject", "body"]);
+      if (Object.keys(raw).some((key) => !allowed.has(key))) return json(response, 400, { error: "Gmail draft accepts only the pinned revision fields" });
+      if ([raw.revisionId, raw.to, raw.subject, raw.body].some((value) => typeof value !== "string")) {
+        return json(response, 400, { error: "revisionId, to, subject and body are required" });
+      }
+      const draft = await createOrReuseGmailDraft({
+        revisionId: raw.revisionId as string,
+        to: raw.to as string,
+        subject: raw.subject as string,
+        body: raw.body as string,
+      });
+      return json(response, 200, {
+        taskId: verified.auth.taskId,
+        idempotencyKey: verified.auth.idempotencyKey,
+        schemaVersion: 1,
         ...draft,
       });
     }
