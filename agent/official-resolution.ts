@@ -1,6 +1,7 @@
 import { GreenhouseAdapter, LeverAdapter } from "../lib/adapters.ts";
 import type { BraveSearchResult } from "../lib/scout/brave-search.ts";
 import { snapshotHash } from "../lib/scout/sync.ts";
+import { resolveOfficialCompanyDomain } from "./company-domain-resolution.ts";
 import { createAgentSearchProvider } from "./search-runtime.ts";
 
 export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
@@ -8,6 +9,7 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   greenhouse: true,
   lever: true,
   refetchOfficialAts: true,
+  resolveCompanyDomainFromConvergingEvidence: true,
   arbitraryResultPageFetch: false,
   linkedinScrape: false,
   companyDomainGuessing: false,
@@ -20,10 +22,12 @@ type SearchProvider = {
 };
 
 type ObservedJob = Awaited<ReturnType<GreenhouseAdapter["discover"]>>[number];
+type DomainResolution = Awaited<ReturnType<typeof resolveOfficialCompanyDomain>>;
 
 type ResolutionDependencies = {
   searchProvider?: SearchProvider | null;
   discover?: (provider: "greenhouse" | "lever", slug: string) => Promise<ObservedJob[]>;
+  resolveCompanyDomain?: (company: string, searchProvider: SearchProvider) => Promise<DomainResolution>;
 };
 
 const GENERIC_ROLE_WORDS = new Set(["intern", "internship", "trainee", "apprentice", "role", "job", "position", "opening"]);
@@ -96,6 +100,7 @@ export async function resolveSearchLeadToOfficialAts(input: {
   const provider = dependencies.searchProvider === undefined ? createAgentSearchProvider() : dependencies.searchProvider;
   if (!provider) throw new Error("Official-source web search is not configured");
   const discover = dependencies.discover ?? defaultDiscover;
+  const resolveCompanyDomain = dependencies.resolveCompanyDomain ?? resolveOfficialCompanyDomain;
   const queries = searchQueries(input.company, input.title);
   const results = (await Promise.all(queries.map((query) => provider.searchFixedQuery(query)))).flat().slice(0, 40);
 
@@ -125,16 +130,23 @@ export async function resolveSearchLeadToOfficialAts(input: {
       postedAt: observed.postedAt ?? null,
     };
 
+    let companyDomain: DomainResolution = null;
+    try { companyDomain = await resolveCompanyDomain(snapshot.company, provider); }
+    catch {
+      // ATS resolution is still useful when domain evidence is unavailable. Contact research remains disabled.
+    }
+    const atsCareersUrl = parsed.provider === "greenhouse"
+      ? `https://job-boards.greenhouse.io/${parsed.slug}`
+      : `https://jobs.lever.co/${parsed.slug}`;
+
     return {
       source: {
         id: `resolved-${parsed.provider}-${parsed.slug}`.slice(0, 200),
         provider: parsed.provider,
         companyName: snapshot.company,
         boardToken: parsed.slug,
-        companyDomain: "unresolved.invalid",
-        careersUrl: parsed.provider === "greenhouse"
-          ? `https://job-boards.greenhouse.io/${parsed.slug}`
-          : `https://jobs.lever.co/${parsed.slug}`,
+        companyDomain: companyDomain?.domain ?? "unresolved.invalid",
+        careersUrl: companyDomain?.careersUrl ?? atsCareersUrl,
         enabled: true as const,
       },
       snapshot,
@@ -143,7 +155,9 @@ export async function resolveSearchLeadToOfficialAts(input: {
         originalLeadUrl: input.leadUrl,
         searchResultUrl: result.url,
         searchResultTitle: result.title,
-        companyDomainResolved: false as const,
+        companyDomainResolved: Boolean(companyDomain),
+        companyDomain: companyDomain?.domain ?? null,
+        companyDomainEvidence: companyDomain?.evidence ?? [],
       },
     };
   }
