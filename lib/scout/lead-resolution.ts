@@ -1,14 +1,19 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
+import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
+import { WorkdayPublicCxsAdapter } from "../workday-adapter.ts";
 import {
   validateAshbyEvidenceUrl,
+  validateBambooHrEvidenceUrl,
   validateGreenhouseEvidenceUrl,
   validateLeverEvidenceUrl,
   validateSmartRecruitersEvidenceUrl,
   validateWorkableEvidenceUrl,
+  validateWorkdayEvidenceUrl,
 } from "./contact-extraction.ts";
 import { CONTROLLED_DISCOVERY_SOURCES } from "./lead-discovery.ts";
 import { snapshotHash } from "./sync.ts";
 import type { AtsProvider } from "./types.ts";
+import { parseWorkdayPublicUrl } from "./workday-source.ts";
 
 export const LEAD_RESOLUTION_CAPABILITIES = Object.freeze({
   controlledSourcesOnly: true,
@@ -17,12 +22,15 @@ export const LEAD_RESOLUTION_CAPABILITIES = Object.freeze({
   ashby: true,
   workable: true,
   smartrecruiters: true,
+  workday: true,
+  bamboohr: true,
   arbitraryUrlFetch: false,
   submit: false,
   send: false,
 } as const);
 
 const SMARTRECRUITERS_POSTING_SEGMENT = /^([0-9]{4,32})(?:-|$)/;
+const BAMBOOHR_HOST_PATTERN = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.bamboohr\.com$/i;
 
 function exactHttpsUrl(value: string) {
   let url: URL;
@@ -41,6 +49,8 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "ashby": return validateAshbyEvidenceUrl(raw, token, externalId);
     case "workable": return validateWorkableEvidenceUrl(raw, token, externalId);
     case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, token, externalId);
+    case "workday": return validateWorkdayEvidenceUrl(raw, token, externalId);
+    case "bamboohr": return validateBambooHrEvidenceUrl(raw, token, externalId);
   }
 }
 
@@ -52,6 +62,14 @@ async function discover(provider: AtsProvider, token: string, externalId: string
     case "workable": return new WorkablePublicAdapter().discover(token);
     case "smartrecruiters": {
       const job = await new SmartRecruitersAdapter().discoverPosting(token, externalId);
+      return job ? [job] : [];
+    }
+    case "workday": {
+      const job = await new WorkdayPublicCxsAdapter().discoverPosting(token, externalId);
+      return job ? [job] : [];
+    }
+    case "bamboohr": {
+      const job = await new BambooHrPublicCareersAdapter().discoverPosting(token, externalId);
       return job ? [job] : [];
     }
   }
@@ -88,8 +106,21 @@ export async function resolveControlledLead(canonicalUrl: string) {
     provider = "smartrecruiters";
     slug = parts[0];
     externalId = match[1];
+  } else if (hostname.endsWith(".myworkdayjobs.com") || hostname.endsWith(".myworkdaysite.com")) {
+    const parsed = parseWorkdayPublicUrl(url.href);
+    if (!parsed.externalPath) throw new Error("Lead resolution requires an exact Workday job posting");
+    provider = "workday";
+    slug = parsed.boardToken;
+    externalId = parsed.externalPath;
   } else {
-    throw new Error("Lead resolution is not supported for this application channel yet");
+    const bamboo = hostname.match(BAMBOOHR_HOST_PATTERN);
+    if (!bamboo || parts.length !== 2 || parts[0] !== "careers") {
+      throw new Error("Lead resolution is not supported for this application channel yet");
+    }
+    provider = "bamboohr";
+    slug = bamboo[1].toLowerCase();
+    try { externalId = decodeURIComponent(parts[1]); }
+    catch { throw new Error("BambooHR lead URL contains invalid encoding"); }
   }
 
   const source = CONTROLLED_DISCOVERY_SOURCES.find((candidate) => candidate.provider === provider && candidate.slug === slug);
@@ -119,7 +150,7 @@ export async function resolveControlledLead(canonicalUrl: string) {
 
   return {
     source: {
-      id: `catalog-${provider}-${source.slug}`,
+      id: `catalog-${provider}-${source.slug}`.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 200),
       provider,
       companyName: source.company,
       boardToken: source.slug,
