@@ -1,11 +1,13 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
+import { parseBreezyPublicJobUrl, BreezyOfficialPageAdapter } from "../breezy-adapter.ts";
 import { RecruiteePublicCareersAdapter } from "../recruitee-adapter.ts";
 import { parseTeamtailorPublicJobUrl, TeamtailorOfficialPageAdapter } from "../teamtailor-adapter.ts";
 import { WorkdayPublicCxsAdapter } from "../workday-adapter.ts";
 import {
   validateAshbyEvidenceUrl,
   validateBambooHrEvidenceUrl,
+  validateBreezyEvidenceUrl,
   validateGreenhouseEvidenceUrl,
   validateLeverEvidenceUrl,
   validateRecruiteeEvidenceUrl,
@@ -30,6 +32,7 @@ export const LEAD_RESOLUTION_CAPABILITIES = Object.freeze({
   bamboohr: true,
   recruitee: true,
   teamtailor: true,
+  breezy: true,
   arbitraryUrlFetch: false,
   submit: false,
   send: false,
@@ -60,6 +63,7 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "bamboohr": return validateBambooHrEvidenceUrl(raw, token, externalId);
     case "recruitee": return validateRecruiteeEvidenceUrl(raw, token, externalId);
     case "teamtailor": return validateTeamtailorEvidenceUrl(raw, token, externalId);
+    case "breezy": return validateBreezyEvidenceUrl(raw, token, externalId);
   }
 }
 
@@ -87,6 +91,10 @@ async function discover(provider: AtsProvider, token: string, externalId: string
     }
     case "teamtailor": {
       const job = await new TeamtailorOfficialPageAdapter().discoverPosting(token, externalId);
+      return job ? [job] : [];
+    }
+    case "breezy": {
+      const job = await new BreezyOfficialPageAdapter().discoverPosting(token, externalId);
       return job ? [job] : [];
     }
   }
@@ -132,6 +140,11 @@ export async function resolveControlledLead(canonicalUrl: string) {
   } else if (hostname.endsWith(".teamtailor.com")) {
     const parsed = parseTeamtailorPublicJobUrl(url.href);
     provider = "teamtailor";
+    slug = parsed.tenant;
+    externalId = parsed.externalId;
+  } else if (hostname.endsWith(".breezy.hr")) {
+    const parsed = parseBreezyPublicJobUrl(url.href);
+    provider = "breezy";
     slug = parsed.tenant;
     externalId = parsed.externalId;
   } else {
