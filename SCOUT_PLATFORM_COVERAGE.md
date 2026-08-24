@@ -9,7 +9,7 @@ Every platform declares five independent decisions:
 1. **Discovery** — public API/page, search-index lead, registered source, or user-session capture.
 2. **Resolution** — structured snapshot, official-page snapshot, browser capture, or lead-only.
 3. **Application** — structured preparation, reviewed browser assistance, reviewed Easy Apply assistance, or manual.
-4. **Contact research** — official company sources only, or none on the job board itself.
+4. **Contact research** — official company sources only, or none on the job board/form itself.
 5. **Submission** — always requires Ryan's explicit approval; no platform gets an autonomous-submit flag.
 
 ## Priority 1 — structured ATS adapters
@@ -40,7 +40,20 @@ Goal: scheduled cloud discovery, immutable job snapshots, normalized application
 
 Goal: resolve the official job page server-side where practical, then use a reviewed candidate-side browser session to inspect visible fields, fill approved reusable facts, upload the approved resume, and stop on sensitive/unknown questions.
 
-## Priority 3 — job-board lead coverage
+## Priority 3 — form-based application channels
+
+- Tally (`tally.so` and browser-detected custom-domain/embedded Tally forms)
+- Google Forms
+- Typeform
+- Fillout
+- Jotform
+- Microsoft Forms
+
+These are common startup and direct-company application surfaces, but the form itself is not sufficient evidence of the employer or role. Scout must first bind the form URL to upstream official company/job evidence, then browser-assist visible fields using verified profile data and approved claims. Hidden/prefilled values are never treated as candidate claims. Final submission remains approval-gated.
+
+Tally deserves explicit handling because forms may be shared at `tally.so` URLs, embedded into company sites, or hosted on custom domains. The browser adapter should detect Tally form signatures in addition to URL classification.
+
+## Priority 4 — job-board lead coverage
 
 - LinkedIn Search
 - LinkedIn Easy Apply
@@ -62,7 +75,7 @@ These are valuable discovery surfaces but are not recruiter-email sources. Scout
 - Recruiter profiles: context-only. Do not scrape private emails or contact details.
 - Final application submission remains approval-gated.
 
-## Priority 4 — enterprise / long-tail ATS
+## Priority 5 — enterprise / long-tail ATS
 
 - Oracle Recruiting Cloud
 - SAP SuccessFactors
@@ -76,7 +89,7 @@ Goal: robust official-page recognition and browser-assisted application preparat
 
 ## Contact discovery path
 
-Job boards themselves are not contact-harvesting targets. For every resolved company/role, the agent searches approved official sources such as:
+Job boards and form providers themselves are not contact-harvesting targets. For every resolved company/role, the agent searches approved official sources such as:
 
 - official job posting / ATS page;
 - company careers page;
