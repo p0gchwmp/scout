@@ -2,7 +2,6 @@ import discoveryCatalog from "../../config/discovery-sources.json" with { type: 
 import { snapshotHash } from "./sync.ts";
 
 const INTERNSHIP_PATTERN = /\b(intern|internship|trainee|apprentice|co-?op)\b/i;
-const INDIA_OR_REMOTE_PATTERN = /\b(india|bengaluru|bangalore|chennai|hyderabad|noida|gurugram|gurgaon|mumbai|delhi|pune|kolkata|remote)\b/i;
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -96,8 +95,8 @@ function validateLead(value: unknown): LocalBridgeLead {
   const location = typeof raw.location === "string" ? raw.location.slice(0, 500) : "";
   const workplaceType = raw.workplaceType;
   if (workplaceType !== "remote" && workplaceType !== "hybrid" && workplaceType !== "on-site" && workplaceType !== "unspecified") throw new Error("Workplace type is invalid");
-  if (!INTERNSHIP_PATTERN.test(`${title}\n${description}`) || !INDIA_OR_REMOTE_PATTERN.test(`${location}\n${workplaceType}\n${description.slice(0, 1600)}`)) {
-    throw new Error("Discovery result does not match the internship/location policy");
+  if (!INTERNSHIP_PATTERN.test(`${title}\n${description}`)) {
+    throw new Error("Discovery result does not match the internship policy");
   }
   const postedAt = raw.postedAt === null || raw.postedAt === undefined ? null : string(raw.postedAt, "Posted at", 100);
 
