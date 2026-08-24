@@ -1,8 +1,10 @@
 import type { WorkplaceType } from "../types";
 
+export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable";
+
 export type CompanySource = {
   id: string;
-  provider: "greenhouse" | "lever";
+  provider: AtsProvider;
   companyName: string;
   boardToken: string;
   companyDomain: string;
@@ -11,7 +13,7 @@ export type CompanySource = {
 };
 
 export type NormalizedJobSnapshot = {
-  sourceProvider: "greenhouse" | "lever";
+  sourceProvider: AtsProvider;
   externalId: string;
   canonicalUrl: string;
   company: string;
