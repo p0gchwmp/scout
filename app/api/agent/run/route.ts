@@ -18,6 +18,7 @@ import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from
 
 const MAX_RESOLUTIONS_PER_RUN = 12;
 const MAX_APPLICATION_PREP_PER_RUN = 24;
+const MAX_DOMAIN_ENRICHMENT_PER_RUN = 8;
 const MAX_CONTACT_RESEARCH_PER_RUN = 6;
 
 function shortError(error: unknown) {
@@ -85,7 +86,6 @@ export async function POST(request: Request) {
       .filter((job) => !job.currentSnapshotId && job.source.startsWith("lead:agent:"))
       .slice(0, MAX_RESOLUTIONS_PER_RUN);
 
-    const resolvedJobIds: string[] = [];
     const resolutionFailures: Array<{ jobId: string; reason: string }> = [];
     let resolved = 0;
 
@@ -170,7 +170,6 @@ export async function POST(request: Request) {
             lastSeenAt: observedAt,
           }).where(eq(jobs.id, lead.id)),
         ]);
-        resolvedJobIds.push(lead.id);
         resolved += 1;
       } catch (error) {
         resolutionFailures.push({ jobId: lead.id, reason: shortError(error) });
@@ -209,6 +208,36 @@ export async function POST(request: Request) {
 
     const currentJobs = (await db.select().from(jobs))
       .filter((job) => job.currentSnapshotId && job.sourceRegistryId);
+    const domainCandidates: Array<{ job: (typeof currentJobs)[number]; source: typeof companySources.$inferSelect }> = [];
+    for (const job of currentJobs) {
+      if (!job.sourceRegistryId) continue;
+      const [source] = await db.select().from(companySources).where(eq(companySources.id, job.sourceRegistryId)).limit(1);
+      if (source?.enabled && unresolvedDomain(source.companyDomain)) domainCandidates.push({ job, source });
+    }
+
+    let domainsEnriched = 0;
+    const domainFailures: Array<{ jobId: string; reason: string }> = [];
+    for (const { job, source } of domainCandidates.slice(0, MAX_DOMAIN_ENRICHMENT_PER_RUN)) {
+      try {
+        const official = await client.resolveJob({ canonicalUrl: job.canonicalUrl, company: job.company, title: job.title });
+        if (official.source.provider !== source.provider || official.source.boardToken !== source.boardToken) {
+          throw new Error("Domain enrichment resolved to a different ATS source");
+        }
+        if (unresolvedDomain(official.source.companyDomain)) continue;
+        const [upgraded] = await db.update(companySources).set({
+          companyName: official.source.companyName,
+          companyDomain: official.source.companyDomain,
+          careersUrl: official.source.careersUrl,
+        }).where(and(
+          eq(companySources.id, source.id),
+          eq(companySources.companyDomain, source.companyDomain),
+        )).returning();
+        if (upgraded) domainsEnriched += 1;
+      } catch (error) {
+        domainFailures.push({ jobId: job.id, reason: shortError(error) });
+      }
+    }
+
     let contactJobsResearched = 0;
     let contactCandidatesSaved = 0;
     let contactsClassified = 0;
@@ -308,6 +337,12 @@ export async function POST(request: Request) {
           readyForReview: applicationsReady,
           needsInput: applicationsNeedInput,
         },
+        companyDomains: {
+          attempted: Math.min(domainCandidates.length, MAX_DOMAIN_ENRICHMENT_PER_RUN),
+          enriched: domainsEnriched,
+          pending: Math.max(0, domainCandidates.length - MAX_DOMAIN_ENRICHMENT_PER_RUN),
+          failures: domainFailures,
+        },
         contacts: {
           jobsResearched: contactJobsResearched,
           candidatesSaved: contactCandidatesSaved,
@@ -322,6 +357,7 @@ export async function POST(request: Request) {
         limits: {
           resolutions: MAX_RESOLUTIONS_PER_RUN,
           applicationPrep: MAX_APPLICATION_PREP_PER_RUN,
+          domainEnrichment: MAX_DOMAIN_ENRICHMENT_PER_RUN,
           contactResearch: MAX_CONTACT_RESEARCH_PER_RUN,
         },
         safety: {
