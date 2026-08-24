@@ -1,5 +1,5 @@
 import type { AtsProvider } from "./types";
-import { normalizeWorkdayExternalPath, parseWorkdayBoardToken, parseWorkdayPublicUrl } from "./workday-source";
+import { normalizeWorkdayExternalPath, parseWorkdayBoardToken, parseWorkdayPublicUrl } from "./workday-source.ts";
 
 export type ContactSuitability = "high" | "review";
 export type ContactReviewState = "needs_review" | "accepted" | "rejected";
