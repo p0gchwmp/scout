@@ -40,12 +40,13 @@ test("lead resolution only fetches controlled Greenhouse postings and preserves 
 });
 
 test("lead resolution supports exact controlled Lever postings", async () => {
+  const leverId = "12345678-abcd-1234-abcd-1234567890ab";
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     assert.equal(url.href, "https://api.lever.co/v0/postings/paytm?mode=json");
     return Response.json([{
-      id: "abc-123",
-      hostedUrl: "https://jobs.lever.co/paytm/abc-123",
+      id: leverId,
+      hostedUrl: `https://jobs.lever.co/paytm/${leverId}`,
       text: "Product Management Intern",
       descriptionPlain: "Product internship in Noida, India.",
       categories: { location: "Noida, India" },
@@ -53,12 +54,12 @@ test("lead resolution supports exact controlled Lever postings", async () => {
     }]);
   }) as typeof fetch;
 
-  const result = await resolveControlledLead("https://jobs.lever.co/paytm/abc-123");
+  const result = await resolveControlledLead(`https://jobs.lever.co/paytm/${leverId}`);
   assert.equal(result.source.provider, "lever");
   assert.equal(result.source.boardToken, "paytm");
   assert.equal(result.source.companyDomain, "paytm.com");
   assert.equal(result.snapshot.sourceProvider, "lever");
-  assert.equal(result.snapshot.externalId, "abc-123");
+  assert.equal(result.snapshot.externalId, leverId);
   assert.equal(result.snapshot.company, "Paytm");
   assert.equal(result.snapshot.workplaceType, "on-site");
   assert.match(result.contentHash, /^[a-f0-9]{64}$/);
