@@ -1,7 +1,9 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
+import { WorkdayPublicCxsAdapter } from "../lib/workday-adapter.ts";
 import type { BraveSearchResult } from "../lib/scout/brave-search.ts";
 import { snapshotHash } from "../lib/scout/sync.ts";
 import type { AtsProvider } from "../lib/scout/types.ts";
+import { parseWorkdayPublicUrl } from "../lib/scout/workday-source.ts";
 import { resolveOfficialCompanyDomain } from "./company-domain-resolution.ts";
 import { createAgentSearchProvider } from "./search-runtime.ts";
 
@@ -12,7 +14,9 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   ashby: true,
   workable: true,
   smartrecruiters: true,
+  workday: true,
   refetchOfficialAts: true,
+  workdayTenantGuessing: false,
   resolveCompanyDomainFromConvergingEvidence: true,
   searchPersistenceGateRequired: true,
   arbitraryResultPageFetch: false,
@@ -77,13 +81,21 @@ function parseSupportedAtsUrl(value: string) {
     const match = parts[1].match(SMARTRECRUITERS_POSTING_SEGMENT);
     if (match) return { provider: "smartrecruiters" as const, slug: parts[0], externalId: match[1] };
   }
+  if (host.endsWith(".myworkdayjobs.com") || host.endsWith(".myworkdaysite.com")) {
+    try {
+      const workday = parseWorkdayPublicUrl(url.href);
+      if (workday.externalPath) return { provider: "workday" as const, slug: workday.boardToken, externalId: workday.externalPath };
+    } catch {
+      return null;
+    }
+  }
   return null;
 }
 
 function companyEvidenceMatches(company: string, candidate: BraveSearchResult, slug: string) {
   const expected = tokens(company, GENERIC_COMPANY_WORDS);
   if (!expected.length) return false;
-  const haystack = tokens(`${candidate.title} ${candidate.description} ${slug.replace(/[-_]/g, " ")}`, GENERIC_COMPANY_WORDS);
+  const haystack = tokens(`${candidate.title} ${candidate.description} ${slug.replace(/[-_/]/g, " ")}`, GENERIC_COMPANY_WORDS);
   return tokenOverlap(expected, haystack) >= Math.min(1, expected.length === 1 ? 1 : 0.5);
 }
 
@@ -103,6 +115,10 @@ async function defaultDiscover(provider: AtsProvider, slug: string, externalId: 
       const job = await new SmartRecruitersAdapter().discoverPosting(slug, externalId);
       return job ? [job] : [];
     }
+    case "workday": {
+      const job = await new WorkdayPublicCxsAdapter().discoverPosting(slug, externalId);
+      return job ? [job] : [];
+    }
   }
 }
 
@@ -116,6 +132,7 @@ function searchQueries(company: string, title: string) {
     `"${safeCompany}" "${safeTitle}" site:jobs.ashbyhq.com`,
     `"${safeCompany}" "${safeTitle}" site:apply.workable.com`,
     `"${safeCompany}" "${safeTitle}" site:jobs.smartrecruiters.com`,
+    `"${safeCompany}" "${safeTitle}" site:myworkdayjobs.com OR site:myworkdaysite.com`,
   ];
 }
 
@@ -126,7 +143,13 @@ function atsCareersUrl(provider: AtsProvider, slug: string) {
     case "ashby": return `https://jobs.ashbyhq.com/${slug}`;
     case "workable": return `https://apply.workable.com/${slug}/`;
     case "smartrecruiters": return `https://careers.smartrecruiters.com/${slug}`;
+    case "workday": return `https://${slug}`;
   }
+}
+
+function resolvedSourceId(provider: AtsProvider, slug: string) {
+  const safe = slug.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  return `resolved-${provider}-${safe}`.slice(0, 200);
 }
 
 export async function resolveSearchLeadToOfficialAts(input: {
@@ -178,7 +201,7 @@ export async function resolveSearchLeadToOfficialAts(input: {
 
     return {
       source: {
-        id: `resolved-${parsed.provider}-${parsed.slug}`.slice(0, 200),
+        id: resolvedSourceId(parsed.provider, parsed.slug),
         provider: parsed.provider,
         companyName: snapshot.company,
         boardToken: parsed.slug,
@@ -199,5 +222,5 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
   }
 
-  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, or SmartRecruiters posting was found for this lead");
+  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, or Workday posting was found for this lead");
 }
