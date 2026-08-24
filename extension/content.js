@@ -1,5 +1,6 @@
 /* global chrome */
-const sensitive = /captcha|password|passcode|mfa|otp|signature|gender|pronoun|race|ethnicity|disability|veteran|date of birth|\bdob\b|age|authorization|authorisation|eligible to work|visa|sponsorship|salary|compensation|notice period|availability|start date|consent|privacy|background check/i;
+const sensitive = /captcha|password|passcode|mfa|otp|signature|gender|pronoun|race|ethnicity|disability|veteran|date of birth|\bdob\b|age|authorization|authorisation|eligible to work|visa|sponsorship|salary|compensation|notice period|availability|start date|consent|privacy|background check|criminal|citizenship|nationality|marital|religion|sexual orientation/i;
+const profileLike = /\b(full name|applicant name|candidate name|name|email|phone|mobile|current location|city|university|college|institution|school|program|programme|course|degree|field of study|graduation year|year of graduation|linkedin|github|portfolio|website)\b/i;
 const captchaSelector = 'iframe[src*="recaptcha"], iframe[src*="hcaptcha"], [data-sitekey], [class*="captcha" i], [id*="captcha" i]';
 
 const portalRules = [
@@ -64,6 +65,18 @@ function safeFields() {
     .filter((input) => !input.disabled && !input.readOnly);
 }
 
+function freeTextQuestions() {
+  return safeFields().flatMap((input, index) => {
+    const label = fieldLabel(input);
+    const isTextArea = input instanceof HTMLTextAreaElement;
+    const isLongTextInput = input instanceof HTMLInputElement && ["text", "search", "url"].includes(input.type) && (input.maxLength >= 120 || input.maxLength === -1);
+    if ((!isTextArea && !isLongTextInput) || profileLike.test(label)) return [];
+    const rawMax = input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement ? input.maxLength : -1;
+    const maxLength = Number.isInteger(rawMax) && rawMax >= 40 && rawMax <= 5000 ? rawMax : null;
+    return [{ id: `field-${index}`, label, maxLength }];
+  }).slice(0, 8);
+}
+
 function setControlValue(input, value) {
   if (input instanceof HTMLInputElement && (input.type === "checkbox" || input.type === "radio")) return false;
   if (input instanceof HTMLSelectElement) {
@@ -90,6 +103,7 @@ async function inspect() {
     platform,
     taskReady,
     fields: safeFields().length,
+    questions: freeTextQuestions(),
   };
 }
 
@@ -99,19 +113,39 @@ async function fill() {
   if (document.querySelector(captchaSelector)) return { blockers: ["CAPTCHA detected — complete it manually before continuing"] };
 
   const fields = safeFields();
-  const blockers = fields.map(fieldLabel).filter((label) => sensitive.test(label));
-  if (blockers.length) return { blockers: [...new Set(blockers.map((label) => `Needs confirmation: ${label}`))] };
-
+  const blockers = [];
   let filled = 0;
+  let aiDraftsFilled = 0;
+
   for (const input of fields) {
-    const label = fieldLabel(input).toLowerCase();
+    const labelText = fieldLabel(input);
+    const label = labelText.toLowerCase();
     const name = `${input.name || ""}`.toLowerCase();
-    const answer = approvedTask.answers.find((item) => item?.verified === true && typeof item.key === "string" && typeof item.value === "string" && (label.includes(item.key.toLowerCase()) || name.includes(item.key.toLowerCase())));
+    if (sensitive.test(labelText)) {
+      blockers.push(`Needs confirmation: ${labelText}`);
+      continue;
+    }
+    const answer = approvedTask.answers.find((item) => {
+      if (!item || typeof item.key !== "string" || typeof item.value !== "string") return false;
+      if (item.verified !== true && item.aiDraft !== true) return false;
+      const key = item.key.toLowerCase();
+      return label.includes(key) || name.includes(key);
+    });
     if (!answer?.value) continue;
+    if (answer.aiDraft === true && !(input instanceof HTMLTextAreaElement || (input instanceof HTMLInputElement && ["text", "search"].includes(input.type)))) continue;
     input.focus();
-    if (setControlValue(input, answer.value)) filled += 1;
+    if (setControlValue(input, answer.value)) {
+      filled += 1;
+      if (answer.aiDraft === true) aiDraftsFilled += 1;
+    }
   }
-  return { filled, blockers: [], submitAvailable: false };
+  return {
+    filled,
+    aiDraftsFilled,
+    blockers: [...new Set(blockers)],
+    submitAvailable: false,
+    aiDraftAnswersRequireReview: aiDraftsFilled > 0,
+  };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, respond) => {
