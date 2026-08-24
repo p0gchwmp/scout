@@ -337,10 +337,10 @@ export function createScoutAgentClient(options: AgentClientOptions) {
     async discoverInternships() {
       return validateDiscovery(await post("discover_internships", "/v1/discover", {}));
     },
-    async resolveJob(input: { canonicalUrl: string }) {
+    async resolveJob(input: { canonicalUrl: string; company?: string; title?: string }) {
       return validateResolvedJob(await post("resolve_job", "/v1/resolve", input));
     },
-    async researchContacts(input: { companyDomain: string; jobSnapshotId: string }) {
+    async researchContacts(input: { companyDomain: string; jobSnapshotId: string; careersUrl?: string | null }) {
       return validateContactResearch(await post("research_contacts", "/v1/research-contacts", input));
     },
     async classifyContacts(candidates: PublishedContactCandidate[]) {
