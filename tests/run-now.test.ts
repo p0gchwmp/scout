@@ -7,7 +7,8 @@ test("Run Scout now is owner-only, same-origin and has no send/submit surface", 
   assert.match(route, /requireScoutApiUser\(\)/);
   assert.match(route, /requireSameOriginMutation\(request\)/);
   assert.match(route, /client\.discoverInternships\(\)/);
-  assert.match(route, /client\.resolveJob\(\{ canonicalUrl: lead\.canonicalUrl \}\)/);
+  assert.match(route, /const resolveInput = \{ canonicalUrl: lead\.canonicalUrl, company: lead\.company, title: lead\.title \}/);
+  assert.match(route, /client\.resolveJob\(resolveInput\)/);
   assert.match(route, /client\.researchContacts/);
   assert.match(route, /client\.classifyContacts/);
   assert.doesNotMatch(route, /request\.json\(\)/);
@@ -26,6 +27,16 @@ test("Run Scout now is bounded and leaves contact decisions to human review", as
   assert.match(route, /reviewState: "needs_review"/);
   assert.doesNotMatch(route, /reviewState:\s*"accepted"/);
   assert.doesNotMatch(route, /reviewState:\s*"rejected"/);
+});
+
+test("Run Scout now skips unresolved domains and upgrades only placeholder source domains", async () => {
+  const route = await readFile(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
+  assert.match(route, /function unresolvedDomain/);
+  assert.match(route, /value\.endsWith\("\.invalid"\)/);
+  assert.match(route, /unresolvedDomain\(registered\.companyDomain\) && !unresolvedDomain\(official\.source\.companyDomain\)/);
+  assert.match(route, /eq\(companySources\.companyDomain, registered\.companyDomain\)/);
+  assert.match(route, /if \(!source\?\.enabled \|\| unresolvedDomain\(source\.companyDomain\)\) continue/);
+  assert.doesNotMatch(route, /companyDomain:\s*official\.source\.companyDomain[\s\S]{0,160}where\(eq\(companySources\.id, registered\.id\)\)/);
 });
 
 test("Internship Inbox uses cloud Run Scout first and localhost only as a loopback fallback", async () => {
