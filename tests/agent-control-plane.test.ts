@@ -15,6 +15,7 @@ test("agent runtime bindings fail closed and expose no send/submit methods", () 
     SCOUT_AGENT_SHARED_SECRET: "a".repeat(64),
   }) as unknown as Record<string, unknown>;
   assert.equal(typeof client.discoverInternships, "function");
+  assert.equal(typeof client.resolveJob, "function");
   assert.equal(typeof client.researchContacts, "function");
   assert.equal(client.sendEmail, undefined);
   assert.equal(client.submitApplication, undefined);
@@ -23,6 +24,7 @@ test("agent runtime bindings fail closed and expose no send/submit methods", () 
 test("cloud agent control-plane routes require owner auth and same-origin mutation protection", async () => {
   for (const relative of [
     "../app/api/agent/discover/route.ts",
+    "../app/api/agent/resolve/route.ts",
     "../app/api/agent/research-contacts/route.ts",
   ]) {
     const route = await readFile(new URL(relative, import.meta.url), "utf8");
@@ -39,6 +41,16 @@ test("cloud discovery persists leads without caller-supplied fetch targets", asy
   assert.match(route, /lead:agent:\$\{lead\.provider\}/);
   assert.doesNotMatch(route, /request\.json\(\)/);
   assert.match(route, /Official immutable posting snapshot required/);
+});
+
+test("cloud resolution pins the stored lead to the agent-returned official snapshot", async () => {
+  const route = await readFile(new URL("../app/api/agent/resolve/route.ts", import.meta.url), "utf8");
+  assert.match(route, /client\.resolveJob\(\{ canonicalUrl: lead\.canonicalUrl \}\)/);
+  assert.match(route, /db\.insert\(jobSnapshots\)/);
+  assert.match(route, /contentHash: official\.contentHash/);
+  assert.match(route, /source: official\.source\.provider/);
+  assert.match(route, /currentSnapshotId: snapshotId/);
+  assert.match(route, /isNull\(jobs\.currentSnapshotId\)/);
 });
 
 test("cloud contact research is pinned to synced job snapshot and official company source", async () => {
