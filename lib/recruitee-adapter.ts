@@ -95,7 +95,11 @@ export class RecruiteePublicCareersAdapter implements SourceAdapter {
     candidateCreation: false,
   } as const;
 
-  constructor(private readonly now: () => number = Date.now) {}
+  private readonly now: () => number;
+
+  constructor(now: () => number = Date.now) {
+    this.now = now;
+  }
 
   private assertPublicFeedWindow() {
     if (this.now() >= RECRUITEE_PUBLIC_JSON_CUTOFF_MS) {
