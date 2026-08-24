@@ -31,7 +31,6 @@ env.SCOUT_LOCAL_DISCOVERY_SECRET = secret;
 const catalogPath = fileURLToPath(new URL("../config/discovery-sources.json", import.meta.url));
 const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
 const internshipPattern = /\b(intern|internship|trainee|apprentice|co-?op)\b/i;
-const indiaOrRemotePattern = /\b(india|bengaluru|bangalore|chennai|hyderabad|noida|gurugram|gurgaon|mumbai|delhi|pune|kolkata|remote)\b/i;
 const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 function stripHtml(value) {
@@ -39,8 +38,7 @@ function stripHtml(value) {
 }
 
 function relevant(job) {
-  if (!internshipPattern.test(`${job.title}\n${job.description}`)) return false;
-  return indiaOrRemotePattern.test(`${job.location}\n${job.workplaceType}\n${job.description.slice(0, 1600)}`);
+  return internshipPattern.test(`${job.title}\n${job.description}`);
 }
 
 function sleep(milliseconds) {
@@ -168,7 +166,7 @@ async function discover() {
     }
     for (const job of result.value.jobs) if (relevant(job)) leads.push(job);
   });
-  const deduped = [...new Map(leads.map((lead) => [lead.canonicalUrl, lead])).values()].slice(0, 80);
+  const deduped = [...new Map(leads.map((lead) => [lead.canonicalUrl, lead])).values()].slice(0, 100);
   const payload = JSON.stringify({ schemaVersion: 1, observedAt: new Date().toISOString(), leads: deduped, failures });
   const signature = createHmac("sha256", secret).update(payload).digest("hex");
   return { payload, signature, found: deduped.length, failures: failures.length };
