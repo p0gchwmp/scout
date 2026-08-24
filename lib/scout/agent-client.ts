@@ -5,6 +5,7 @@ import {
   type PublishedContactCandidate,
 } from "./ai-agent.ts";
 import { signAgentServiceRequest, type AgentServiceOperation } from "./agent-service-auth.ts";
+import type { AtsProvider } from "./types.ts";
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const MAX_RESPONSE_BYTES = 2_000_000;
@@ -33,7 +34,7 @@ export type AgentClientOptions = {
 };
 
 export type AgentDiscoveryLead = {
-  provider: "greenhouse" | "lever" | "search_index";
+  provider: AtsProvider | "search_index";
   canonicalUrl: string;
   company: string;
   title: string;
@@ -62,7 +63,7 @@ export type AgentResolvedJobResponse = {
   resolvedAt: string;
   source: {
     id: string;
-    provider: "greenhouse" | "lever";
+    provider: AtsProvider;
     companyName: string;
     boardToken: string;
     companyDomain: string;
@@ -70,7 +71,7 @@ export type AgentResolvedJobResponse = {
     enabled: true;
   };
   snapshot: {
-    sourceProvider: "greenhouse" | "lever";
+    sourceProvider: AtsProvider;
     externalId: string;
     canonicalUrl: string;
     company: string;
@@ -103,6 +104,10 @@ export type AgentContactResearchResponse = {
   }>;
   failures: Array<{ sourceUrl: string; reason: string }>;
 };
+
+function isAtsProvider(value: unknown): value is AtsProvider {
+  return value === "greenhouse" || value === "lever" || value === "ashby" || value === "workable";
+}
 
 function loopback(hostname: string) {
   const value = hostname.toLowerCase();
@@ -151,7 +156,7 @@ function validateDiscovery(value: unknown): AgentDiscoveryResponse {
   }
   const leads = raw.leads.map((item) => {
     const lead = record(item);
-    if (lead.provider !== "greenhouse" && lead.provider !== "lever" && lead.provider !== "search_index") throw new Error("Agent discovery provider is invalid");
+    if (!isAtsProvider(lead.provider) && lead.provider !== "search_index") throw new Error("Agent discovery provider is invalid");
     const canonicalUrl = stringField(lead.canonicalUrl, "canonicalUrl", 2000);
     const sourceUrl = stringField(lead.sourceUrl, "sourceUrl", 2000);
     for (const url of [canonicalUrl, sourceUrl]) if (new URL(url).protocol !== "https:") throw new Error("Agent discovery URL must use HTTPS");
@@ -193,7 +198,7 @@ function validateResolvedJob(value: unknown): AgentResolvedJobResponse {
   if (raw.schemaVersion !== 1 || !HEX_64.test(String(raw.contentHash ?? ""))) throw new Error("Agent resolved job response is invalid");
   const source = record(raw.source);
   const snapshot = record(raw.snapshot);
-  if (source.provider !== "greenhouse" && source.provider !== "lever") throw new Error("Agent resolved source provider is invalid");
+  if (!isAtsProvider(source.provider)) throw new Error("Agent resolved source provider is invalid");
   if (snapshot.sourceProvider !== source.provider) throw new Error("Agent resolved source/snapshot provider mismatch");
   if (source.enabled !== true) throw new Error("Agent resolved source must be enabled");
   const canonicalUrl = stringField(snapshot.canonicalUrl, "resolved canonicalUrl", 2000);
