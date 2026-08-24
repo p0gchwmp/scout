@@ -71,6 +71,13 @@
       "when": 1787604771000,
       "tag": "0009_teamtailor_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787605371000,
+      "tag": "0010_breezy_sources",
+      "breakpoints": true
     }
   ]
 }
