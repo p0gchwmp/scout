@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AshbyAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
+import { AshbyAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
 
 async function withFetch<T>(implementation: typeof fetch, run: () => Promise<T>) {
   const original = globalThis.fetch;
@@ -102,8 +102,59 @@ test("Workable public adapter uses the unauthenticated account endpoint and maps
   });
 });
 
+test("SmartRecruiters adapter uses only public posting endpoints and never sends an auth token", async () => {
+  const calls: string[] = [];
+  const jobs = await withFetch((async (input, init) => {
+    const url = new URL(String(input));
+    calls.push(url.href);
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.has("x-smarttoken"), false);
+    assert.equal(headers.has("authorization"), false);
+
+    if (url.pathname === "/v1/companies/acme/postings") {
+      assert.equal(url.searchParams.get("destination"), "PUBLIC");
+      assert.equal(url.searchParams.get("limit"), "100");
+      assert.equal(url.searchParams.get("offset"), "0");
+      return Response.json({ totalFound: 1, content: [{ id: "74944235" }] });
+    }
+
+    assert.equal(url.pathname, "/v1/companies/acme/postings/74944235");
+    return Response.json({
+      id: "74944235",
+      name: "Product Intern",
+      company: { identifier: "acme", name: "Acme Labs" },
+      releasedDate: "2026-08-23T12:00:00Z",
+      location: { city: "Bengaluru", region: "Karnataka", country: "in", remote: false },
+      postingUrl: "https://jobs.smartrecruiters.com/acme/74944235-product-intern",
+      applyUrl: "https://jobs.smartrecruiters.com/acme/74944235-product-intern?oga=true",
+      jobAd: {
+        sections: {
+          companyDescription: { text: "Acme builds healthcare software." },
+          jobDescription: { text: "Work with the product and operations teams." },
+          qualifications: { text: "Current undergraduate student." },
+          additionalInformation: { text: "India internship." },
+        },
+      },
+      active: true,
+    });
+  }) as typeof fetch, () => new SmartRecruitersAdapter().discover("acme"));
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(jobs, [{
+    source: "smartrecruiters",
+    externalId: "74944235",
+    canonicalUrl: "https://jobs.smartrecruiters.com/acme/74944235-product-intern",
+    company: "Acme Labs",
+    title: "Product Intern",
+    description: "Acme builds healthcare software.\n\nWork with the product and operations teams.\n\nCurrent undergraduate student.\n\nIndia internship.",
+    location: "Bengaluru, Karnataka, in",
+    workplaceType: "unspecified",
+    postedAt: "2026-08-23T12:00:00Z",
+  }]);
+});
+
 test("public ATS adapters expose discovery but no submission capability", () => {
-  for (const adapter of [new AshbyAdapter(), new WorkablePublicAdapter()]) {
+  for (const adapter of [new AshbyAdapter(), new WorkablePublicAdapter(), new SmartRecruitersAdapter()]) {
     assert.equal(adapter.capabilities.discovery, true);
     assert.equal(adapter.capabilities.submission, false);
   }
