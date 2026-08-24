@@ -4,6 +4,7 @@ export const COMPANY_DOMAIN_RESOLUTION_CAPABILITIES = Object.freeze({
   serverDerivedQueriesOnly: true,
   requiresConvergingSearchEvidence: true,
   excludesJobBoardsAndSocialPlatforms: true,
+  searchPersistenceGateRequired: true,
   companyDomainGuessing: false,
   arbitraryPageFetch: false,
   contactResearch: false,
@@ -12,6 +13,7 @@ export const COMPANY_DOMAIN_RESOLUTION_CAPABILITIES = Object.freeze({
 } as const);
 
 type SearchProvider = {
+  allowResultPersistence?: boolean;
   searchFixedQuery(query: string): Promise<BraveSearchResult[]>;
 };
 
@@ -112,6 +114,9 @@ function queries(company: string) {
 }
 
 export async function resolveOfficialCompanyDomain(company: string, searchProvider: SearchProvider) {
+  if (searchProvider.allowResultPersistence === false) {
+    throw new Error("Official company-domain evidence cannot be persisted until search result persistence is explicitly allowed");
+  }
   const planned = queries(company);
   const settled = await Promise.all(planned.map(async (plan) => ({
     plan,
