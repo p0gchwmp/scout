@@ -61,8 +61,9 @@ function decodeText(html: string) {
 }
 
 function sourceType(url: URL): PublishedContactResearchCandidate["sourceType"] {
-  if (/career|job|join|recruit|talent/i.test(url.pathname)) return "official_careers";
-  if (/contact/i.test(url.pathname)) return "official_contact";
+  const hostAndPath = `${url.hostname}${url.pathname}`;
+  if (/career|job|join|recruit|talent/i.test(hostAndPath)) return "official_careers";
+  if (/contact/i.test(hostAndPath)) return "official_contact";
   return "official_company";
 }
 
