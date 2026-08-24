@@ -35,6 +35,8 @@ provider_migration = (root / "0004_expand_ats_providers.sql").read_text(encoding
 connection.executescript(f"BEGIN;\n{provider_migration}\nCOMMIT;")
 smartrecruiters_migration = (root / "0005_smartrecruiters_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
 connection.executescript(f"BEGIN;\n{smartrecruiters_migration}\nCOMMIT;")
+workday_migration = (root / "0006_workday_sources.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
+connection.executescript(f"BEGIN;\n{workday_migration}\nCOMMIT;")
 
 assert connection.execute("SELECT first_seen_at FROM jobs WHERE id = 'legacy-job'").fetchone() == ("2026-08-01T00:00:00Z",)
 assert connection.execute("SELECT job_id FROM applications WHERE id = 'legacy-application'").fetchone() == ("legacy-job",)
@@ -45,10 +47,12 @@ connection.execute("INSERT INTO company_sources(id, provider, company_name, boar
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-ashby', 'ashby', 'Ashby Co', 'ashby-board', 'ashby.example')")
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-workable', 'workable', 'Workable Co', 'workable-account', 'workable.example')")
 connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-smartrecruiters', 'smartrecruiters', 'SmartRecruiters Co', 'smart-company', 'smart.example')")
+connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-workday', 'workday', 'Workday Co', 'acme.wd5.myworkdayjobs.com/en-US/External', 'workday.example')")
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-lever'").fetchone() == ("lever",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-ashby'").fetchone() == ("ashby",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-workable'").fetchone() == ("workable",)
 assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-smartrecruiters'").fetchone() == ("smartrecruiters",)
+assert connection.execute("SELECT provider FROM company_sources WHERE id = 'source-workday'").fetchone() == ("workday",)
 expect_integrity_error(
     lambda: connection.execute("INSERT INTO company_sources(id, provider, company_name, board_token, company_domain) VALUES ('source-unsupported', 'icims', 'Unsupported', 'unsupported', 'unsupported.example')"),
     "unsupported ATS provider bypassed the company_sources provider constraint",
@@ -198,4 +202,4 @@ expected_indexes = {
 assert expected_indexes <= indexes, expected_indexes - indexes
 foreign_key_errors = list(connection.execute("PRAGMA foreign_key_check"))
 assert not foreign_key_errors, foreign_key_errors
-print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; five ATS providers constrained; composite identity, overlap, claim CAS, review, revision approval, source-type provenance, snapshot/provenance immutability, and foreign keys verified)")
+print(f"migration smoke passed ({len(tables)} tables; legacy rows preserved; six ATS providers constrained; composite identity, overlap, claim CAS, review, revision approval, source-type provenance, snapshot/provenance immutability, and foreign keys verified)")
