@@ -44,10 +44,10 @@ test("AI outreach result is pinned to accepted evidence and approved claim IDs",
     contact: { id: "contact-1", email: "careers@example.com", sourceUrl: "https://example.com/careers", excerpt: "careers@example.com", reviewState: "accepted" },
     claims: [{ id: "claim-1", statement: "Built a clinic operations prototype with workflow mapping and automated tests", status: "approved" }],
   });
-  const provider = providerWith({ subject: "Product Intern — Ryan", body: "Hi recruiting team,\n\nI came across the Product Intern role...", usedClaimIds: ["claim-1"] });
+  const provider = providerWith({ subject: "Product Intern - Ryan", body: "Hi recruiting team,\n\nI came across the Product Intern role and wanted to reach out about it.", usedClaimIds: ["claim-1"] });
   const result = await provider.draftOutreach(envelope);
   assert.deepEqual(result.usedClaimIds, ["claim-1"]);
 
-  const bad = providerWith({ subject: "Product Intern — Ryan", body: "Hi", usedClaimIds: ["claim-999"] });
+  const bad = providerWith({ subject: "Product Intern - Ryan", body: "Hi", usedClaimIds: ["claim-999"] });
   await assert.rejects(() => bad.draftOutreach(envelope), /unapproved claim id/);
 });
