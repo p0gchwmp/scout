@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       try {
         const official = await resolveControlledLead(lead.canonicalUrl);
         const [registered] = await db.select().from(companySources).where(and(
-          eq(companySources.provider, "greenhouse"),
+          eq(companySources.provider, official.source.provider),
           eq(companySources.boardToken, official.source.boardToken),
         )).limit(1);
         const source = registered ?? (await db.insert(companySources).values(official.source).returning())[0];
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
             capturedAt: observedAt,
           }),
           db.update(jobs).set({
-            source: "greenhouse",
+            source: official.source.provider,
             sourceRegistryId: source.id,
             externalId: official.snapshot.externalId,
             canonicalUrl: official.snapshot.canonicalUrl,
