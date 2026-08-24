@@ -1,3 +1,4 @@
+import { parseTeamtailorPublicJobUrl } from "../teamtailor-adapter.ts";
 import type { AtsProvider } from "./types";
 import { normalizeWorkdayExternalPath, parseWorkdayBoardToken, parseWorkdayPublicUrl } from "./workday-source.ts";
 
@@ -175,6 +176,17 @@ export function validateRecruiteeEvidenceUrl(raw: string, tenantToken: string, e
   return url;
 }
 
+export function validateTeamtailorEvidenceUrl(raw: string, tenantToken: string, externalId: string) {
+  const tenant = tenantToken.trim().toLowerCase();
+  if (!BAMBOOHR_SLUG_PATTERN.test(tenant)) throw new Error("Registered Teamtailor tenant is invalid");
+  if (!/^[0-9]{1,20}$/.test(externalId)) throw new Error("Teamtailor external id is invalid");
+  const identity = parseTeamtailorPublicJobUrl(raw);
+  if (identity.tenant !== tenant || identity.externalId !== externalId) {
+    throw new Error("Teamtailor evidence URL does not match the registered public career-site source");
+  }
+  return new URL(identity.canonicalUrl);
+}
+
 function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return validateGreenhouseEvidenceUrl(raw, sourceToken, externalId);
@@ -185,6 +197,7 @@ function validateAtsEvidenceUrl(provider: AtsProvider, raw: string, sourceToken:
     case "workday": return validateWorkdayEvidenceUrl(raw, sourceToken, externalId);
     case "bamboohr": return validateBambooHrEvidenceUrl(raw, sourceToken, externalId);
     case "recruitee": return validateRecruiteeEvidenceUrl(raw, sourceToken, externalId);
+    case "teamtailor": return validateTeamtailorEvidenceUrl(raw, sourceToken, externalId);
   }
 }
 
