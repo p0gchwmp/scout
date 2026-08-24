@@ -1,8 +1,9 @@
-import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, WorkablePublicAdapter } from "../adapters.ts";
+import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import {
   validateAshbyEvidenceUrl,
   validateGreenhouseEvidenceUrl,
   validateLeverEvidenceUrl,
+  validateSmartRecruitersEvidenceUrl,
   validateWorkableEvidenceUrl,
 } from "./contact-extraction.ts";
 import { CONTROLLED_DISCOVERY_SOURCES } from "./lead-discovery.ts";
@@ -15,10 +16,13 @@ export const LEAD_RESOLUTION_CAPABILITIES = Object.freeze({
   lever: true,
   ashby: true,
   workable: true,
+  smartrecruiters: true,
   arbitraryUrlFetch: false,
   submit: false,
   send: false,
 } as const);
+
+const SMARTRECRUITERS_POSTING_SEGMENT = /^([0-9]{4,32})(?:-|$)/;
 
 function exactHttpsUrl(value: string) {
   let url: URL;
@@ -36,15 +40,20 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "lever": return validateLeverEvidenceUrl(raw, token, externalId);
     case "ashby": return validateAshbyEvidenceUrl(raw, token, externalId);
     case "workable": return validateWorkableEvidenceUrl(raw, token, externalId);
+    case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, token, externalId);
   }
 }
 
-async function discover(provider: AtsProvider, token: string) {
+async function discover(provider: AtsProvider, token: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return new GreenhouseAdapter().discover(token);
     case "lever": return new LeverAdapter().discover(token);
     case "ashby": return new AshbyAdapter().discover(token);
     case "workable": return new WorkablePublicAdapter().discover(token);
+    case "smartrecruiters": {
+      const job = await new SmartRecruitersAdapter().discoverPosting(token, externalId);
+      return job ? [job] : [];
+    }
   }
 }
 
@@ -73,6 +82,12 @@ export async function resolveControlledLead(canonicalUrl: string) {
     provider = "workable";
     slug = parts[0];
     externalId = parts[2];
+  } else if (hostname === "jobs.smartrecruiters.com" && parts.length === 2) {
+    const match = parts[1].match(SMARTRECRUITERS_POSTING_SEGMENT);
+    if (!match) throw new Error("Lead resolution is not supported for this application channel yet");
+    provider = "smartrecruiters";
+    slug = parts[0];
+    externalId = match[1];
   } else {
     throw new Error("Lead resolution is not supported for this application channel yet");
   }
@@ -81,7 +96,7 @@ export async function resolveControlledLead(canonicalUrl: string) {
   if (!source) throw new Error("Lead is not from a controlled discovery source");
   validateEvidence(provider, url.href, source.slug, externalId);
 
-  const jobs = await discover(provider, source.slug);
+  const jobs = await discover(provider, source.slug, externalId);
   const observed = jobs.find((job) => job.externalId === externalId);
   if (!observed) throw new Error(`Official ${provider} posting is no longer present`);
   validateEvidence(provider, observed.canonicalUrl, source.slug, observed.externalId);
