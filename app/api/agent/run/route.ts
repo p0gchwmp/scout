@@ -255,7 +255,12 @@ export async function POST(request: Request) {
 
       if (!contacts.length) {
         try {
-          const research = await client.researchContacts({ companyDomain: source.companyDomain, jobSnapshotId: job.currentSnapshotId });
+          const researchInput = {
+            companyDomain: source.companyDomain,
+            jobSnapshotId: job.currentSnapshotId,
+            careersUrl: source.careersUrl,
+          };
+          const research = await client.researchContacts(researchInput);
           contactJobsResearched += 1;
           if (research.candidates.length) {
             await db.batch(research.candidates.map((candidate) => db.insert(contactEvidence).values({
