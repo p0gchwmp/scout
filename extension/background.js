@@ -1,4 +1,4 @@
 /* global chrome */
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({ scoutVersion: "0.1.0" });
+  chrome.storage.local.set({ scoutVersion: "0.2.0" });
 });
