@@ -17,6 +17,8 @@ test("agent runtime bindings fail closed and expose no send/submit methods", () 
   assert.equal(typeof client.discoverInternships, "function");
   assert.equal(typeof client.resolveJob, "function");
   assert.equal(typeof client.researchContacts, "function");
+  assert.equal(typeof client.classifyContacts, "function");
+  assert.equal(typeof client.draftOutreach, "function");
   assert.equal(client.sendEmail, undefined);
   assert.equal(client.submitApplication, undefined);
 });
@@ -26,6 +28,8 @@ test("cloud agent control-plane routes require owner auth and same-origin mutati
     "../app/api/agent/discover/route.ts",
     "../app/api/agent/resolve/route.ts",
     "../app/api/agent/research-contacts/route.ts",
+    "../app/api/agent/classify-contacts/route.ts",
+    "../app/api/agent/draft-outreach/route.ts",
   ]) {
     const route = await readFile(new URL(relative, import.meta.url), "utf8");
     assert.match(route, /requireScoutApiUser\(\)/);
@@ -53,12 +57,34 @@ test("cloud resolution pins the stored lead to the agent-returned official snaps
   assert.match(route, /isNull\(jobs\.currentSnapshotId\)/);
 });
 
-test("cloud contact research is pinned to synced job snapshot and official company source", async () => {
+test("cloud contact research is pinned to synced job snapshot and preserves source type", async () => {
   const route = await readFile(new URL("../app/api/agent/research-contacts/route.ts", import.meta.url), "utf8");
   assert.match(route, /job\.currentSnapshotId/);
   assert.match(route, /job\.sourceRegistryId/);
   assert.match(route, /source\.companyDomain/);
+  assert.match(route, /sourceType: candidate\.sourceType/);
   assert.match(route, /reviewState: "needs_review"/);
   assert.match(route, /suitability: "review"/);
   assert.match(route, /onConflictDoNothing\(\)/);
+});
+
+test("AI contact classification changes recommendation fields but never human review state", async () => {
+  const route = await readFile(new URL("../app/api/agent/classify-contacts/route.ts", import.meta.url), "utf8");
+  assert.match(route, /eq\(contactEvidence\.reviewState, "needs_review"\)/);
+  assert.match(route, /client\.classifyContacts/);
+  assert.match(route, /suitabilityReason/);
+  assert.doesNotMatch(route, /reviewState:\s*classification/);
+  assert.doesNotMatch(route, /reviewState:\s*"accepted"/);
+  assert.doesNotMatch(route, /reviewState:\s*"rejected"/);
+});
+
+test("AI outreach is rebuilt from DB-pinned accepted evidence and approved claims", async () => {
+  const route = await readFile(new URL("../app/api/agent/draft-outreach/route.ts", import.meta.url), "utf8");
+  assert.match(route, /eq\(contactEvidence\.reviewState, "accepted"\)/);
+  assert.match(route, /claims\.some\(\(claim\) => claim\.status !== "approved"\)/);
+  assert.match(route, /buildAiOutreachEnvelope/);
+  assert.match(route, /client\.draftOutreach\(envelope\)/);
+  assert.match(route, /claimIds: ai\.usedClaimIds/);
+  assert.match(route, /state: "draft"/);
+  assert.match(route, /hashDraftBody/);
 });
