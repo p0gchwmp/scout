@@ -1,6 +1,7 @@
-import { GreenhouseAdapter, LeverAdapter } from "../adapters.ts";
+import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import type { NormalizedJob } from "../types.ts";
 import { normalizeInternshipLead } from "./job-intake.ts";
+import type { AtsProvider } from "./types.ts";
 
 export const LEAD_DISCOVERY_CAPABILITIES = Object.freeze({
   controlledSourcesOnly: true,
@@ -13,7 +14,7 @@ export const LEAD_DISCOVERY_CAPABILITIES = Object.freeze({
 } as const);
 
 type DiscoverySource = {
-  provider: "greenhouse" | "lever";
+  provider: AtsProvider;
   slug: string;
   company: string;
   sourceUrl: string;
@@ -48,9 +49,12 @@ function isRelevantInternship(job: NormalizedJob) {
 }
 
 async function discoverSource(source: DiscoverySource): Promise<NormalizedJob[]> {
-  return source.provider === "greenhouse"
-    ? new GreenhouseAdapter().discover(source.slug)
-    : new LeverAdapter().discover(source.slug);
+  switch (source.provider) {
+    case "greenhouse": return new GreenhouseAdapter().discover(source.slug);
+    case "lever": return new LeverAdapter().discover(source.slug);
+    case "ashby": return new AshbyAdapter().discover(source.slug);
+    case "workable": return new WorkablePublicAdapter().discover(source.slug);
+  }
 }
 
 export async function discoverControlledInternships() {
