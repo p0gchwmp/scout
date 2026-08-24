@@ -64,6 +64,13 @@
       "when": 1787590200000,
       "tag": "0008_recruitee_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787604771000,
+      "tag": "0009_teamtailor_sources",
+      "breakpoints": true
     }
   ]
 }
