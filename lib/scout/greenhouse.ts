@@ -1,11 +1,14 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters";
+import { WorkdayPublicCxsAdapter } from "../workday-adapter";
 import {
   validateAshbyEvidenceUrl,
   validateGreenhouseEvidenceUrl,
   validateLeverEvidenceUrl,
   validateSmartRecruitersEvidenceUrl,
   validateWorkableEvidenceUrl,
+  validateWorkdayEvidenceUrl,
 } from "./contact-extraction";
+import { parseWorkdayBoardToken } from "./workday-source";
 import type { SyncDiscoveryResult } from "./sync";
 import type { AtsProvider, CompanySource } from "./types";
 
@@ -16,6 +19,7 @@ function adapterFor(provider: AtsProvider) {
     case "ashby": return new AshbyAdapter();
     case "workable": return new WorkablePublicAdapter();
     case "smartrecruiters": return new SmartRecruitersAdapter();
+    case "workday": return new WorkdayPublicCxsAdapter();
   }
 }
 
@@ -26,11 +30,13 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "ashby": return validateAshbyEvidenceUrl(raw, token, externalId);
     case "workable": return validateWorkableEvidenceUrl(raw, token, externalId);
     case "smartrecruiters": return validateSmartRecruitersEvidenceUrl(raw, token, externalId);
+    case "workday": return validateWorkdayEvidenceUrl(raw, token, externalId);
   }
 }
 
 export async function discoverRegisteredSource(source: CompanySource): Promise<SyncDiscoveryResult> {
-  if (!/^[A-Za-z0-9._-]{2,100}$/.test(source.boardToken)) throw new Error("Registered ATS source token is invalid");
+  if (source.provider === "workday") parseWorkdayBoardToken(source.boardToken);
+  else if (!/^[A-Za-z0-9._-]{2,100}$/.test(source.boardToken)) throw new Error("Registered ATS source token is invalid");
   const discovered = await adapterFor(source.provider).discover(source.boardToken);
   const normalized = discovered.map((job) => {
     validateEvidence(source.provider, job.canonicalUrl, source.boardToken, job.externalId);
