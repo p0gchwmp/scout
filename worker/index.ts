@@ -31,6 +31,7 @@ const USER_FULL_NAME_ENCODING_HEADER =
   "oai-authenticated-user-full-name-encoding";
 const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
+const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice"]);
 
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
@@ -43,9 +44,9 @@ const worker = {
     const url = new URL(request.url);
 
     // Local development auth is injected before routing so every owner-only page
-    // (including /inbox and future pages) receives the same synthetic identity.
-    // resolveLocalDevWorkerAuth itself only succeeds for an explicitly marked
-    // development worker on loopback and never replaces hosted identity headers.
+    // receives the same synthetic identity. resolveLocalDevWorkerAuth itself only
+    // succeeds for an explicitly marked development worker on loopback and never
+    // replaces hosted identity headers.
     const localAuth = resolveLocalDevWorkerAuth(request, env);
     if (localAuth) {
       const routedHeaders = new Headers(request.headers);
@@ -60,7 +61,7 @@ const worker = {
       request = new Request(request, { headers: routedHeaders });
     }
 
-    if (url.pathname === "/" || url.pathname === "/inbox" || url.pathname.startsWith("/api/")) {
+    if (OWNER_PAGE_PATHS.has(url.pathname) || url.pathname.startsWith("/api/")) {
       const authenticatedUserId = request.headers.get(USER_ID_HEADER);
       if (authenticatedUserId) {
         const ownerId = env.SCOUT_OWNER_USER_ID?.trim();
