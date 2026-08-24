@@ -1,3 +1,9 @@
+import {
+  validateAiContactClassifications,
+  validateAiOutreachResult,
+  type AiOutreachEnvelope,
+  type PublishedContactCandidate,
+} from "./ai-agent.ts";
 import { signAgentServiceRequest, type AgentServiceOperation } from "./agent-service-auth.ts";
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
@@ -9,6 +15,8 @@ export const AGENT_CLIENT_CAPABILITIES = Object.freeze({
   discoverInternships: true,
   resolveJob: true,
   researchContacts: true,
+  classifyContacts: true,
+  draftOutreach: true,
   createGmailDraft: false,
   sendEmail: false,
   submitApplication: false,
@@ -334,6 +342,22 @@ export function createScoutAgentClient(options: AgentClientOptions) {
     },
     async researchContacts(input: { companyDomain: string; jobSnapshotId: string }) {
       return validateContactResearch(await post("research_contacts", "/v1/research-contacts", input));
+    },
+    async classifyContacts(candidates: PublishedContactCandidate[]) {
+      const raw = record(await post("classify_contacts", "/v1/classify-contacts", { candidates }));
+      if (raw.schemaVersion !== 1 || !Array.isArray(raw.classifications)) throw new Error("Agent contact classification response is invalid");
+      return {
+        model: stringField(raw.model, "AI model", 200),
+        classifications: validateAiContactClassifications(raw.classifications, candidates.map((candidate) => candidate.id)),
+      };
+    },
+    async draftOutreach(envelope: AiOutreachEnvelope) {
+      const raw = record(await post("draft_outreach", "/v1/draft-outreach", envelope));
+      if (raw.schemaVersion !== 1) throw new Error("Agent outreach response is invalid");
+      if (stringField(raw.jobSnapshotId, "AI jobSnapshotId", 200) !== envelope.jobSnapshotId) throw new Error("Agent outreach job snapshot mismatch");
+      if (stringField(raw.contactId, "AI contactId", 200) !== envelope.contact.id) throw new Error("Agent outreach contact mismatch");
+      const draft = validateAiOutreachResult({ subject: raw.subject, body: raw.body, usedClaimIds: raw.usedClaimIds }, envelope);
+      return { model: stringField(raw.model, "AI model", 200), ...draft };
     },
   });
 }
