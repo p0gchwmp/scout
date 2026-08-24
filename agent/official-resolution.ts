@@ -10,6 +10,7 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   lever: true,
   refetchOfficialAts: true,
   resolveCompanyDomainFromConvergingEvidence: true,
+  searchPersistenceGateRequired: true,
   arbitraryResultPageFetch: false,
   linkedinScrape: false,
   companyDomainGuessing: false,
@@ -18,6 +19,7 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
 } as const);
 
 type SearchProvider = {
+  allowResultPersistence?: boolean;
   searchFixedQuery(query: string): Promise<BraveSearchResult[]>;
 };
 
@@ -99,6 +101,9 @@ export async function resolveSearchLeadToOfficialAts(input: {
 }, dependencies: ResolutionDependencies = {}) {
   const provider = dependencies.searchProvider === undefined ? createAgentSearchProvider() : dependencies.searchProvider;
   if (!provider) throw new Error("Official-source web search is not configured");
+  if (provider.allowResultPersistence === false) {
+    throw new Error("Official ATS search evidence cannot be persisted until search result persistence is explicitly allowed");
+  }
   const discover = dependencies.discover ?? defaultDiscover;
   const resolveCompanyDomain = dependencies.resolveCompanyDomain ?? resolveOfficialCompanyDomain;
   const queries = searchQueries(input.company, input.title);
