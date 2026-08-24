@@ -1,6 +1,6 @@
 import type { WorkplaceType } from "../types";
 
-export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "smartrecruiters";
+export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "smartrecruiters" | "workday";
 
 export type CompanySource = {
   id: string;
