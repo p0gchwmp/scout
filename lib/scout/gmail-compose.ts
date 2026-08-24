@@ -12,8 +12,17 @@ export function parseOutreachDraftForEmail(value: string): ParsedOutreachDraft {
   return { to, subject, body };
 }
 
-export function gmailComposeUrl(value: string) {
-  const draft = parseOutreachDraftForEmail(value);
+function normalizedDraft(value: string | ParsedOutreachDraft): ParsedOutreachDraft {
+  const draft = typeof value === "string" ? parseOutreachDraftForEmail(value) : value;
+  const to = draft.to.trim();
+  const subject = draft.subject.trim();
+  const body = draft.body.trim();
+  if (!to || !subject || !body || /[\r\n]/.test(to) || /[\r\n]/.test(subject)) throw new Error("Draft is incomplete");
+  return { to, subject, body };
+}
+
+export function gmailComposeUrl(value: string | ParsedOutreachDraft) {
+  const draft = normalizedDraft(value);
   const url = new URL("https://mail.google.com/mail/");
   url.searchParams.set("view", "cm");
   url.searchParams.set("fs", "1");
