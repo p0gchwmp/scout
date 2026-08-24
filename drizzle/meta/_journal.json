@@ -50,6 +50,13 @@
       "when": 1787583900000,
       "tag": "0006_workday_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787589300000,
+      "tag": "0007_bamboohr_sources",
+      "breakpoints": true
     }
   ]
 }
