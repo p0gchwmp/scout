@@ -87,7 +87,8 @@ export async function POST(request: Request) {
 
     for (const lead of unresolved) {
       try {
-        const official = await client.resolveJob({ canonicalUrl: lead.canonicalUrl });
+        const resolveInput = { canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title };
+        const official = await client.resolveJob(resolveInput);
         const [registered] = await db.select().from(companySources).where(and(
           eq(companySources.provider, official.source.provider),
           eq(companySources.boardToken, official.source.boardToken),
@@ -199,7 +200,7 @@ export async function POST(request: Request) {
     for (const job of currentJobs.slice(0, MAX_CONTACT_RESEARCH_PER_RUN)) {
       if (!job.currentSnapshotId || !job.sourceRegistryId) continue;
       const [source] = await db.select().from(companySources).where(eq(companySources.id, job.sourceRegistryId)).limit(1);
-      if (!source?.enabled || !source.companyDomain) continue;
+      if (!source?.enabled || !source.companyDomain || source.companyDomain.endsWith(".invalid")) continue;
       let contacts = await db.select().from(contactEvidence).where(and(
         eq(contactEvidence.jobId, job.id),
         eq(contactEvidence.jobSnapshotId, job.currentSnapshotId),
