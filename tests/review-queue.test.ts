@@ -20,6 +20,23 @@ test("review queue requires owner auth and exposes draft-only Gmail action", asy
   assert.doesNotMatch(gmailRoute, /messages\.send|drafts\.send/);
 });
 
+test("review queue requires accepted published evidence before humanized outreach", async () => {
+  const client = await readFile(new URL("../app/review/review-client.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/agent/draft-outreach/auto/route.ts", import.meta.url), "utf8");
+
+  assert.match(client, /Accept published evidence/);
+  assert.match(client, /Create humanized outreach/);
+  assert.match(client, /\/api\/agent\/draft-outreach\/auto/);
+  assert.match(route, /eq\(contactEvidence\.reviewState, "accepted"\)/);
+  assert.match(route, /contact\.jobSnapshotId/);
+  assert.match(route, /eq\(candidateClaims\.status, "approved"\)/);
+  assert.match(route, /evaluateResumeAlignment/);
+  assert.match(route, /writing_sample/);
+  assert.match(route, /writing_style_note/);
+  assert.match(route, /safety: \{ sendEmail: false, submitApplication: false \}/);
+  assert.doesNotMatch(route, /messages\.send|drafts\.send|submitApplication\s*:\s*true/);
+});
+
 test("review queue sends ready applications to Safe Fill instead of submitting", async () => {
   const client = await readFile(new URL("../app/review/review-client.tsx", import.meta.url), "utf8");
   const assistRoute = await readFile(new URL("../app/api/applications/browser-task/route.ts", import.meta.url), "utf8");
