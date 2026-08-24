@@ -29,6 +29,13 @@
       "when": 1787556803031,
       "tag": "0003_contact_source_type",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787577120000,
+      "tag": "0004_expand_ats_providers",
+      "breakpoints": true
     }
   ]
 }
