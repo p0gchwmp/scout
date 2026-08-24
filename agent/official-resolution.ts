@@ -1,4 +1,4 @@
-import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
+import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
 import type { BraveSearchResult } from "../lib/scout/brave-search.ts";
 import { snapshotHash } from "../lib/scout/sync.ts";
 import type { AtsProvider } from "../lib/scout/types.ts";
@@ -11,6 +11,7 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   lever: true,
   ashby: true,
   workable: true,
+  smartrecruiters: true,
   refetchOfficialAts: true,
   resolveCompanyDomainFromConvergingEvidence: true,
   searchPersistenceGateRequired: true,
@@ -31,12 +32,13 @@ type DomainResolution = Awaited<ReturnType<typeof resolveOfficialCompanyDomain>>
 
 type ResolutionDependencies = {
   searchProvider?: SearchProvider | null;
-  discover?: (provider: AtsProvider, slug: string) => Promise<ObservedJob[]>;
+  discover?: (provider: AtsProvider, slug: string, externalId: string) => Promise<ObservedJob[]>;
   resolveCompanyDomain?: (company: string, searchProvider: SearchProvider) => Promise<DomainResolution>;
 };
 
 const GENERIC_ROLE_WORDS = new Set(["intern", "internship", "trainee", "apprentice", "role", "job", "position", "opening"]);
 const GENERIC_COMPANY_WORDS = new Set(["private", "limited", "ltd", "inc", "llc", "company", "technologies", "technology", "solutions", "india"]);
+const SMARTRECRUITERS_POSTING_SEGMENT = /^([0-9]{4,32})(?:-|$)/;
 
 function compact(value: string, max: number) {
   return value.replace(/[\r\n\t]+/g, " ").replace(/[^\p{L}\p{N} .&+/_-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, max);
@@ -71,6 +73,10 @@ function parseSupportedAtsUrl(value: string) {
   if (host === "apply.workable.com" && parts.length === 3 && parts[1] === "j") {
     return { provider: "workable" as const, slug: parts[0], externalId: parts[2] };
   }
+  if (host === "jobs.smartrecruiters.com" && parts.length === 2) {
+    const match = parts[1].match(SMARTRECRUITERS_POSTING_SEGMENT);
+    if (match) return { provider: "smartrecruiters" as const, slug: parts[0], externalId: match[1] };
+  }
   return null;
 }
 
@@ -87,12 +93,16 @@ function roleEvidenceMatches(expectedTitle: string, observedTitle: string) {
   return tokenOverlap(expected, observed) >= 0.5;
 }
 
-async function defaultDiscover(provider: AtsProvider, slug: string) {
+async function defaultDiscover(provider: AtsProvider, slug: string, externalId: string) {
   switch (provider) {
     case "greenhouse": return new GreenhouseAdapter().discover(slug);
     case "lever": return new LeverAdapter().discover(slug);
     case "ashby": return new AshbyAdapter().discover(slug);
     case "workable": return new WorkablePublicAdapter().discover(slug);
+    case "smartrecruiters": {
+      const job = await new SmartRecruitersAdapter().discoverPosting(slug, externalId);
+      return job ? [job] : [];
+    }
   }
 }
 
@@ -105,6 +115,7 @@ function searchQueries(company: string, title: string) {
     `"${safeCompany}" "${safeTitle}" site:jobs.lever.co`,
     `"${safeCompany}" "${safeTitle}" site:jobs.ashbyhq.com`,
     `"${safeCompany}" "${safeTitle}" site:apply.workable.com`,
+    `"${safeCompany}" "${safeTitle}" site:jobs.smartrecruiters.com`,
   ];
 }
 
@@ -114,6 +125,7 @@ function atsCareersUrl(provider: AtsProvider, slug: string) {
     case "lever": return `https://jobs.lever.co/${slug}`;
     case "ashby": return `https://jobs.ashbyhq.com/${slug}`;
     case "workable": return `https://apply.workable.com/${slug}/`;
+    case "smartrecruiters": return `https://careers.smartrecruiters.com/${slug}`;
   }
 }
 
@@ -130,13 +142,13 @@ export async function resolveSearchLeadToOfficialAts(input: {
   const discover = dependencies.discover ?? defaultDiscover;
   const resolveCompanyDomain = dependencies.resolveCompanyDomain ?? resolveOfficialCompanyDomain;
   const queries = searchQueries(input.company, input.title);
-  const results = (await Promise.all(queries.map((query) => provider.searchFixedQuery(query)))).flat().slice(0, 80);
+  const results = (await Promise.all(queries.map((query) => provider.searchFixedQuery(query)))).flat().slice(0, 100);
 
   for (const result of results) {
     const parsed = parseSupportedAtsUrl(result.url);
     if (!parsed || !companyEvidenceMatches(input.company, result, parsed.slug)) continue;
     let jobs: ObservedJob[];
-    try { jobs = await discover(parsed.provider, parsed.slug); }
+    try { jobs = await discover(parsed.provider, parsed.slug, parsed.externalId); }
     catch { continue; }
     const observed = jobs.find((job) => job.externalId === parsed.externalId);
     if (!observed || !roleEvidenceMatches(input.title, observed.title)) continue;
@@ -187,5 +199,5 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
   }
 
-  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, or Workable posting was found for this lead");
+  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, or SmartRecruiters posting was found for this lead");
 }
