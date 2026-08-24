@@ -116,7 +116,7 @@ function cleanLine(value: string, field: string, max = 500) {
 function cleanBody(value: string, field: string, max = 4000) {
   if (typeof value !== "string") throw new Error(`${field} is required`);
   const cleaned = value.trim();
-  if (!cleaned || cleaned.length > max || /\u0000/.test(value)) throw new Error(`${field} is invalid`);
+  if (!cleaned || cleaned.length > max || value.includes(String.fromCharCode(0))) throw new Error(`${field} is invalid`);
   return cleaned;
 }
 
