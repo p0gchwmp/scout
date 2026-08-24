@@ -15,11 +15,7 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: Request) {
-  const unauthorized = await requireScoutApiUser();
-  if (unauthorized) return unauthorized;
-  const crossOrigin = requireSameOriginMutation(request);
-  if (crossOrigin) return crossOrigin;
+async function mutateJob(request: Request) {
   let payload: ReturnType<typeof parseJobMutationPayload>;
   try { payload = parseJobMutationPayload(await request.json()); }
   catch { return Response.json({ error: "A valid job mutation body is required" }, { status: 400 }); }
@@ -30,4 +26,22 @@ export async function PATCH(request: Request) {
   } catch (error) {
     return scoutServerError("jobs.update", error, "Unable to update job");
   }
+}
+
+export async function PATCH(request: Request) {
+  const unauthorized = await requireScoutApiUser();
+  if (unauthorized) return unauthorized;
+  const crossOrigin = requireSameOriginMutation(request);
+  if (crossOrigin) return crossOrigin;
+  return mutateJob(request);
+}
+
+// Dashboard compatibility: the current client posts Save/Reject mutations.
+// Keep POST owner-authenticated and same-origin protected exactly like PATCH.
+export async function POST(request: Request) {
+  const unauthorized = await requireScoutApiUser();
+  if (unauthorized) return unauthorized;
+  const crossOrigin = requireSameOriginMutation(request);
+  if (crossOrigin) return crossOrigin;
+  return mutateJob(request);
 }
