@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getScoutOwnerUserId, requireChatGPTUser } from "./chatgpt-auth";
 import { Dashboard } from "./dashboard";
 import { requireScoutPageOwner } from "./scout-api";
@@ -5,5 +6,10 @@ import { requireScoutPageOwner } from "./scout-api";
 export default async function Home() {
   const user = await requireChatGPTUser("/");
   await requireScoutPageOwner(user, getScoutOwnerUserId);
-  return <Dashboard />;
+  return <>
+    <div style={{ width: "min(1160px, 91vw)", margin: "18px auto -6px", display: "flex", justifyContent: "flex-end" }}>
+      <Link href="/shortlist" style={{ color: "#234d36", fontSize: 12, fontWeight: 750, textDecoration: "none" }}>Shortlist Intelligence →</Link>
+    </div>
+    <Dashboard />
+  </>;
 }
