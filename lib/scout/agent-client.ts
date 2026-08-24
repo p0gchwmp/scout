@@ -7,6 +7,7 @@ const REQUEST_TIMEOUT_MS = 20_000;
 export const AGENT_CLIENT_CAPABILITIES = Object.freeze({
   planJob: true,
   discoverInternships: true,
+  resolveJob: true,
   researchContacts: true,
   createGmailDraft: false,
   sendEmail: false,
@@ -44,6 +45,37 @@ export type AgentDiscoveryResponse = {
   found: number;
   failures: Array<{ company: string; provider: string; reason: string }>;
   leads: AgentDiscoveryLead[];
+};
+
+export type AgentResolvedJobResponse = {
+  taskId: string;
+  idempotencyKey: string;
+  schemaVersion: 1;
+  resolvedAt: string;
+  source: {
+    id: string;
+    provider: "greenhouse" | "lever";
+    companyName: string;
+    boardToken: string;
+    companyDomain: string;
+    careersUrl: string;
+    enabled: true;
+  };
+  snapshot: {
+    sourceProvider: "greenhouse" | "lever";
+    externalId: string;
+    canonicalUrl: string;
+    company: string;
+    title: string;
+    description: string;
+    location: string;
+    workplaceType: "remote" | "hybrid" | "on-site" | "unspecified";
+    score: number;
+    scoreExplanation: string[];
+    eligibilityRisks: string[];
+    postedAt: string | null;
+  };
+  contentHash: string;
 };
 
 export type AgentContactResearchResponse = {
@@ -99,6 +131,11 @@ function record(value: unknown) {
   return value as Record<string, unknown>;
 }
 
+function stringArray(value: unknown, field: string, maxItems = 30) {
+  if (!Array.isArray(value) || value.length > maxItems) throw new Error(`Agent response ${field} is invalid`);
+  return value.map((item) => stringField(item, field, 2000));
+}
+
 function validateDiscovery(value: unknown): AgentDiscoveryResponse {
   const raw = record(value);
   if (raw.schemaVersion !== 1 || !Array.isArray(raw.leads) || raw.leads.length > 100 || !Array.isArray(raw.failures) || raw.failures.length > 100) {
@@ -140,6 +177,55 @@ function validateDiscovery(value: unknown): AgentDiscoveryResponse {
     found: nonNegativeInteger(raw.found, "found"),
     leads,
     failures,
+  };
+}
+
+function validateResolvedJob(value: unknown): AgentResolvedJobResponse {
+  const raw = record(value);
+  if (raw.schemaVersion !== 1 || !HEX_64.test(String(raw.contentHash ?? ""))) throw new Error("Agent resolved job response is invalid");
+  const source = record(raw.source);
+  const snapshot = record(raw.snapshot);
+  if (source.provider !== "greenhouse" && source.provider !== "lever") throw new Error("Agent resolved source provider is invalid");
+  if (snapshot.sourceProvider !== source.provider) throw new Error("Agent resolved source/snapshot provider mismatch");
+  if (source.enabled !== true) throw new Error("Agent resolved source must be enabled");
+  const canonicalUrl = stringField(snapshot.canonicalUrl, "resolved canonicalUrl", 2000);
+  const careersUrl = stringField(source.careersUrl, "resolved careersUrl", 2000);
+  if (new URL(canonicalUrl).protocol !== "https:" || new URL(careersUrl).protocol !== "https:") throw new Error("Agent resolved URLs must use HTTPS");
+  const workplaceType = snapshot.workplaceType;
+  if (workplaceType !== "remote" && workplaceType !== "hybrid" && workplaceType !== "on-site" && workplaceType !== "unspecified") {
+    throw new Error("Agent resolved workplace type is invalid");
+  }
+  const score = nonNegativeInteger(snapshot.score, "resolved score");
+  const postedAt = snapshot.postedAt === null || snapshot.postedAt === undefined ? null : stringField(snapshot.postedAt, "resolved postedAt", 100);
+  return {
+    taskId: stringField(raw.taskId, "taskId", 200),
+    idempotencyKey: stringField(raw.idempotencyKey, "idempotencyKey", 200),
+    schemaVersion: 1,
+    resolvedAt: stringField(raw.resolvedAt, "resolvedAt", 100),
+    source: {
+      id: stringField(source.id, "source id", 200),
+      provider: source.provider,
+      companyName: stringField(source.companyName, "source companyName", 200),
+      boardToken: stringField(source.boardToken, "source boardToken", 200),
+      companyDomain: stringField(source.companyDomain, "source companyDomain", 300),
+      careersUrl,
+      enabled: true,
+    },
+    snapshot: {
+      sourceProvider: source.provider,
+      externalId: stringField(snapshot.externalId, "snapshot externalId", 300),
+      canonicalUrl,
+      company: stringField(snapshot.company, "snapshot company", 200),
+      title: stringField(snapshot.title, "snapshot title", 300),
+      description: typeof snapshot.description === "string" ? snapshot.description.slice(0, 500_000) : "",
+      location: typeof snapshot.location === "string" ? snapshot.location.trim().slice(0, 500) : "",
+      workplaceType,
+      score,
+      scoreExplanation: stringArray(snapshot.scoreExplanation, "scoreExplanation"),
+      eligibilityRisks: stringArray(snapshot.eligibilityRisks, "eligibilityRisks"),
+      postedAt,
+    },
+    contentHash: String(raw.contentHash).toLowerCase(),
   };
 }
 
@@ -242,6 +328,9 @@ export function createScoutAgentClient(options: AgentClientOptions) {
     },
     async discoverInternships() {
       return validateDiscovery(await post("discover_internships", "/v1/discover", {}));
+    },
+    async resolveJob(input: { canonicalUrl: string }) {
+      return validateResolvedJob(await post("resolve_job", "/v1/resolve", input));
     },
     async researchContacts(input: { companyDomain: string; jobSnapshotId: string }) {
       return validateContactResearch(await post("research_contacts", "/v1/research-contacts", input));
