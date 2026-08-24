@@ -144,6 +144,7 @@ test("npm dev wrapper bootstraps only a fresh local shell and worker injects aut
   assert.match(devScript, /configured\.length === 0/);
   assert.match(devScript, /SCOUT_LOCAL_DEV_AUTH = "1"/);
   assert.match(devScript, /Partial or mismatched configuration remains/);
+  assert.match(devScript, /SCOUT_BROWSER_HANDOFF_SECRET/);
   assert.match(devScript, /spawn\(process\.execPath/);
   assert.doesNotMatch(devScript, /npm\.cmd/);
   const injection = worker.indexOf("const localAuth = resolveLocalDevWorkerAuth");
@@ -153,10 +154,32 @@ test("npm dev wrapper bootstraps only a fresh local shell and worker injects aut
 });
 
 
-test("local discovery secret is passed only into development serve bindings", () => {
-  const environment = { ...shellEnvironment, SCOUT_LOCAL_DISCOVERY_SECRET: "b".repeat(64) };
+test("local discovery and browser handoff secrets are passed only into development serve bindings", () => {
+  const environment = {
+    ...shellEnvironment,
+    SCOUT_LOCAL_DISCOVERY_SECRET: "b".repeat(64),
+    SCOUT_BROWSER_HANDOFF_SECRET: "c".repeat(64),
+  };
   const bindings = buildLocalDevWorkerBindings("serve", "development", environment);
   assert.equal(bindings.SCOUT_LOCAL_DISCOVERY_SECRET, "b".repeat(64));
+  assert.equal(bindings.SCOUT_BROWSER_HANDOFF_SECRET, "c".repeat(64));
   assert.deepEqual(buildLocalDevWorkerBindings("build", "production", environment), {});
   assert.throws(() => buildLocalDevWorkerBindings("serve", "development", { ...environment, SCOUT_LOCAL_DISCOVERY_SECRET: "bad" }), /64 hex/);
+  assert.throws(() => buildLocalDevWorkerBindings("serve", "development", { ...environment, SCOUT_BROWSER_HANDOFF_SECRET: "bad" }), /64 hex/);
+});
+
+test("local cloud-agent bindings require an exact URL/secret pair and stay out of production builds", () => {
+  const environment = {
+    ...shellEnvironment,
+    SCOUT_AGENT_BASE_URL: "http://127.0.0.1:8788",
+    SCOUT_AGENT_SHARED_SECRET: "d".repeat(64),
+    SCOUT_AGENT_ALLOW_LOOPBACK_DEV: "1",
+  };
+  const bindings = buildLocalDevWorkerBindings("serve", "development", environment);
+  assert.equal(bindings.SCOUT_AGENT_BASE_URL, "http://127.0.0.1:8788");
+  assert.equal(bindings.SCOUT_AGENT_SHARED_SECRET, "d".repeat(64));
+  assert.equal(bindings.SCOUT_AGENT_ALLOW_LOOPBACK_DEV, "1");
+  assert.deepEqual(buildLocalDevWorkerBindings("build", "production", environment), {});
+  assert.throws(() => buildLocalDevWorkerBindings("serve", "development", { ...environment, SCOUT_AGENT_SHARED_SECRET: undefined }), /configured together/);
+  assert.throws(() => buildLocalDevWorkerBindings("serve", "development", { ...environment, SCOUT_AGENT_BASE_URL: "http://agent.example.com" }), /must use HTTPS/);
 });
