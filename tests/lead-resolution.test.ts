@@ -8,7 +8,7 @@ test.after(() => { globalThis.fetch = originalFetch; });
 test("lead resolution only fetches controlled Greenhouse postings and preserves immutable inputs", async () => {
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.controlledSourcesOnly, true);
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.arbitraryUrlFetch, false);
-  assert.equal(LEAD_RESOLUTION_CAPABILITIES.lever, false);
+  assert.equal(LEAD_RESOLUTION_CAPABILITIES.lever, true);
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.submit, false);
   assert.equal(LEAD_RESOLUTION_CAPABILITIES.send, false);
 
@@ -26,6 +26,7 @@ test("lead resolution only fetches controlled Greenhouse postings and preserves 
   }) as typeof fetch;
 
   const result = await resolveControlledLead("https://job-boards.greenhouse.io/fourkites/jobs/123");
+  assert.equal(result.source.provider, "greenhouse");
   assert.equal(result.source.boardToken, "fourkites");
   assert.equal(result.source.companyDomain, "fourkites.com");
   assert.equal(result.snapshot.externalId, "123");
@@ -34,11 +35,36 @@ test("lead resolution only fetches controlled Greenhouse postings and preserves 
   assert.match(result.contentHash, /^[a-f0-9]{64}$/);
 });
 
-test("lead resolution refuses arbitrary and unsupported URLs without fetching", async () => {
+test("lead resolution supports exact controlled Lever postings", async () => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    assert.equal(url.href, "https://api.lever.co/v0/postings/paytm?mode=json");
+    return Response.json([{
+      id: "abc-123",
+      hostedUrl: "https://jobs.lever.co/paytm/abc-123",
+      text: "Product Management Intern",
+      descriptionPlain: "Product internship in Noida, India.",
+      categories: { location: "Noida, India" },
+      workplaceType: "on-site",
+    }]);
+  }) as typeof fetch;
+
+  const result = await resolveControlledLead("https://jobs.lever.co/paytm/abc-123");
+  assert.equal(result.source.provider, "lever");
+  assert.equal(result.source.boardToken, "paytm");
+  assert.equal(result.source.companyDomain, "paytm.com");
+  assert.equal(result.snapshot.sourceProvider, "lever");
+  assert.equal(result.snapshot.externalId, "abc-123");
+  assert.equal(result.snapshot.company, "Paytm");
+  assert.equal(result.snapshot.workplaceType, "on-site");
+  assert.match(result.contentHash, /^[a-f0-9]{64}$/);
+});
+
+test("lead resolution refuses arbitrary and unregistered URLs without fetching", async () => {
   let fetches = 0;
   globalThis.fetch = (async () => { fetches += 1; throw new Error("must not fetch"); }) as typeof fetch;
   await assert.rejects(() => resolveControlledLead("https://example.com/jobs/123"), /not supported/i);
   await assert.rejects(() => resolveControlledLead("https://job-boards.greenhouse.io/notregistered/jobs/123"), /controlled discovery source/i);
-  await assert.rejects(() => resolveControlledLead("https://jobs.lever.co/paytm/abc"), /not supported/i);
+  await assert.rejects(() => resolveControlledLead("https://jobs.lever.co/notregistered/abc"), /controlled discovery source/i);
   assert.equal(fetches, 0);
 });
