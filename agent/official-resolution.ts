@@ -1,4 +1,5 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../lib/adapters.ts";
+import { BambooHrPublicCareersAdapter } from "../lib/bamboohr-adapter.ts";
 import { WorkdayPublicCxsAdapter } from "../lib/workday-adapter.ts";
 import type { BraveSearchResult } from "../lib/scout/brave-search.ts";
 import { snapshotHash } from "../lib/scout/sync.ts";
@@ -15,8 +16,11 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   workable: true,
   smartrecruiters: true,
   workday: true,
+  bamboohr: true,
   refetchOfficialAts: true,
   workdayTenantGuessing: false,
+  bamboohrTenantGuessing: false,
+  bamboohrEmployerApiCredentials: false,
   resolveCompanyDomainFromConvergingEvidence: true,
   searchPersistenceGateRequired: true,
   arbitraryResultPageFetch: false,
@@ -43,6 +47,7 @@ type ResolutionDependencies = {
 const GENERIC_ROLE_WORDS = new Set(["intern", "internship", "trainee", "apprentice", "role", "job", "position", "opening"]);
 const GENERIC_COMPANY_WORDS = new Set(["private", "limited", "ltd", "inc", "llc", "company", "technologies", "technology", "solutions", "india"]);
 const SMARTRECRUITERS_POSTING_SEGMENT = /^([0-9]{4,32})(?:-|$)/;
+const BAMBOOHR_HOST_PATTERN = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.bamboohr\.com$/i;
 
 function compact(value: string, max: number) {
   return value.replace(/[\r\n\t]+/g, " ").replace(/[^\p{L}\p{N} .&+/_-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, max);
@@ -89,6 +94,15 @@ function parseSupportedAtsUrl(value: string) {
       return null;
     }
   }
+  const bamboo = host.match(BAMBOOHR_HOST_PATTERN);
+  if (bamboo && parts.length === 2 && parts[0] === "careers") {
+    try {
+      const externalId = decodeURIComponent(parts[1]);
+      if (/^[A-Za-z0-9_-]{1,80}$/.test(externalId)) return { provider: "bamboohr" as const, slug: bamboo[1].toLowerCase(), externalId };
+    } catch {
+      return null;
+    }
+  }
   return null;
 }
 
@@ -119,6 +133,10 @@ async function defaultDiscover(provider: AtsProvider, slug: string, externalId: 
       const job = await new WorkdayPublicCxsAdapter().discoverPosting(slug, externalId);
       return job ? [job] : [];
     }
+    case "bamboohr": {
+      const job = await new BambooHrPublicCareersAdapter().discoverPosting(slug, externalId);
+      return job ? [job] : [];
+    }
   }
 }
 
@@ -133,6 +151,7 @@ function searchQueries(company: string, title: string) {
     `"${safeCompany}" "${safeTitle}" site:apply.workable.com`,
     `"${safeCompany}" "${safeTitle}" site:jobs.smartrecruiters.com`,
     `"${safeCompany}" "${safeTitle}" site:myworkdayjobs.com OR site:myworkdaysite.com`,
+    `"${safeCompany}" "${safeTitle}" site:bamboohr.com/careers`,
   ];
 }
 
@@ -144,6 +163,7 @@ function atsCareersUrl(provider: AtsProvider, slug: string) {
     case "workable": return `https://apply.workable.com/${slug}/`;
     case "smartrecruiters": return `https://careers.smartrecruiters.com/${slug}`;
     case "workday": return `https://${slug}`;
+    case "bamboohr": return `https://${slug}.bamboohr.com/careers`;
   }
 }
 
@@ -222,5 +242,5 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
   }
 
-  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, or Workday posting was found for this lead");
+  throw new Error("No sufficiently matched official Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, or BambooHR posting was found for this lead");
 }
