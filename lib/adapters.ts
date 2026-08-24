@@ -14,6 +14,10 @@ function httpsUrl(value: unknown, field: string) {
   return url.href;
 }
 
+function htmlText(value: unknown) {
+  return String(value ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export class GreenhouseAdapter implements SourceAdapter {
   readonly source = "greenhouse";
   readonly capabilities = { discovery: true, submission: false } as const;
@@ -30,7 +34,7 @@ export class GreenhouseAdapter implements SourceAdapter {
       canonicalUrl: httpsUrl(raw.absolute_url, "Greenhouse job URL"),
       company: boardToken,
       title: String(raw.title),
-      description: String(raw.content ?? "").replace(/<[^>]+>/g, " "),
+      description: htmlText(raw.content),
       location: String((raw.location as { name?: string })?.name ?? ""),
       workplaceType: workplace(),
       postedAt: raw.updated_at ? String(raw.updated_at) : undefined,
@@ -127,5 +131,108 @@ export class WorkablePublicAdapter implements SourceAdapter {
         postedAt: raw.published_on ? String(raw.published_on) : undefined,
       } satisfies NormalizedJob];
     });
+  }
+}
+
+const SMARTRECRUITERS_PAGE_SIZE = 100;
+const SMARTRECRUITERS_MAX_POSTINGS = 500;
+const SMARTRECRUITERS_DETAIL_CONCURRENCY = 8;
+
+type SmartRecruitersPostingList = {
+  totalFound?: unknown;
+  content?: unknown;
+};
+
+function smartRecruitersDescription(raw: Record<string, unknown>) {
+  const jobAd = raw.jobAd;
+  if (!jobAd || typeof jobAd !== "object" || Array.isArray(jobAd)) return "";
+  const sections = (jobAd as Record<string, unknown>).sections;
+  if (!sections || typeof sections !== "object" || Array.isArray(sections)) return "";
+  const sectionMap = sections as Record<string, unknown>;
+  return ["companyDescription", "jobDescription", "qualifications", "additionalInformation"]
+    .map((key) => sectionMap[key])
+    .flatMap((section) => {
+      if (!section || typeof section !== "object" || Array.isArray(section)) return [];
+      return [htmlText((section as Record<string, unknown>).text)];
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export class SmartRecruitersAdapter implements SourceAdapter {
+  readonly source = "smartrecruiters";
+  readonly capabilities = { discovery: true, submission: false } as const;
+
+  async discoverPosting(companyIdentifier: string, postingId: string): Promise<NormalizedJob | null> {
+    const endpoint = new URL(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyIdentifier)}/postings/${encodeURIComponent(postingId)}`);
+    const response = await fetch(endpoint, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+      redirect: "error",
+    });
+    if (!response.ok) throw new Error(`SmartRecruiters posting discovery failed (${response.status})`);
+    const payload = await response.json() as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("SmartRecruiters posting discovery returned an invalid payload");
+    const raw = payload as Record<string, unknown>;
+    if (raw.active === false) return null;
+    const company = raw.company as { identifier?: unknown; name?: unknown } | undefined;
+    if (String(company?.identifier ?? "") !== companyIdentifier) throw new Error("SmartRecruiters posting company identifier did not match the requested source");
+    const externalId = String(raw.id ?? "").trim();
+    if (!externalId) throw new Error("SmartRecruiters posting did not contain an id");
+    const location = raw.location as { city?: unknown; region?: unknown; country?: unknown; remote?: unknown } | undefined;
+    return {
+      source: this.source,
+      externalId,
+      canonicalUrl: httpsUrl(raw.postingUrl, "SmartRecruiters posting URL"),
+      company: String(company?.name ?? companyIdentifier),
+      title: String(raw.name ?? ""),
+      description: smartRecruitersDescription(raw),
+      location: [location?.city, location?.region, location?.country].map((value) => String(value ?? "").trim()).filter(Boolean).join(", "),
+      workplaceType: workplace(location?.remote === true ? "remote" : ""),
+      postedAt: raw.releasedDate ? String(raw.releasedDate) : undefined,
+    };
+  }
+
+  async discover(companyIdentifier: string): Promise<NormalizedJob[]> {
+    const postingIds: string[] = [];
+    let offset = 0;
+    let expectedTotal: number | null = null;
+
+    while (expectedTotal === null || offset < expectedTotal) {
+      const endpoint = new URL(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyIdentifier)}/postings`);
+      endpoint.searchParams.set("destination", "PUBLIC");
+      endpoint.searchParams.set("limit", String(SMARTRECRUITERS_PAGE_SIZE));
+      endpoint.searchParams.set("offset", String(offset));
+      const response = await fetch(endpoint, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "error",
+      });
+      if (!response.ok) throw new Error(`SmartRecruiters discovery failed (${response.status})`);
+      const payload = await response.json() as SmartRecruitersPostingList;
+      if (!Array.isArray(payload.content) || !Number.isInteger(payload.totalFound) || (payload.totalFound as number) < 0) {
+        throw new Error("SmartRecruiters discovery returned an invalid postings payload");
+      }
+      expectedTotal = payload.totalFound as number;
+      if (expectedTotal > SMARTRECRUITERS_MAX_POSTINGS) {
+        throw new Error(`SmartRecruiters source exceeds the ${SMARTRECRUITERS_MAX_POSTINGS}-posting safe discovery limit`);
+      }
+      for (const item of payload.content) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+        const id = String((item as Record<string, unknown>).id ?? "").trim();
+        if (id) postingIds.push(id);
+      }
+      if (payload.content.length === 0) break;
+      offset += payload.content.length;
+    }
+
+    const uniqueIds = [...new Set(postingIds)];
+    const jobs: NormalizedJob[] = [];
+    for (let index = 0; index < uniqueIds.length; index += SMARTRECRUITERS_DETAIL_CONCURRENCY) {
+      const batch = uniqueIds.slice(index, index + SMARTRECRUITERS_DETAIL_CONCURRENCY);
+      const details = await Promise.all(batch.map((postingId) => this.discoverPosting(companyIdentifier, postingId)));
+      for (const job of details) if (job) jobs.push(job);
+    }
+    return jobs;
   }
 }
