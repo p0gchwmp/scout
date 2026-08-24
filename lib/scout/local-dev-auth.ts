@@ -24,12 +24,36 @@ const LOCAL_DEV_RUNTIME = "SCOUT_LOCAL_DEV_RUNTIME";
 const LOCAL_DEV_USER_ID = "SCOUT_LOCAL_DEV_USER_ID";
 const SCOUT_OWNER_USER_ID = "SCOUT_OWNER_USER_ID";
 const LOCAL_DISCOVERY_SECRET = "SCOUT_LOCAL_DISCOVERY_SECRET";
+const BROWSER_HANDOFF_SECRET = "SCOUT_BROWSER_HANDOFF_SECRET";
+const AGENT_BASE_URL = "SCOUT_AGENT_BASE_URL";
+const AGENT_SHARED_SECRET = "SCOUT_AGENT_SHARED_SECRET";
+const AGENT_ALLOW_LOOPBACK_DEV = "SCOUT_AGENT_ALLOW_LOOPBACK_DEV";
 
 const USER_ID_HEADER = "oai-authenticated-user-id";
 const USER_EMAIL_HEADER = "oai-authenticated-user-email";
 const USER_FULL_NAME_HEADER = "oai-authenticated-user-full-name";
 const USER_FULL_NAME_ENCODING_HEADER =
   "oai-authenticated-user-full-name-encoding";
+
+function optionalHexSecret(environment: EnvironmentReader, key: string) {
+  const value = environment[key]?.trim();
+  if (!value) return null;
+  if (!/^[a-f0-9]{64}$/i.test(value)) throw new Error(`${key} must be 64 hex characters when configured.`);
+  return value;
+}
+
+function optionalAgentBaseUrl(environment: EnvironmentReader) {
+  const raw = environment[AGENT_BASE_URL]?.trim();
+  if (!raw) return null;
+  let url: URL;
+  try { url = new URL(raw); }
+  catch { throw new Error("SCOUT_AGENT_BASE_URL is invalid when configured."); }
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  const allowLoopback = environment[AGENT_ALLOW_LOOPBACK_DEV]?.trim() === "1";
+  if (url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error("SCOUT_AGENT_BASE_URL must be an origin only.");
+  if (url.protocol !== "https:" && !(allowLoopback && url.protocol === "http:" && loopback)) throw new Error("SCOUT_AGENT_BASE_URL must use HTTPS outside explicit loopback development.");
+  return url.origin;
+}
 
 /**
  * Build bindings for Vinext's local Cloudflare worker.
@@ -49,6 +73,22 @@ export function buildLocalDevWorkerBindings(
   const ownerUserId = validConfiguredId(environment[SCOUT_OWNER_USER_ID]);
   if (ownerUserId) bindings[SCOUT_OWNER_USER_ID] = ownerUserId;
 
+  const discoverySecret = optionalHexSecret(environment, LOCAL_DISCOVERY_SECRET);
+  const browserHandoffSecret = optionalHexSecret(environment, BROWSER_HANDOFF_SECRET);
+  const agentSharedSecret = optionalHexSecret(environment, AGENT_SHARED_SECRET);
+  const agentBaseUrl = optionalAgentBaseUrl(environment);
+  const agentAllowLoopback = environment[AGENT_ALLOW_LOOPBACK_DEV]?.trim() === "1";
+  if ((agentBaseUrl && !agentSharedSecret) || (!agentBaseUrl && agentSharedSecret)) {
+    throw new Error("SCOUT_AGENT_BASE_URL and SCOUT_AGENT_SHARED_SECRET must be configured together.");
+  }
+  if (discoverySecret) bindings[LOCAL_DISCOVERY_SECRET] = discoverySecret;
+  if (browserHandoffSecret) bindings[BROWSER_HANDOFF_SECRET] = browserHandoffSecret;
+  if (agentBaseUrl && agentSharedSecret) {
+    bindings[AGENT_BASE_URL] = agentBaseUrl;
+    bindings[AGENT_SHARED_SECRET] = agentSharedSecret;
+    if (agentAllowLoopback) bindings[AGENT_ALLOW_LOOPBACK_DEV] = "1";
+  }
+
   if (environment[LOCAL_DEV_AUTH_FLAG] !== "1") return bindings;
 
   const localUserId = validConfiguredId(environment[LOCAL_DEV_USER_ID]);
@@ -59,17 +99,11 @@ export function buildLocalDevWorkerBindings(
     );
   }
 
-  const discoverySecret = environment[LOCAL_DISCOVERY_SECRET]?.trim();
-  if (discoverySecret && !/^[a-f0-9]{64}$/i.test(discoverySecret)) {
-    throw new Error("SCOUT_LOCAL_DISCOVERY_SECRET must be 64 hex characters when configured.");
-  }
-
   return {
     ...bindings,
     [LOCAL_DEV_RUNTIME]: "1",
     [LOCAL_DEV_AUTH_FLAG]: "1",
     [LOCAL_DEV_USER_ID]: localUserId,
-    ...(discoverySecret ? { [LOCAL_DISCOVERY_SECRET]: discoverySecret } : {}),
   };
 }
 
