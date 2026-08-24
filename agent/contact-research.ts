@@ -8,6 +8,7 @@ const FETCH_TIMEOUT_MS = 8_000;
 export const CONTACT_RESEARCH_CAPABILITIES = Object.freeze({
   officialCompanyPagesOnly: true,
   companyDomainBound: true,
+  verifiedCareersSeedSupported: true,
   deterministicExtraction: true,
   aiClassificationInputReady: true,
   guessEmail: false,
@@ -120,13 +121,16 @@ async function fetchOfficialPage(url: URL, domain: string, fetcher: FetchLike) {
 export async function researchPublishedCompanyContacts(input: {
   companyDomain: string;
   jobSnapshotId: string;
+  careersUrl?: string | null;
   fetcher?: FetchLike;
 }) {
   const domain = normalizeDomain(input.companyDomain);
   const jobSnapshotId = input.jobSnapshotId.trim();
   if (!/^[A-Za-z0-9._:-]{3,200}$/.test(jobSnapshotId)) throw new Error("Job snapshot id is invalid");
   const fetcher = input.fetcher ?? fetch;
-  const queue = ["/", "/careers", "/jobs", "/contact", "/contact-us"].map((path) => new URL(path, `https://${domain}`));
+  const queue: URL[] = [];
+  if (input.careersUrl) queue.push(safeOfficialUrl(input.careersUrl, domain));
+  queue.push(...["/", "/careers", "/jobs", "/contact", "/contact-us"].map((path) => new URL(path, `https://${domain}`)));
   const visited = new Set<string>();
   const failures: Array<{ sourceUrl: string; reason: string }> = [];
   const candidates = new Map<string, PublishedContactResearchCandidate>();
