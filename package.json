@@ -16,6 +16,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && npm run db:generate && git diff --exit-code && npm run build && git diff --check && git status --short --branch && git diff --stat",
+    "scout:ai:status": "node --experimental-strip-types scripts/scout-ai-status.mjs",
     "scout:gmail:oauth": "node scripts/scout-gmail-oauth.mjs",
     "scout:demo:status": "node scripts/scout-demo-db.mjs status",
     "scout:demo:seed": "node scripts/scout-demo-db.mjs seed",
