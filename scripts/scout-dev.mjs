@@ -22,6 +22,102 @@ if (!/^[a-f0-9]{64}$/i.test(browserHandoffSecret)) throw new Error("SCOUT_BROWSE
 env.SCOUT_BROWSER_HANDOFF_SECRET = browserHandoffSecret;
 console.log("Scout browser handoff: ephemeral local signing key enabled for this dev process.");
 
+const AGENT_HOST = "127.0.0.1";
+const explicitAgentBaseUrl = env.SCOUT_AGENT_BASE_URL?.trim() || "";
+const explicitAgentSecret = env.SCOUT_AGENT_SHARED_SECRET?.trim() || "";
+if (Boolean(explicitAgentBaseUrl) !== Boolean(explicitAgentSecret)) {
+  throw new Error("SCOUT_AGENT_BASE_URL and SCOUT_AGENT_SHARED_SECRET must be configured together");
+}
+
+async function freeLoopbackPort() {
+  const probe = createServer();
+  await new Promise((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, AGENT_HOST, resolve);
+  });
+  const address = probe.address();
+  const port = address && typeof address === "object" ? address.port : 0;
+  await new Promise((resolve) => probe.close(resolve));
+  if (!port) throw new Error("Unable to reserve a local Scout agent port");
+  return port;
+}
+
+function modelPreference(name) {
+  const value = name.toLowerCase();
+  if (value.includes("qwen") && value.includes("64k")) return 5;
+  if (value.includes("qwen3.5") || value.includes("qwen3_5")) return 4;
+  if (value.includes("qwen")) return 3;
+  if (value.includes("llama")) return 2;
+  return 1;
+}
+
+async function enableLocalOllamaIfAvailable() {
+  const aiKeys = ["SCOUT_AI_ENDPOINT_URL", "SCOUT_AI_API_KEY", "SCOUT_AI_MODEL", "SCOUT_AI_COST_CLASS"];
+  const explicitAi = aiKeys.filter((key) => env[key]?.trim());
+  if (explicitAi.length) {
+    console.log(`Scout AI: using explicit configuration (${explicitAi.length}/${aiKeys.length} required fields present); local Ollama auto-detection skipped.`);
+    return;
+  }
+
+  try {
+    const response = await fetch("http://127.0.0.1:11434/api/tags", {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(900),
+    });
+    if (!response.ok) throw new Error(`Ollama health returned ${response.status}`);
+    const payload = await response.json();
+    const names = Array.isArray(payload?.models)
+      ? payload.models.map((model) => typeof model?.name === "string" ? model.name.trim() : "").filter(Boolean)
+      : [];
+    names.sort((left, right) => modelPreference(right) - modelPreference(left));
+    const model = names[0];
+    if (!model) throw new Error("No local Ollama model is installed");
+
+    env.SCOUT_AI_ENDPOINT_URL = "http://127.0.0.1:11434/v1/chat/completions";
+    env.SCOUT_AI_API_KEY = "ollama-local-dev";
+    env.SCOUT_AI_MODEL = model;
+    env.SCOUT_AI_COST_CLASS = "free_or_included";
+    env.SCOUT_AI_ALLOW_LOOPBACK_DEV = "1";
+    env.SCOUT_AI_JSON_MODE = "0";
+    console.log(`Scout AI: local Ollama enabled with ${model}; no paid AI provider was activated.`);
+  } catch {
+    console.log("Scout AI: local Ollama not detected; deterministic discovery, resolution, application prep, and contact research remain available.");
+  }
+}
+
+async function waitForAgent(baseUrl, child) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`Scout local agent exited before becoming ready (code ${child.exitCode})`);
+    try {
+      const response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(400) });
+      if (response.ok) return;
+    } catch {
+      // Startup race; retry for a short bounded window.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 125));
+  }
+  throw new Error("Scout local agent did not become healthy within 5 seconds");
+}
+
+let agentChild = null;
+if (!explicitAgentBaseUrl) {
+  const port = await freeLoopbackPort();
+  env.SCOUT_AGENT_BASE_URL = `http://${AGENT_HOST}:${port}`;
+  env.SCOUT_AGENT_SHARED_SECRET = randomBytes(32).toString("hex");
+  env.SCOUT_AGENT_ALLOW_LOOPBACK_DEV = "1";
+  env.SCOUT_AGENT_HOST = AGENT_HOST;
+  env.SCOUT_AGENT_PORT = String(port);
+  await enableLocalOllamaIfAvailable();
+
+  const agentServer = fileURLToPath(new URL("../agent/server.ts", import.meta.url));
+  agentChild = spawn(process.execPath, ["--experimental-strip-types", agentServer], { env, stdio: "inherit" });
+  agentChild.on("error", (error) => console.error("Unable to start Scout local agent:", error.message));
+  await waitForAgent(env.SCOUT_AGENT_BASE_URL, agentChild);
+  console.log(`Scout local agent: signed loopback service ready at ${env.SCOUT_AGENT_BASE_URL}`);
+} else {
+  console.log(`Scout agent: using explicitly configured service at ${explicitAgentBaseUrl}`);
+}
+
 const DISCOVERY_HOST = "127.0.0.1";
 const DISCOVERY_PORT = 43119;
 const DISCOVERY_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
@@ -119,14 +215,39 @@ await new Promise((resolve, reject) => {
 console.log(`Scout discovery bridge: http://${DISCOVERY_HOST}:${DISCOVERY_PORT}/discover`);
 
 const vinextCli = fileURLToPath(new URL("../node_modules/vinext/dist/cli.js", import.meta.url));
-const child = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: "inherit" });
-child.on("error", (error) => {
+let vinextChild = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: "inherit" });
+let stopping = false;
+
+function stopChild(child) {
+  if (child && child.exitCode === null && !child.killed) child.kill();
+}
+
+function shutdown(code) {
+  if (stopping) return;
+  stopping = true;
+  stopChild(vinextChild);
+  stopChild(agentChild);
+  bridge.close(() => process.exit(code));
+  setTimeout(() => process.exit(code), 500).unref();
+}
+
+process.on("SIGINT", () => shutdown(130));
+process.on("SIGTERM", () => shutdown(143));
+
+vinextChild.on("error", (error) => {
   console.error("Unable to start Vinext:", error.message);
-  bridge.close();
-  process.exit(1);
+  shutdown(1);
 });
-child.on("exit", (code, signal) => {
-  bridge.close();
-  if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 1);
+vinextChild.on("exit", (code, signal) => {
+  if (stopping) return;
+  stopChild(agentChild);
+  bridge.close(() => process.exit(signal === "SIGINT" ? 130 : (code ?? 1)));
 });
+
+if (agentChild) {
+  agentChild.on("exit", (code, signal) => {
+    if (stopping || vinextChild.exitCode !== null) return;
+    console.error(`Scout local agent stopped unexpectedly (${signal ?? code ?? "unknown"}).`);
+    shutdown(code ?? 1);
+  });
+}
