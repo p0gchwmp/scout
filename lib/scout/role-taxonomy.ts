@@ -51,23 +51,23 @@ type FamilyRule = {
 const FAMILY_RULES: readonly FamilyRule[] = [
   {
     id: "technical_systems",
-    title: /\b(?:implementation|solutions?|systems?|integration|automation|quality assurance|qa|technical operations?|technical program|technical project|support engineer|solutions engineer|implementation consultant|implementation specialist|ai operations?|ml operations?|mlo ps|mlops)\b/i,
+    title: /\b(?:implementation|solutions?|systems?|integration|automation|quality assurance|qa|technical operations?|technical program|technical project|support engineer|solutions engineer|implementation consultant|implementation specialist|ai operations?|ml operations?|mlops)\b/i,
     text: /\b(?:implementation|solutions?|systems?|integrations?|automation|quality assurance|qa|technical operations?|apis?|databases?|workflow automation|testing|technical support|deployment)\b/i,
   },
   {
     id: "product",
-    title: /\b(?:product(?:\s+(?:analyst|intern|associate|operations?|ops|strategy))?|associate product manager|apm)\b/i,
+    title: /\b(?:product\s+(?:analyst|intern|associate|operations?|ops|strategy|management)|associate product manager|apm)\b/i,
     text: /\b(?:product strategy|product operations?|roadmap|user research|requirements?|product requirements?|feature|product analytics|customer discovery)\b/i,
-  },
-  {
-    id: "analytics",
-    title: /\b(?:(?:business|data|product|operations?|growth|revenue|commercial|marketing|risk|strategy)\s+)?analyst\b|\banalytics?\b|\bbusiness intelligence\b/i,
-    text: /\b(?:analytics?|analysis|data|sql|excel|spreadsheets?|dashboard|metrics?|insights?|business intelligence|reporting|forecasting)\b/i,
   },
   {
     id: "finance_economics",
     title: /\b(?:finance|financial|fp&a|investment|equity research|markets?|treasury|credit|economics?|economic|valuation|pricing|risk)\b/i,
     text: /\b(?:finance|financial|fp&a|investment|markets?|valuation|economics?|economic|pricing|revenue|budget|forecast|credit|portfolio|commercial finance)\b/i,
+  },
+  {
+    id: "analytics",
+    title: /\b(?:(?:business|data|product|operations?|growth|revenue|commercial|marketing|risk|strategy)\s+)?analyst\b|\banalytics?\b|\bbusiness intelligence\b/i,
+    text: /\b(?:analytics?|analysis|data|sql|excel|spreadsheets?|dashboard|metrics?|insights?|business intelligence|reporting|forecasting)\b/i,
   },
   {
     id: "business_strategy",
@@ -86,7 +86,7 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   },
   {
     id: "software_development",
-    title: /\b(?:software (?:engineer|developer)|backend (?:engineer|developer)|front[- ]?end (?:engineer|developer)|full[- ]?stack (?:engineer|developer)|mobile engineer|ios (?:engineer|developer)|android (?:engineer|developer)|sde(?:\s*[1-3])?|machine learning engineer|ml engineer|data engineer|devops engineer)\b/i,
+    title: /\b(?:software (?:engineer|engineering|developer|development)|backend (?:engineer|engineering|developer|development)|front[- ]?end (?:engineer|engineering|developer|development)|full[- ]?stack (?:engineer|engineering|developer|development)|mobile (?:engineer|developer)|ios (?:engineer|developer)|android (?:engineer|developer)|sde(?:\s*[1-3])?|machine learning engineer|ml engineer|data engineer|devops engineer)\b/i,
     text: /\b(?:production software|software engineering|backend development|frontend development|full[- ]?stack development|distributed systems|microservices|coding interview|data structures|algorithms)\b/i,
   },
 ] as const;
