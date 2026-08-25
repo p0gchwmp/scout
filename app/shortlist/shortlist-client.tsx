@@ -99,8 +99,11 @@ export function ShortlistWorkspace() {
   }, [load]);
 
   useEffect(() => {
-    try { setPreferenceFeedback(parsePreferenceFeedback(window.localStorage.getItem(PREFERENCE_STORAGE_KEY))); }
-    catch { setPreferenceFeedback([]); }
+    const timer = window.setTimeout(() => {
+      try { setPreferenceFeedback(parsePreferenceFeedback(window.localStorage.getItem(PREFERENCE_STORAGE_KEY))); }
+      catch { setPreferenceFeedback([]); }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const calibration = useMemo(() => buildPreferenceCalibration(jobs, preferenceFeedback), [jobs, preferenceFeedback]);
