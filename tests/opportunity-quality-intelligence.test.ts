@@ -63,8 +63,18 @@ test("missing compensation remains unknown rather than becoming unpaid", () => {
   assert.equal(result.flags.some((flag) => flag.code === "unpaid"), false);
 });
 
+test("currency, month and remote words need opportunity context before extraction", () => {
+  const result = assessOpportunityQuality(job({
+    workplaceType: "unspecified",
+    description: "Analyze a ₹1 billion market, compare 6 months of historical data, and study remote monitoring products for hospitals.",
+  }), source(), now);
+  assert.equal(result.compensation.status, "not_published");
+  assert.equal(result.duration, null);
+  assert.equal(result.arrangement, "unspecified");
+});
+
 test("explicit unpaid status is a caution but never an automatic rejection", () => {
-  const result = assessOpportunityQuality(job({ description: "This internship is unpaid. You will work on a supervised market-research project for 3 months." }), source(), now);
+  const result = assessOpportunityQuality(job({ description: "This internship is unpaid. You will work on a supervised market-research project. Internship duration: 3 months." }), source(), now);
   assert.equal(result.compensation.status, "explicit_unpaid");
   assert.ok(result.flags.some((flag) => flag.code === "unpaid" && flag.severity === "caution"));
   assert.notEqual(result.tier, "strong_evidence");
