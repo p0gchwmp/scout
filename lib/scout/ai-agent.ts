@@ -337,15 +337,16 @@ export function buildPublishedContactClassificationInput(candidates: PublishedCo
   return {
     schemaVersion: 1 as const,
     candidates: normalized,
-    instruction: "Classify only these explicitly published candidates. Never invent, infer, or transform an email address." as const,
+    instruction: "Classify every supplied explicitly published candidate exactly once. Never invent, infer, or transform an email address." as const,
   };
 }
 
 export function validateAiContactClassifications(value: unknown, candidateIds: string[]): AiContactClassification[] {
   if (!Array.isArray(value)) throw new Error("AI contact classifications must be an array");
+  if (value.length !== candidateIds.length) throw new Error("AI must classify every supplied contact candidate exactly once");
   const allowed = new Set(candidateIds);
   const seen = new Set<string>();
-  return value.map((raw) => {
+  const classifications = value.map((raw) => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("AI contact classification must be an object");
     const record = raw as Record<string, unknown>;
     const candidateId = cleanLine(String(record.candidateId ?? ""), "Candidate id", 200);
@@ -361,4 +362,6 @@ export function validateAiContactClassifications(value: unknown, candidateIds: s
       reason: cleanLine(String(record.reason ?? ""), "Classification reason", 500),
     } as AiContactClassification;
   });
+  if (seen.size !== allowed.size) throw new Error("AI must classify every supplied contact candidate exactly once");
+  return classifications;
 }
