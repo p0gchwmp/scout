@@ -141,7 +141,11 @@ function canonicalJobSegment(raw: string) {
   let decoded: string;
   try { decoded = decodeURIComponent(raw); }
   catch { throw new Error("Teamtailor job URL contains invalid encoding"); }
-  if (decoded.includes("/") || decoded.includes("\\") || /[\u0000-\u001F\u007F]/.test(decoded)) {
+  const hasControlCharacter = [...decoded].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1F || code === 0x7F;
+  });
+  if (decoded.includes("/") || decoded.includes("\\") || hasControlCharacter) {
     throw new Error("Teamtailor job URL contains an invalid job segment");
   }
   const match = decoded.match(TEAMTAILOR_JOB_SEGMENT_PATTERN);
