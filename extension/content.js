@@ -161,7 +161,7 @@ function answerForField(task, field, input) {
   const normalizedName = normalizeLabel(`${input.name || ""}`.replace(/[\[\]_-]+/g, " "));
   return task.answers.find((item) => {
     if (!item || typeof item.key !== "string" || typeof item.value !== "string") return false;
-    if (item.verified !== true && item.aiDraft !== true) return false;
+    if (item.verified !== true && !(item.aiDraft === true && item.reviewed === true)) return false;
     const key = normalizeLabel(item.key);
     return key === normalizedLabel || (normalizedName && key === normalizedName);
   });
@@ -194,7 +194,7 @@ async function fill() {
   const described = inputs.map(describeField).map(classifyField);
   const blockers = [];
   let filled = 0;
-  let aiDraftsFilled = 0;
+  let reviewedDraftsFilled = 0;
 
   for (let index = 0; index < inputs.length; index += 1) {
     const input = inputs[index];
@@ -214,32 +214,32 @@ async function fill() {
 
     const answer = answerForField(approvedTask, field, input);
     if (!answer?.value) {
-      if (field.required) blockers.push(field.category === "safe_autofill" ? `Missing verified value: ${field.label}` : `Needs your answer: ${field.label}`);
+      if (field.required) blockers.push(field.category === "safe_autofill" ? `Missing verified value: ${field.label}` : `Review or answer manually: ${field.label}`);
       continue;
     }
     if (field.category === "safe_autofill" && answer.verified !== true) {
       if (field.required) blockers.push(`Missing verified value: ${field.label}`);
       continue;
     }
-    if (field.category === "draft_from_claims" && answer.aiDraft !== true) {
-      if (field.required) blockers.push(`Needs your answer: ${field.label}`);
+    if (field.category === "draft_from_claims" && (answer.aiDraft !== true || answer.reviewed !== true)) {
+      if (field.required) blockers.push(`Review or answer manually: ${field.label}`);
       continue;
     }
     input.focus();
     if (setControlValue(input, answer.value)) {
       filled += 1;
-      if (answer.aiDraft === true) aiDraftsFilled += 1;
+      if (answer.aiDraft === true && answer.reviewed === true) reviewedDraftsFilled += 1;
     } else if (field.required) {
       blockers.push(`Could not safely fill: ${field.label}`);
     }
   }
   return {
     filled,
-    aiDraftsFilled,
+    reviewedDraftsFilled,
     formIntelligence: inspectFormFields().summary,
     blockers: [...new Set(blockers)],
     submitAvailable: false,
-    aiDraftAnswersRequireReview: aiDraftsFilled > 0,
+    unreviewedAiDraftsFillable: false,
   };
 }
 
