@@ -5,63 +5,63 @@ import { createAgentSearchProvider } from "./search-runtime.ts";
 export const SEARCH_DISCOVERY_QUERIES = Object.freeze([
   {
     id: "linkedin_global",
-    focus: "Global LinkedIn internship leads across Scout target functions",
-    query: "site:linkedin.com/jobs/view internship product operations business finance policy health-tech startup",
+    focus: "Global LinkedIn internship leads across product, analytics, business, finance, operations, research and technical-systems work",
+    query: "site:linkedin.com/jobs/view internship analyst product operations strategy business finance research implementation solutions QA technical operations health-tech policy startup",
   },
   {
     id: "linkedin_india",
-    focus: "LinkedIn internship leads with explicit India context",
-    query: "site:linkedin.com/jobs/view internship India product operations business finance policy health-tech startup",
+    focus: "LinkedIn internship leads with explicit India context across broad Scout role families",
+    query: "site:linkedin.com/jobs/view internship India analyst product operations strategy business finance research implementation solutions QA technical operations health-tech policy startup",
   },
   {
     id: "india_job_boards",
-    focus: "India internship boards and startup opportunities",
-    query: "internship India site:internshala.com/internship OR site:unstop.com/internships OR site:cutshort.io OR site:foundit.in OR site:naukri.com",
+    focus: "India internship boards across analytics, product, business, finance, operations, research and tech-adjacent work",
+    query: "internship India analyst product operations strategy finance research implementation site:internshala.com/internship OR site:unstop.com/internships OR site:cutshort.io OR site:foundit.in OR site:naukri.com",
   },
   {
     id: "global_startup_boards",
-    focus: "Global startup and remote internship leads",
-    query: "internship remote startup site:wellfound.com/jobs OR site:linkedin.com/jobs/view OR site:glassdoor.com",
+    focus: "Global startup and remote internships across broad business and technical-adjacent functions",
+    query: "internship analyst product operations strategy finance research implementation remote startup site:wellfound.com/jobs OR site:linkedin.com/jobs/view OR site:glassdoor.com",
   },
   {
     id: "india_policy_public",
-    focus: "India public policy, governance and public-sector internship opportunities",
-    query: "internship public policy India site:prsindia.org OR site:niti.gov.in OR site:mygov.in",
+    focus: "India public policy, governance, research and public-sector internship opportunities",
+    query: "internship analyst research public policy India site:prsindia.org OR site:niti.gov.in OR site:mygov.in",
   },
   {
     id: "workday_bamboo_global",
-    focus: "Global Workday and BambooHR employer internships",
-    query: "internship site:myworkdayjobs.com OR site:myworkdaysite.com OR site:bamboohr.com/jobs",
+    focus: "Global Workday and BambooHR employer internships across broad Scout role families",
+    query: "internship analyst product operations finance research implementation site:myworkdayjobs.com OR site:myworkdaysite.com OR site:bamboohr.com/jobs",
   },
   {
     id: "modern_ats_global",
-    focus: "Global official modern ATS internships",
-    query: "intern internship site:jobs.ashbyhq.com OR site:apply.workable.com OR site:jobs.smartrecruiters.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io",
+    focus: "Global official modern ATS internships across broad Scout role families",
+    query: "intern analyst product operations strategy finance research implementation solutions QA site:jobs.ashbyhq.com OR site:apply.workable.com OR site:jobs.smartrecruiters.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io",
   },
   {
     id: "modern_ats_india",
-    focus: "India official modern ATS internships",
-    query: "intern internship India site:jobs.ashbyhq.com OR site:apply.workable.com OR site:jobs.smartrecruiters.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io",
+    focus: "India official modern ATS internships across broad Scout role families",
+    query: "intern internship India analyst product operations strategy finance research implementation solutions QA site:jobs.ashbyhq.com OR site:apply.workable.com OR site:jobs.smartrecruiters.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io",
   },
   {
     id: "ats_long_tail",
     focus: "Public employer ATS long tail across global and India opportunities",
-    query: "internship site:teamtailor.com OR site:recruitee.com OR site:breezy.hr OR site:applytojob.com OR site:pinpointhq.com OR site:jobs.personio.de",
+    query: "internship analyst product operations finance research implementation site:teamtailor.com OR site:recruitee.com OR site:breezy.hr OR site:applytojob.com OR site:pinpointhq.com OR site:jobs.personio.de",
   },
   {
     id: "forms",
-    focus: "Startup and direct internship application forms",
-    query: "internship site:tally.so OR site:typeform.com OR site:fillout.com OR site:forms.gle OR site:jotform.com OR site:forms.office.com",
+    focus: "Startup and direct internship application forms across broad Scout role families",
+    query: "internship analyst product operations strategy finance research site:tally.so OR site:typeform.com OR site:fillout.com OR site:forms.gle OR site:jotform.com OR site:forms.office.com",
   },
   {
     id: "company_careers_global",
-    focus: "Direct company careers pages across Scout target functions",
-    query: "internship product operations business finance public policy health tech careers jobs company",
+    focus: "Direct company careers pages across product, analytics, business, finance, operations, research and technical-systems work",
+    query: "internship analyst product operations strategy business finance research implementation solutions QA technical operations careers jobs company",
   },
   {
     id: "company_careers_india",
-    focus: "Direct India company careers pages across Scout target functions",
-    query: "internship India product operations business finance public policy health tech careers jobs company",
+    focus: "Direct India company careers pages across product, analytics, business, finance, operations, research and technical-systems work",
+    query: "internship India analyst product operations strategy business finance research implementation solutions QA technical operations careers jobs company",
   },
 ] as const);
 
@@ -116,7 +116,7 @@ function inferCompanyAndTitle(result: BraveSearchResult, platformId: string, pla
 }
 
 function inferLocation(text: string) {
-  const matches = text.match(/\b(Remote|India|Bengaluru|Bangalore|Chennai|Hyderabad|Noida|Gurugram|Gurgaon|Mumbai|Delhi|New Delhi|Pune|Kolkata|Jammu|Ahmedabad|Jaipur|Chandigarh|Kochi|Cochin|Coimbatore|Indore|Bhubaneswar|Gurugram|Goa|Lucknow|Surat|Vadodara)\b/gi) ?? [];
+  const matches = text.match(/\b(Remote|India|Bengaluru|Bangalore|Chennai|Hyderabad|Noida|Gurugram|Gurgaon|Mumbai|Delhi|New Delhi|Pune|Kolkata|Jammu|Ahmedabad|Jaipur|Chandigarh|Kochi|Cochin|Coimbatore|Indore|Bhubaneswar|Goa|Lucknow|Surat|Vadodara)\b/gi) ?? [];
   return [...new Set(matches.map((item) => item[0].toUpperCase() + item.slice(1).toLowerCase()))].slice(0, 3).join(" / ");
 }
 
