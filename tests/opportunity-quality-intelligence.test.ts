@@ -81,6 +81,19 @@ test("candidate fees, commission-only pay and unpaid trial work are high-severit
   assert.ok(result.flags.some((flag) => flag.code === "unpaid_trial" && flag.severity === "high"));
 });
 
+test("anti-scam fee language is not itself treated as a candidate-payment red flag", () => {
+  for (const description of [
+    "We do not charge any application fee. This is a paid internship with mentorship and project work.",
+    "There is no registration fee for applicants. The internship includes supervised project work.",
+    "Candidates never pay a training fee to participate in this internship.",
+  ]) {
+    const result = assessOpportunityQuality(job({ description }), source(), now);
+    assert.equal(result.flags.some((flag) => flag.code === "candidate_payment"), false, description);
+  }
+  const actualFee = assessOpportunityQuality(job({ description: "A registration fee of ₹999 is required to join this internship." }), source(), now);
+  assert.ok(actualFee.flags.some((flag) => flag.code === "candidate_payment" && flag.severity === "high"));
+});
+
 test("source-health trouble creates a review caution, not a legitimacy verdict", () => {
   const result = assessOpportunityQuality(job(), source({ health: { state: "degraded", label: "Degraded", reason: "ATS timed out" } }), now);
   assert.ok(result.flags.some((flag) => flag.code === "source_health"));
