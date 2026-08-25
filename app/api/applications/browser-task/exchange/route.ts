@@ -6,7 +6,7 @@ import { buildAiApplicationAnswerEnvelope, type ApplicationQuestion } from "../.
 import { draftApplicationAnswersViaAgent } from "../../../../../lib/scout/application-answer-runtime";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
-import { analyzeFormFields, draftableApplicationQuestions } from "../../../../../lib/scout/form-intelligence";
+import { analyzeFormFields, draftableApplicationQuestions, summarizeFormFields } from "../../../../../lib/scout/form-intelligence";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -103,7 +103,16 @@ export async function POST(request: Request) {
     });
     if (task.allowedUrl !== verified.allowedUrl) return json({ error: "The application URL changed after the handoff was minted" }, 409);
 
-    const form = input.form ?? analyzeFormFields(legacyQuestionFields(input.questions));
+    const observedForm = input.form ?? analyzeFormFields(legacyQuestionFields(input.questions));
+    const verifiedProfileSources = new Set(task.answers
+      .filter((answer) => answer.verified === true)
+      .map((answer) => answer.sourceField));
+    const resolvedFields = observedForm.fields.map((field) => (
+      field.category === "safe_autofill" && field.sourceField && !verifiedProfileSources.has(field.sourceField)
+        ? { ...field, category: "needs_user_answer" as const, sourceField: null, reason: "No verified reusable value is available for this field" }
+        : field
+    ));
+    const form = { fields: resolvedFields, summary: summarizeFormFields(resolvedFields) };
     const draftableQuestions = draftableApplicationQuestions(form.fields);
     const manualQuestions = form.fields
       .filter((field) => field.category === "sensitive_manual" || field.category === "needs_user_answer" || field.category === "unsupported_manual")
