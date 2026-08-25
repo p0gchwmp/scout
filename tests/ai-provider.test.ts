@@ -17,6 +17,17 @@ function providerWith(content: unknown) {
   });
 }
 
+function outreachEnvelope() {
+  return buildAiOutreachEnvelope({
+    jobSnapshotId: "snap-1",
+    companyName: "Example",
+    roleTitle: "Product Intern",
+    candidateName: "Ryan",
+    contact: { id: "contact-1", email: "careers@example.com", sourceUrl: "https://example.com/careers", excerpt: "careers@example.com", reviewState: "accepted" },
+    claims: [{ id: "claim-1", statement: "Built a clinic operations prototype with workflow mapping and automated tests", status: "approved" }],
+  });
+}
+
 test("AI provider refuses metered use unless explicitly enabled", () => {
   assert.throws(() => createStructuredAiProvider({
     endpointUrl: "https://ai.example.com/v1/chat/completions",
@@ -63,18 +74,36 @@ test("AI provider classifies only explicitly published candidate IDs", async () 
 });
 
 test("AI outreach result is pinned to accepted evidence and approved claim IDs", async () => {
-  const envelope = buildAiOutreachEnvelope({
-    jobSnapshotId: "snap-1",
-    companyName: "Example",
-    roleTitle: "Product Intern",
-    candidateName: "Ryan",
-    contact: { id: "contact-1", email: "careers@example.com", sourceUrl: "https://example.com/careers", excerpt: "careers@example.com", reviewState: "accepted" },
-    claims: [{ id: "claim-1", statement: "Built a clinic operations prototype with workflow mapping and automated tests", status: "approved" }],
-  });
+  const envelope = outreachEnvelope();
   const provider = providerWith({ subject: "Product Intern - Ryan", body: "Hi recruiting team,\n\nI came across the Product Intern role and wanted to reach out about it.", usedClaimIds: ["claim-1"] });
   const result = await provider.draftOutreach(envelope);
   assert.deepEqual(result.usedClaimIds, ["claim-1"]);
 
   const bad = providerWith({ subject: "Product Intern - Ryan", body: "Hi", usedClaimIds: ["claim-999"] });
   await assert.rejects(() => bad.draftOutreach(envelope), /unapproved claim id/);
+});
+
+test("high-quality writing deliberately refines a valid first draft without changing claim bindings", async () => {
+  const responses = [
+    { subject: "Product Intern - Ryan", body: "Hi recruiting team,\n\nI came across the Product Intern role and wanted to reach out about it. I built a clinic operations prototype with workflow mapping and automated tests.", usedClaimIds: ["claim-1"] },
+    { subject: "Product Intern - Ryan", body: "Hi recruiting team,\n\nI saw the Product Intern opening and wanted to reach out. I have worked on a clinic operations prototype focused on workflow mapping and automated tests, which is why the role caught my attention.", usedClaimIds: ["claim-1"] },
+  ];
+  let calls = 0;
+  const provider = createStructuredAiProvider({
+    endpointUrl: "https://ai.example.com/v1/chat/completions",
+    apiKey: "test-api-key",
+    model: "test-model",
+    costClass: "free_or_included",
+    alwaysRefineWriting: true,
+    fetcher: (async () => {
+      const content = responses[Math.min(calls, responses.length - 1)];
+      calls += 1;
+      return Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
+    }) as typeof fetch,
+  });
+
+  const result = await provider.draftOutreach(outreachEnvelope());
+  assert.equal(calls, 2);
+  assert.deepEqual(result.usedClaimIds, ["claim-1"]);
+  assert.match(result.body, /workflow mapping and automated tests/);
 });
