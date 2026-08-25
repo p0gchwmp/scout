@@ -124,9 +124,8 @@ export function classifyFormField(field: ObservedFormField): ClassifiedFormField
   return { ...field, category: "needs_user_answer", sourceField: null, reason: "No verified reusable value or safe claim-draft rule applies" };
 }
 
-export function analyzeFormFields(value: unknown) {
-  const fields = parseObservedFormFields(value).map(classifyFormField);
-  const summary = {
+export function summarizeFormFields(fields: ClassifiedFormField[]) {
+  return {
     total: fields.length,
     safeAutofill: fields.filter((field) => field.category === "safe_autofill").length,
     claimDrafts: fields.filter((field) => field.category === "draft_from_claims").length,
@@ -134,7 +133,11 @@ export function analyzeFormFields(value: unknown) {
     sensitiveManual: fields.filter((field) => field.category === "sensitive_manual").length,
     unsupportedManual: fields.filter((field) => field.category === "unsupported_manual").length,
   };
-  return { fields, summary };
+}
+
+export function analyzeFormFields(value: unknown) {
+  const fields = parseObservedFormFields(value).map(classifyFormField);
+  return { fields, summary: summarizeFormFields(fields) };
 }
 
 export function draftableApplicationQuestions(fields: ClassifiedFormField[]): ApplicationQuestion[] {
