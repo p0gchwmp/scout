@@ -20,7 +20,7 @@ test("evidence intelligence is owner-only, reachable, and read-only", async () =
   assert.match(client, /fetch\("\/api\/profile"\)/);
   assert.match(client, /fetch\("\/api\/jobs"\)/);
   assert.doesNotMatch(client, /method:\s*"(?:POST|PATCH|PUT|DELETE)"/);
-  assert.doesNotMatch(client, /auto.?approve|auto.?merge/i);
+  assert.doesNotMatch(client, /fetch\([^)]*\/api\/(?:claims|profile)[^)]*,\s*\{/s);
 
   assert.equal(EVIDENCE_INTELLIGENCE_CAPABILITIES.readOnlyDiagnostics, true);
   assert.equal(EVIDENCE_INTELLIGENCE_CAPABILITIES.approvedClaimsOnlyForCoverage, true);
