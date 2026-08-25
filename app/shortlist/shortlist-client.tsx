@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ROLE_FAMILIES, type RoleFamilyId } from "../../lib/scout/role-taxonomy";
 import { evaluateShortlist, type ShortlistAssessment } from "../../lib/scout/shortlist-intelligence";
 import styles from "./shortlist.module.css";
 
@@ -37,6 +38,7 @@ type Contact = {
 
 type RankedJob = { job: Job; assessment: ShortlistAssessment };
 type Filter = "All" | "High priority" | "India" | "Remote" | "Shortlisted" | "Saved";
+type FamilyFilter = "all" | RoleFamilyId;
 
 const filters: Filter[] = ["All", "High priority", "India", "Remote", "Shortlisted", "Saved"];
 
@@ -51,6 +53,7 @@ export function ShortlistWorkspace() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filter, setFilter] = useState<Filter>("All");
+  const [familyFilter, setFamilyFilter] = useState<FamilyFilter>("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -99,13 +102,14 @@ export function ShortlistWorkspace() {
   const visible = useMemo(() => ranked.filter(({ job, assessment }) => {
     const text = `${job.company} ${job.title} ${job.location} ${job.description}`.toLowerCase();
     if (query.trim() && !text.includes(query.trim().toLowerCase())) return false;
+    if (familyFilter !== "all" && assessment.roleFamilyId !== familyFilter) return false;
     if (filter === "High priority") return assessment.priority === "high";
     if (filter === "India") return assessment.locationContext === "India";
     if (filter === "Remote") return assessment.locationTags.includes("Remote");
     if (filter === "Shortlisted") return job.state === "shortlisted";
     if (filter === "Saved") return job.state === "saved";
     return true;
-  }), [ranked, filter, query]);
+  }), [ranked, filter, familyFilter, query]);
 
   const summary = useMemo(() => ({
     high: ranked.filter(({ assessment }) => assessment.priority === "high").length,
@@ -170,8 +174,8 @@ export function ShortlistWorkspace() {
     <header className={styles.header}>
       <div>
         <p className={styles.kicker}>SCOUT / SHORTLIST INTELLIGENCE</p>
-        <h1>Spend time on the roles that deserve it.</h1>
-        <p>Fit is evidence-backed, geography is context rather than a gate, and freshness matters. Scout never treats an unsupported claim as proof.</p>
+        <h1>Broad prospects. Evidence-backed ranking.</h1>
+        <p>Product, analytics, business, finance, operations, research and technical-systems roles are first-class lanes. Pure software development stays visible as a stretch preference rather than being hidden.</p>
       </div>
       <div className={styles.headerLinks}><Link href="/inbox">Internship Inbox</Link><Link href="/">Dashboard</Link></div>
     </header>
@@ -189,7 +193,13 @@ export function ShortlistWorkspace() {
 
     <section className={styles.controls}>
       <div className={styles.filters}>{filters.map((item) => <button key={item} className={filter === item ? styles.active : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
-      <input aria-label="Search roles" placeholder="Search company, role, location…" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <div className={styles.controlFields}>
+        <select aria-label="Filter by role family" value={familyFilter} onChange={(event) => setFamilyFilter(event.target.value as FamilyFilter)}>
+          <option value="all">All role families</option>
+          {ROLE_FAMILIES.map((family) => <option key={family.id} value={family.id}>{family.shortLabel}</option>)}
+        </select>
+        <input aria-label="Search roles" placeholder="Search company, role, location…" value={query} onChange={(event) => setQuery(event.target.value)} />
+      </div>
     </section>
 
     <section className={styles.list}>
@@ -207,7 +217,14 @@ export function ShortlistWorkspace() {
             <div className={`${styles.priority} ${styles[assessment.priority]}`}><strong>{assessment.score}</strong><span>{assessment.label}</span></div>
           </div>
 
-          <div className={styles.context}>{assessment.locationTags.map((tag) => <span key={tag}>{tag}</span>)}<span>{assessment.freshnessLabel}</span><span>{job.currentSnapshotId ? "Official snapshot" : "Needs official snapshot"}</span></div>
+          <div className={styles.context}>
+            <span className={styles.roleFamily}>{assessment.roleFamilyLabel}</span>
+            <span>{assessment.preferenceLabel}</span>
+            {assessment.sectorTags.map((tag) => <span key={tag}>{tag}</span>)}
+            {assessment.locationTags.map((tag) => <span key={tag}>{tag}</span>)}
+            <span>{assessment.freshnessLabel}</span>
+            <span>{job.currentSnapshotId ? "Official snapshot" : "Needs official snapshot"}</span>
+          </div>
 
           <div className={styles.why}><strong>Why this is worth your time</strong><p>{assessment.whyWorthYourTime}</p></div>
 
