@@ -60,3 +60,14 @@ test("application workspace requires owner auth and protects the record-only sub
   assert.match(client, /clear_external_submission/);
   assert.doesNotMatch(client, /requestSubmit\(|\.submit\(\)|document\.querySelector/);
 });
+
+test("recorded external submission disables both new and already-minted Safe Fill handoffs", async () => {
+  const [mintRoute, exchangeRoute, assist] = await Promise.all([
+    readFile(new URL("../app/api/applications/browser-task/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/applications/browser-task/exchange/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/assist/assist-client.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(mintRoute, /isNull\(applications\.submittedAt\)/);
+  assert.match(exchangeRoute, /isNull\(applications\.submittedAt\)/);
+  assert.match(assist, /item\.status === "ready_for_review" && !item\.submittedAt/);
+});
