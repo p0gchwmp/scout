@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Scout Safe Fill",
-  "version": "0.4.0",
-  "description": "Classifies visible application fields, fills only Scout-approved evidence, and keeps sensitive or uncertain answers manual.",
+  "version": "0.5.0",
+  "description": "Classifies application fields, requires explicit review for claim-backed text, fills verified evidence, and never submits.",
   "permissions": ["activeTab", "scripting", "storage"],
   "optional_host_permissions": [
     "https://*/*",
