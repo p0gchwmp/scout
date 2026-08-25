@@ -33,6 +33,7 @@ const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
 const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice", "/review", "/shortlist", "/readiness", "/applications", "/sources"]);
 OWNER_PAGE_PATHS.add("/evidence");
+OWNER_PAGE_PATHS.add("/preferences");
 
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
