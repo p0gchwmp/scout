@@ -76,7 +76,7 @@ export function parseExplicitDeadlineDate(signal: string) {
   const named = parseNamedDate(signal);
   if (named) return named;
 
-  const numeric = signal.match(/\b(\d{1,2})[\/-](\d{1,2})[\/-](20\d{2})\b/);
+  const numeric = signal.match(/\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b/);
   if (!numeric) return null;
   const first = Number(numeric[1]);
   const second = Number(numeric[2]);
