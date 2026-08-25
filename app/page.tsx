@@ -3,14 +3,26 @@ import { getScoutOwnerUserId, requireChatGPTUser } from "./chatgpt-auth";
 import { Dashboard } from "./dashboard";
 import { requireScoutPageOwner } from "./scout-api";
 
+const workspaceLinks = [
+  ["Inbox", "/inbox"],
+  ["Shortlist", "/shortlist"],
+  ["Readiness", "/readiness"],
+  ["Review", "/review"],
+  ["Safe Fill", "/assist"],
+  ["Voice", "/voice"],
+] as const;
+
 export default async function Home() {
   const user = await requireChatGPTUser("/");
   await requireScoutPageOwner(user, getScoutOwnerUserId);
-  return <>
-    <div style={{ width: "min(1160px, 91vw)", margin: "18px auto -6px", display: "flex", justifyContent: "flex-end", gap: 16, flexWrap: "wrap" }}>
-      <Link href="/shortlist" style={{ color: "#234d36", fontSize: 12, fontWeight: 750, textDecoration: "none" }}>Shortlist Intelligence →</Link>
-      <Link href="/readiness" style={{ color: "#234d36", fontSize: 12, fontWeight: 750, textDecoration: "none" }}>Application Readiness →</Link>
-    </div>
+  return <div className="dashboard-shell">
+    <header className="dashboard-topbar">
+      <Link href="/" className="dashboard-brand">Scout</Link>
+      <nav className="workspace-links" aria-label="Scout workspaces">
+        {workspaceLinks.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
+      </nav>
+      <span className="owner-badge">Private · owner only</span>
+    </header>
     <Dashboard />
-  </>;
+  </div>;
 }
