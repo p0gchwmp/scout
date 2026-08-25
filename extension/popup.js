@@ -144,19 +144,22 @@ async function leaveDraftManual(questionId, value) {
   status.textContent = "That question will stay manual. Scout will not insert an answer for it.";
 }
 
-async function revokeEditedApproval(questionId, value) {
+async function revokeDraftApproval(questionId) {
   const { approvedTask, pendingAnswerReview } = await chrome.storage.local.get(["approvedTask", "pendingAnswerReview"]);
-  if (!reviewMatchesTask(pendingAnswerReview, approvedTask)) return;
+  if (!reviewMatchesTask(pendingAnswerReview, approvedTask)) throw new Error("This answer review expired. Load a fresh Scout handoff.");
   const current = pendingAnswerReview.drafts.find((item) => item.questionId === questionId);
   if (!current || current.decision !== "approved") return;
   const nextTask = withoutReviewedAnswer(approvedTask, questionId);
   const nextReview = {
     ...pendingAnswerReview,
     drafts: pendingAnswerReview.drafts.map((item) => item.questionId === questionId
-      ? { ...item, decision: "pending", editedAnswer: value }
+      ? { ...item, decision: "pending" }
       : item),
   };
   await chrome.storage.local.set({ approvedTask: nextTask, pendingAnswerReview: nextReview });
+  renderAnswerReview(nextReview, nextTask);
+  status.classList.remove("blocked");
+  status.textContent = "Approval revoked. Edit the answer, then approve it again if you want Scout to fill it.";
 }
 
 function renderAnswerReview(review, task) {
@@ -179,6 +182,7 @@ function renderAnswerReview(review, task) {
 
     const textarea = document.createElement("textarea");
     textarea.value = typeof draft.editedAnswer === "string" ? draft.editedAnswer : draft.proposedAnswer;
+    textarea.disabled = draft.decision === "approved";
     if (Number.isInteger(draft.maxLength)) textarea.maxLength = draft.maxLength;
     textarea.setAttribute("aria-label", `Review answer for ${draft.label}`);
 
@@ -200,27 +204,20 @@ function renderAnswerReview(review, task) {
         status.textContent = error instanceof Error ? error.message : "Unable to approve answer";
       });
     });
-    const manual = document.createElement("button");
-    manual.className = "secondary";
-    manual.textContent = draft.decision === "manual" ? "Stays manual" : "Leave manual";
-    manual.disabled = draft.decision === "manual";
-    manual.addEventListener("click", () => {
-      void leaveDraftManual(draft.questionId, textarea.value).catch((error) => {
+    const secondary = document.createElement("button");
+    secondary.className = "secondary";
+    secondary.textContent = draft.decision === "approved" ? "Revoke / edit" : draft.decision === "manual" ? "Stays manual" : "Leave manual";
+    secondary.disabled = draft.decision === "manual";
+    secondary.addEventListener("click", () => {
+      const action = draft.decision === "approved"
+        ? revokeDraftApproval(draft.questionId)
+        : leaveDraftManual(draft.questionId, textarea.value);
+      void action.catch((error) => {
         status.classList.add("blocked");
-        status.textContent = error instanceof Error ? error.message : "Unable to keep answer manual";
+        status.textContent = error instanceof Error ? error.message : "Unable to update answer review";
       });
     });
-    actions.append(approve, manual);
-
-    textarea.addEventListener("input", () => {
-      if (draft.decision !== "approved") return;
-      draft.decision = "pending";
-      badge.className = "review-state";
-      badge.textContent = "Pending review";
-      approve.disabled = false;
-      approve.textContent = "Approve for fill";
-      void revokeEditedApproval(draft.questionId, textarea.value);
-    });
+    actions.append(approve, secondary);
 
     card.append(heading, badge, textarea, meta, actions);
     return card;
