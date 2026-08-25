@@ -142,5 +142,45 @@
     "sourceUrl": "https://job-boards.greenhouse.io/freshprints",
     "focus": "India remote operations, growth, recruiting, business",
     "companyDomain": "freshprints.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "stable-money1",
+    "company": "Stable Money",
+    "sourceUrl": "https://jobs.lever.co/stable-money1",
+    "focus": "India finance, market research, business, product",
+    "companyDomain": "stablemoney.in"
+  },
+  {
+    "provider": "lever",
+    "slug": "aleph",
+    "company": "Aleph",
+    "sourceUrl": "https://jobs.lever.co/aleph",
+    "focus": "India and global finance, operations, advertising, business",
+    "companyDomain": "alephdigital.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "sitetracker",
+    "company": "Sitetracker",
+    "sourceUrl": "https://jobs.lever.co/sitetracker",
+    "focus": "India and global SaaS, people operations, product, operations",
+    "companyDomain": "sitetracker.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "getwingapp",
+    "company": "Wing Assistant",
+    "sourceUrl": "https://jobs.lever.co/getwingapp",
+    "focus": "global remote product, operations, GTM, AI, engineering",
+    "companyDomain": "wingassistant.com"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "sezzleinternships",
+    "company": "Sezzle Internships",
+    "sourceUrl": "https://job-boards.greenhouse.io/sezzleinternships",
+    "focus": "global fintech, product, marketing operations, analytics",
+    "companyDomain": "sezzle.com"
   }
 ]
