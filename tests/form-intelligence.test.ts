@@ -7,12 +7,13 @@ import {
   draftableApplicationQuestions,
   parseObservedFormFields,
   profileFieldForLabel,
+  type ObservedFormField,
 } from "../lib/scout/form-intelligence.ts";
 
-const field = (overrides: Partial<ReturnType<typeof parseObservedFormFields>[number]> = {}) => ({
+const field = (overrides: Partial<ObservedFormField> = {}): ObservedFormField => ({
   id: "field-1",
   label: "Email address *",
-  controlKind: "input" as const,
+  controlKind: "input",
   inputType: "email",
   maxLength: 320,
   required: true,
