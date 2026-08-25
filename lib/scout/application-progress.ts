@@ -123,12 +123,12 @@ export function buildApplicationProgress(input: {
     nextAction = { label: "Review contact evidence", href: "/review", kind: "navigate" };
   } else if (!hasDraft) {
     summary = "An accepted public contact is available; you can prepare a low-volume outreach draft.";
-    nextAction = { label: "Open Outreach", href: "/?tab=Outreach", kind: "navigate" };
+    nextAction = { label: "Create outreach draft", href: "/review", kind: "navigate" };
   } else {
     summary = hasApprovedDraft
       ? "Application and outreach preparation are recorded. Any send remains your decision."
       : "An outreach draft exists and is waiting for review.";
-    nextAction = { label: "Review outreach", href: "/?tab=Outreach", kind: "navigate" };
+    nextAction = { label: "Review outreach", href: "/review", kind: "navigate" };
   }
 
   const firstIncomplete = stages.find((item) => item.state !== "done");
