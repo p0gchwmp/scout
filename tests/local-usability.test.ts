@@ -21,8 +21,11 @@ test("npm dev auto-boots a signed loopback agent without enabling paid/external 
   assert.match(agentServer, /server\.listen\(port, host/);
   assert.match(agentServer, /"127\.0\.0\.1"/);
 
-  assert.match(devScript, /SCOUT_AI_COST_CLASS = "free_or_included"/);
-  assert.match(devScript, /SCOUT_AI_ALLOW_LOOPBACK_DEV = "1"/);
+  assert.match(devScript, /SCOUT_NIM_FREE_API_KEY/);
+  assert.match(devScript, /SCOUT_GROQ_FREE_API_KEY/);
+  assert.match(devScript, /SCOUT_GEMINI_FREE_API_KEY/);
+  assert.match(devScript, /SCOUT_OLLAMA_ENDPOINT_URL = "http:\/\/127\.0\.0\.1:11434\/v1\/chat\/completions"/);
+  assert.match(devScript, /final offline fallback/);
   assert.doesNotMatch(devScript, /SCOUT_ALLOW_METERED_AI\s*=\s*"1"/);
   assert.doesNotMatch(devScript, /SCOUT_SEARCH_PROVIDER\s*=/);
   assert.doesNotMatch(devScript, /SCOUT_SEARCH_API_KEY\s*=/);
