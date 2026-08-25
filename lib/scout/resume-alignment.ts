@@ -39,13 +39,33 @@ const THEMES = [
   },
   {
     label: "Research & analysis",
-    claim: /\b(research|analysis|analysed|data review|policy report|synthesis|pharmacovigilance)\b/i,
+    claim: /\b(research|analysis|analysed|analyzed|data review|policy report|synthesis|pharmacovigilance)\b/i,
     job: /\b(research|analysis|data|review|audit|annotat|insights?)\b/i,
   },
   {
+    label: "Data & analytics",
+    claim: /\b(data|analysis|analysed|analyzed|sql|python|spreadsheet|excel|dashboard|metrics?|review)\b/i,
+    job: /\b(analyst|analytics?|data|sql|excel|spreadsheet|dashboard|metrics?|insights?|business intelligence|reporting|forecasting)\b/i,
+  },
+  {
+    label: "Business & strategy",
+    claim: /\b(strategy|business|market|commercial|growth|pricing|price|stakeholder|operations?|research)\b/i,
+    job: /\b(strategy|business development|growth|go[- ]?to[- ]?market|gtm|partnership|commercial|market research|founder['’]?s office|business operations?)\b/i,
+  },
+  {
+    label: "Finance & economics",
+    claim: /\b(finance|financial|economic|economics|price|pricing|cost|market|budget|forecast|research)\b/i,
+    job: /\b(finance|financial|fp&a|investment|markets?|economics?|economic|pricing|revenue|valuation|budget|forecast|credit|risk)\b/i,
+  },
+  {
     label: "Technical delivery",
-    claim: /\b(software|node(?:\.js)?|express|python|javascript|django|wagtail|cms|prototype|git|deployment)\b/i,
-    job: /\b(software|engineer|technical|technology|systems?|code|programming|cloud|ubuntu|linux)\b/i,
+    claim: /\b(software|node(?:\.js)?|express|python|javascript|django|wagtail|cms|prototype|git|deployment|api|database|sqlite|automation)\b/i,
+    job: /\b(software|engineer|technical|technology|systems?|code|programming|cloud|ubuntu|linux|api|database|automation|integration)\b/i,
+  },
+  {
+    label: "Implementation & systems",
+    claim: /\b(workflow|system|prototype|implementation|api|database|sqlite|node|express|automation|testing|tests?|requirements?)\b/i,
+    job: /\b(implementation|solutions?|systems?|automation|integrations?|technical operations?|technical program|technical project|qa|quality assurance|support engineer|workflow)\b/i,
   },
   {
     label: "Quality & documentation",
