@@ -73,6 +73,14 @@ test("AI provider classifies only explicitly published candidate IDs", async () 
   await assert.rejects(() => bad.classifyPublishedContacts([{ id: "c1", email: "careers@example.com", sourceUrl: "https://example.com/careers", excerpt: "Internships: careers@example.com", sourceType: "official_careers" }]), /not provided/);
 });
 
+test("AI provider rejects partial contact classifications so the router can escalate", async () => {
+  const provider = providerWith({ classifications: [{ candidateId: "c1", suitability: "high", reason: "Explicit careers inbox" }] });
+  await assert.rejects(() => provider.classifyPublishedContacts([
+    { id: "c1", email: "careers@example.com", sourceUrl: "https://example.com/careers", excerpt: "Internships: careers@example.com", sourceType: "official_careers" },
+    { id: "c2", email: "jobs@example.com", sourceUrl: "https://example.com/jobs", excerpt: "Questions: jobs@example.com", sourceType: "official_careers" },
+  ]), /classify every supplied contact candidate/);
+});
+
 test("AI outreach result is pinned to accepted evidence and approved claim IDs", async () => {
   const envelope = outreachEnvelope();
   const provider = providerWith({ subject: "Product Intern - Ryan", body: "Hi recruiting team,\n\nI came across the Product Intern role and wanted to reach out about it.", usedClaimIds: ["claim-1"] });
