@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 test("Safe Fill covers major internship portals and form providers without all-URLs access", async () => {
   const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url), "utf8")) as { version?: string; host_permissions?: string[]; permissions?: string[] };
   const hosts = manifest.host_permissions ?? [];
-  assert.equal(manifest.version, "0.4.0");
+  assert.equal(manifest.version, "0.5.0");
   for (const expected of [
     "https://job-boards.greenhouse.io/*",
     "https://*.myworkdayjobs.com/*",
@@ -34,6 +34,23 @@ test("Safe Fill classifies visible controls without sending their entered values
   assert.match(popup, /fieldMetadata\(inspection\)/);
   assert.match(popup, /body: JSON\.stringify\(\{ token, currentUrl: tab\.url, fields: fieldMetadata\(inspection\) \}\)/);
   assert.doesNotMatch(popup, /field\.value|input\.value|inspection.*value/i);
+});
+
+test("Safe Fill requires explicit answer review before any AI text can be inserted", async () => {
+  const [content, popup, html] = await Promise.all([
+    readFile(new URL("../extension/content.js", import.meta.url), "utf8"),
+    readFile(new URL("../extension/popup.js", import.meta.url), "utf8"),
+    readFile(new URL("../extension/popup.html", import.meta.url), "utf8"),
+  ]);
+  assert.match(content, /item\.aiDraft === true && item\.reviewed === true/);
+  assert.match(content, /answer\.aiDraft !== true \|\| answer\.reviewed !== true/);
+  assert.match(content, /unreviewedAiDraftsFillable: false/);
+  assert.match(popup, /Approve for fill/);
+  assert.match(popup, /reviewed: true/);
+  assert.match(popup, /pendingAnswerReview/);
+  assert.match(popup, /revokeEditedApproval/);
+  assert.match(html, /Application answer review/);
+  assert.match(html, /Unreviewed drafts can never be inserted into the form/);
 });
 
 test("Safe Fill requires a pinned approved task, stops on sensitive fields and never submits", async () => {
