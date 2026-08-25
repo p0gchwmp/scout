@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-test("production build requires auth and renders Scout for an authenticated user", async () => {
+test("production build enforces auth and renders the owner-only Scout workspace shell", async () => {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
@@ -62,14 +62,23 @@ test("production build requires auth and renders Scout for an authenticated user
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Scout/);
-  assert.match(html, /Review evidence/);
-  assert.match(html, /Decide what moves/);
+  assert.match(html, /Loading Scout/);
   assert.match(html, /Private/);
   assert.match(html, /owner only/i);
-  assert.match(html, /Inbox/);
-  assert.match(html, /Shortlist/);
-  assert.match(html, /Readiness/);
-  assert.match(html, /Safe Fill/);
-  assert.match(html, /does not submit applications or send email/i);
+  for (const workspace of [
+    "Inbox",
+    "Sources",
+    "Evidence",
+    "Preferences",
+    "Quality",
+    "Roles",
+    "Shortlist",
+    "Applications",
+    "Readiness",
+    "Review",
+    "Safe Fill",
+    "Voice",
+  ]) assert.match(html, new RegExp(workspace));
+  assert.doesNotMatch(html, /Scout owner is not configured|Cross-origin mutation denied|Forbidden/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });
