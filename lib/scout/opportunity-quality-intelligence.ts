@@ -77,7 +77,7 @@ const COMMISSION_ONLY_PATTERN = /\b(?:commission[- ]only|commission based only|s
 const FEE_PATTERN = /\b(?:registration fee|training fee|application fee|security deposit|refundable deposit|pay.{0,35}(?:join|internship|training)|fee.{0,35}(?:join|internship|training))\b/i;
 const UNPAID_TRIAL_PATTERN = /\b(?:unpaid trial|unpaid probation|work for free|free trial work)\b/i;
 const DURATION_PATTERNS = [
-  /\b(?:duration\s*[:\-]?\s*)?(\d{1,2}\s*(?:weeks?|months?))\b/i,
+  /\b(?:duration\s*[-:]?\s*)?(\d{1,2}\s*(?:weeks?|months?))\b/i,
   /\b((?:three|four|five|six|eight|nine|twelve)\s+(?:weeks?|months?))\b/i,
   /\b((?:summer|winter)\s+internship)\b/i,
 ] as const;
