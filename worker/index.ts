@@ -35,6 +35,7 @@ const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice", "/review",
 OWNER_PAGE_PATHS.add("/evidence");
 OWNER_PAGE_PATHS.add("/preferences");
 OWNER_PAGE_PATHS.add("/quality");
+OWNER_PAGE_PATHS.add("/roles");
 
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
