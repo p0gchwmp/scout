@@ -36,16 +36,28 @@ export type AiProviderOptions = {
   model: string;
   costClass: "free_or_included" | "metered";
   allowMeteredAi?: boolean;
+  allowLoopbackDev?: boolean;
   jsonMode?: boolean;
   fetcher?: typeof fetch;
 };
 
-function cleanEndpoint(value: string) {
+function isLoopbackHostname(hostname: string) {
+  const value = hostname.toLowerCase();
+  return value === "localhost" || value === "127.0.0.1" || value === "[::1]" || value === "::1";
+}
+
+function cleanEndpoint(value: string, allowLoopbackDev = false) {
   let url: URL;
   try { url = new URL(value.trim()); }
   catch { throw new Error("SCOUT_AI_ENDPOINT_URL is invalid"); }
-  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
-    throw new Error("SCOUT_AI_ENDPOINT_URL must be an HTTPS server endpoint");
+  if (url.username || url.password || url.hash) {
+    throw new Error("SCOUT_AI_ENDPOINT_URL must not contain credentials or a fragment");
+  }
+  const loopback = isLoopbackHostname(url.hostname);
+  const secure = url.protocol === "https:";
+  const explicitLoopbackHttp = allowLoopbackDev && loopback && url.protocol === "http:";
+  if ((!secure && !explicitLoopbackHttp) || (loopback && !allowLoopbackDev)) {
+    throw new Error("SCOUT_AI_ENDPOINT_URL must use HTTPS outside explicit loopback development");
   }
   return url.toString();
 }
@@ -78,7 +90,7 @@ function sameApplicationClaimBindings(left: AiApplicationAnswer[], right: AiAppl
 }
 
 export function createStructuredAiProvider(options: AiProviderOptions) {
-  const endpointUrl = cleanEndpoint(options.endpointUrl);
+  const endpointUrl = cleanEndpoint(options.endpointUrl, options.allowLoopbackDev === true);
   const apiKey = cleanSecret(options.apiKey, "SCOUT_AI_API_KEY");
   const model = cleanSecret(options.model, "SCOUT_AI_MODEL", 2);
   if (options.costClass === "metered" && options.allowMeteredAi !== true) {
