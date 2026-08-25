@@ -66,8 +66,8 @@ test("approved but unrelated claims do not satisfy role-specific readiness", () 
     profileFields: verifiedProfile(),
     claims: [{
       id: "claim-unrelated",
-      statement: "Reviewed antibiotic price differences for desk research.",
-      evidence: "Approved GMC Jammu resume evidence",
+      statement: "Completed introductory macroeconomics coursework.",
+      evidence: "Verified course record",
       status: "approved",
     }],
   });
