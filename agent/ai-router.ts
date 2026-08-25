@@ -1,5 +1,6 @@
 import type {
   AiApplicationAnswer,
+  AiApplicationAnswerEnvelope,
   AiContactClassification,
   AiOutreachEnvelope,
   AiOutreachResult,
@@ -9,7 +10,7 @@ import type {
 export type ScoutAiWorker = {
   classifyPublishedContacts(candidates: PublishedContactCandidate[]): Promise<AiContactClassification[]>;
   draftOutreach(envelope: AiOutreachEnvelope): Promise<AiOutreachResult>;
-  draftApplicationAnswers(envelope: Parameters<ScoutAiWorker["draftApplicationAnswers"]>[0]): Promise<AiApplicationAnswer[]>;
+  draftApplicationAnswers(envelope: AiApplicationAnswerEnvelope): Promise<AiApplicationAnswer[]>;
 };
 
 export type RoutedAiCandidate = {
@@ -69,7 +70,7 @@ export function createQualityAiRouter(plan: ScoutAiRoutePlan) {
     async draftOutreach(envelope: AiOutreachEnvelope) {
       return firstValid("writing", plan.writing, (worker) => worker.draftOutreach(envelope));
     },
-    async draftApplicationAnswers(envelope: Parameters<ScoutAiWorker["draftApplicationAnswers"]>[0]) {
+    async draftApplicationAnswers(envelope: AiApplicationAnswerEnvelope) {
       return firstValid("writing", plan.writing, (worker) => worker.draftApplicationAnswers(envelope));
     },
   });
