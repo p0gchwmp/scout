@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { applications, candidateClaims, jobs, profileEvidence } from "../../../../../db/schema";
 import { buildAiApplicationAnswerEnvelope, type AiApplicationAnswer, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
@@ -94,8 +94,9 @@ export async function POST(request: Request) {
       eq(applications.id, verified.applicationId),
       eq(applications.artifactVersion, verified.artifactVersion),
       eq(applications.status, "ready_for_review"),
+      isNull(applications.submittedAt),
     )).limit(1);
-    if (!application) return json({ error: "The application packet changed or is no longer ready for review" }, 409);
+    if (!application) return json({ error: "The application packet changed, was recorded as submitted, or is no longer ready for review" }, 409);
 
     const task = buildBrowserAssistTask({
       applicationId: application.id,
