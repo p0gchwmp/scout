@@ -49,12 +49,12 @@ const THEMES = [
   },
   {
     label: "Business & strategy",
-    claim: /\b(strategy|business|market|commercial|growth|pricing|price|stakeholder|operations?|research)\b/i,
+    claim: /\b(strategy|business|market|commercial|growth|pricing|price|stakeholder|partnership|go[- ]?to[- ]?market|gtm)\b/i,
     job: /\b(strategy|business development|growth|go[- ]?to[- ]?market|gtm|partnership|commercial|market research|founder['’]?s office|business operations?)\b/i,
   },
   {
     label: "Finance & economics",
-    claim: /\b(finance|financial|economic|economics|price|pricing|cost|market|budget|forecast|research)\b/i,
+    claim: /\b(finance|financial|economic|economics|price|pricing|cost|market|budget|forecast|investment|valuation)\b/i,
     job: /\b(finance|financial|fp&a|investment|markets?|economics?|economic|pricing|revenue|valuation|budget|forecast|credit|risk)\b/i,
   },
   {
