@@ -4,6 +4,7 @@ export const APPLICATION_PROGRESS_CAPABILITIES = Object.freeze({
   submitApplication: false,
   inferSubmission: false,
   inferDeadline: false,
+  inferFormReview: false,
 } as const);
 
 export type ProgressJob = {
@@ -32,7 +33,7 @@ export type ProgressStageId =
   | "reviewed"
   | "official_evidence"
   | "packet"
-  | "form_review"
+  | "safe_fill"
   | "external_submission"
   | "contact"
   | "outreach";
@@ -87,7 +88,7 @@ export function buildApplicationProgress(input: {
     stage("reviewed", "Reviewed", hasInterest, hasInterest ? "Role is saved or shortlisted." : "Review the role before investing application time."),
     stage("official_evidence", "Official evidence", hasSnapshot, hasSnapshot ? "Immutable official job evidence is captured." : "Resolve the lead to an official source first."),
     stage("packet", "Application packet", hasPacket, hasPacket ? `Packet v${application!.artifactVersion} · ${application!.status.replace(/_/g, " ")}.` : "No application packet prepared yet."),
-    stage("form_review", "Form review", Boolean(readyForReview && externallySubmitted), readyForReview ? (externallySubmitted ? "Application was reviewed before you recorded an external submission." : "Use Safe Fill to inspect the live form and review generated answers before filling.") : "Readiness blockers must be cleared before live-form review."),
+    stage("safe_fill", "Safe Fill ready", Boolean(readyForReview), readyForReview ? "The packet can create an exact-page Safe Fill handoff. Form inspection and answer review still happen with you present." : "Readiness blockers must be cleared before browser assistance unlocks."),
     stage("external_submission", "Submitted externally", externallySubmitted, externallySubmitted ? `You recorded submission at ${application!.submittedAt}. Scout did not submit it.` : "After you submit on the employer site, record that fact here."),
     stage("contact", "Contact research", hasContactEvidence, hasAcceptedContact ? "At least one public business/recruiting contact is accepted." : hasContactEvidence ? "Contact evidence exists and still needs review." : "No public contact evidence researched yet."),
     stage("outreach", "Outreach", hasDraft, hasApprovedDraft ? "An outreach draft is approved for your manual send decision." : hasDraft ? "A pinned outreach draft exists for review." : "No outreach draft created yet."),
@@ -112,7 +113,7 @@ export function buildApplicationProgress(input: {
     summary = application?.blockers.length ? `Application needs ${application.blockers.length} input(s) before Safe Fill.` : "Prepare the application packet and clear readiness blockers.";
     nextAction = { label: "Open Readiness", href: "/readiness", kind: "navigate" };
   } else if (!externallySubmitted) {
-    summary = "The packet is ready. Review the live form, submit it yourself, then record that submission.";
+    summary = "The packet is ready. Inspect the live form, review any drafted answers, submit it yourself, then record that submission.";
     nextAction = { label: "Open Safe Fill", href: "/assist", kind: "navigate" };
   } else if (!hasContactEvidence) {
     summary = "Application submission is recorded. Contact research is the next optional follow-up step.";
@@ -131,7 +132,7 @@ export function buildApplicationProgress(input: {
   }
 
   const firstIncomplete = stages.find((item) => item.state !== "done");
-  if (firstIncomplete && job.state !== "rejected") firstIncomplete.state = application?.status === "needs_input" && firstIncomplete.id === "form_review" ? "blocked" : "current";
+  if (firstIncomplete && job.state !== "rejected") firstIncomplete.state = application?.status === "needs_input" && firstIncomplete.id === "safe_fill" ? "blocked" : "current";
 
   return {
     summary,
