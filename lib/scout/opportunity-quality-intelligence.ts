@@ -84,6 +84,7 @@ const DURATION_PATTERNS = [
 const MENTORSHIP_PATTERN = /\b(?:mentor|mentorship|coaching|supervision|buddy program|learning and development)\b/i;
 const PROJECT_PATTERN = /\b(?:project|deliverable|ownership|responsibilit(?:y|ies)|cross[- ]functional|presentation|research project|capstone)\b/i;
 const CONVERSION_PATTERN = /\b(?:return offer|pre[- ]placement offer|ppo|full[- ]time conversion|conversion to full[- ]time)\b/i;
+const NEGATED_RISK_PREFIX = /(?:\b(?:no|not|never|without)\b.{0,35}|\bdo(?:es)?\s+not\s+(?:charge|require|ask)\b.{0,45})$/i;
 
 function cleanText(value: string) {
   return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -94,6 +95,17 @@ function excerptAround(text: string, match: RegExpMatchArray | null, radius = 70
   const start = Math.max(0, match.index - radius);
   const end = Math.min(text.length, match.index + match[0].length + radius);
   return text.slice(start, end).trim().slice(0, 260);
+}
+
+function firstAffirmativeMatch(text: string, pattern: RegExp) {
+  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+  for (const match of text.matchAll(new RegExp(pattern.source, flags))) {
+    if (match.index === undefined) continue;
+    const sentencePrefix = text.slice(Math.max(0, match.index - 80), match.index).split(/[.!?]/).pop() ?? "";
+    if (NEGATED_RISK_PREFIX.test(sentencePrefix)) continue;
+    return match;
+  }
+  return null;
 }
 
 function parseDate(value: string | null | undefined) {
@@ -114,11 +126,11 @@ function normalizedDomain(value: string | null | undefined) {
 }
 
 function compensationFrom(text: string) {
-  const commission = text.match(COMMISSION_ONLY_PATTERN);
+  const commission = firstAffirmativeMatch(text, COMMISSION_ONLY_PATTERN);
   if (commission) return { status: "commission_only" as const, text: excerptAround(text, commission) };
-  const unpaid = text.match(UNPAID_PATTERN);
+  const unpaid = firstAffirmativeMatch(text, UNPAID_PATTERN);
   if (unpaid) return { status: "explicit_unpaid" as const, text: excerptAround(text, unpaid) };
-  const paid = text.match(PAID_PATTERN);
+  const paid = firstAffirmativeMatch(text, PAID_PATTERN);
   if (paid) return { status: "explicit_paid" as const, text: excerptAround(text, paid) };
   const mentioned = text.match(/\b(?:compensation|salary|stipend|pay|remuneration)\b/i);
   if (mentioned) return { status: "mentioned" as const, text: excerptAround(text, mentioned) };
@@ -181,9 +193,9 @@ export function assessOpportunityQuality(
   if (arrangement.arrangement !== "unspecified") structureSignals.push(`Published work arrangement: ${arrangement.arrangement}`);
   if (compensation.status === "explicit_paid") structureSignals.push("Published compensation / stipend evidence is present");
 
-  const fee = text.match(FEE_PATTERN);
+  const fee = firstAffirmativeMatch(text, FEE_PATTERN);
   if (fee) flags.push({ code: "candidate_payment", severity: "high", label: "Candidate payment / fee language", evidence: excerptAround(text, fee) ?? fee[0] });
-  const unpaidTrial = text.match(UNPAID_TRIAL_PATTERN);
+  const unpaidTrial = firstAffirmativeMatch(text, UNPAID_TRIAL_PATTERN);
   if (unpaidTrial) flags.push({ code: "unpaid_trial", severity: "high", label: "Unpaid trial-work language", evidence: excerptAround(text, unpaidTrial) ?? unpaidTrial[0] });
   if (compensation.status === "commission_only") flags.push({ code: "commission_only", severity: "high", label: "Commission-only compensation", evidence: compensation.text ?? "Commission-only language is published" });
   if (compensation.status === "explicit_unpaid") flags.push({ code: "unpaid", severity: "caution", label: "Explicitly unpaid opportunity", evidence: compensation.text ?? "Unpaid language is published" });
