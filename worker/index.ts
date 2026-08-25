@@ -31,7 +31,7 @@ const USER_FULL_NAME_ENCODING_HEADER =
   "oai-authenticated-user-full-name-encoding";
 const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
-const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice", "/review", "/shortlist"]);
+const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice", "/review", "/shortlist", "/readiness"]);
 
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
@@ -46,45 +46,40 @@ const worker = {
     // Local development auth is injected before routing so every owner-only page
     // receives the same synthetic identity. resolveLocalDevWorkerAuth itself only
     // succeeds for an explicitly marked development worker on loopback and never
-    // replaces hosted identity headers.
-    const localAuth = resolveLocalDevWorkerAuth(request, env);
+    // changes production behavior.
+    const localAuth = resolveLocalDevWorkerAuth({
+      url,
+      runtime: env.SCOUT_LOCAL_DEV_RUNTIME,
+      enabled: env.SCOUT_LOCAL_DEV_AUTH,
+      localUserId: env.SCOUT_LOCAL_DEV_USER_ID,
+      ownerUserId: env.SCOUT_OWNER_USER_ID,
+    });
+
+    const headers = new Headers(request.headers);
     if (localAuth) {
-      const routedHeaders = new Headers(request.headers);
-      routedHeaders.set(USER_ID_HEADER, localAuth.user.userId);
-      routedHeaders.set(USER_EMAIL_HEADER, localAuth.user.email);
-      routedHeaders.set(
-        USER_FULL_NAME_HEADER,
-        encodeURIComponent(localAuth.user.fullName ?? localAuth.user.displayName),
-      );
-      routedHeaders.set(USER_FULL_NAME_ENCODING_HEADER, PERCENT_ENCODED_UTF8);
-      routedHeaders.set(SCOUT_OWNER_USER_ID_HEADER, localAuth.ownerUserId);
-      request = new Request(request, { headers: routedHeaders });
+      headers.set(USER_ID_HEADER, localAuth.userId);
+      headers.set(USER_EMAIL_HEADER, localAuth.email);
+      headers.set(USER_FULL_NAME_HEADER, encodeURIComponent(localAuth.fullName));
+      headers.set(USER_FULL_NAME_ENCODING_HEADER, PERCENT_ENCODED_UTF8);
     }
 
-    if (OWNER_PAGE_PATHS.has(url.pathname) || url.pathname.startsWith("/api/")) {
-      const authenticatedUserId = request.headers.get(USER_ID_HEADER);
-      if (authenticatedUserId) {
-        const ownerId = env.SCOUT_OWNER_USER_ID?.trim();
-        if (!ownerId) return Response.json({ error: "Scout owner is not configured" }, { status: 503 });
-        if (authenticatedUserId !== ownerId) return Response.json({ error: "Forbidden" }, { status: 403 });
-        const routedHeaders = new Headers(request.headers);
-        routedHeaders.set(SCOUT_OWNER_USER_ID_HEADER, ownerId);
-        request = new Request(request, { headers: routedHeaders });
-      }
+    const ownerUserId = typeof env.SCOUT_OWNER_USER_ID === "string" ? env.SCOUT_OWNER_USER_ID.trim() : "";
+    const requestUserId = headers.get(USER_ID_HEADER)?.trim() ?? "";
+    if (OWNER_PAGE_PATHS.has(url.pathname)) {
+      if (!ownerUserId || requestUserId !== ownerUserId) return new Response("Not found", { status: 404 });
+      headers.set(SCOUT_OWNER_USER_ID_HEADER, ownerUserId);
     }
 
-    if (url.pathname === "/_vinext/image") {
-      const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
-      return handleImageOptimization(request, {
-        fetchAsset: (path) => env.ASSETS.fetch(new Request(new URL(path, request.url))),
-        transformImage: async (body, { width, format, quality }) => {
-          const result = await env.IMAGES.input(body).transform(width > 0 ? { width } : {}).output({ format, quality });
-          return result.response();
-        },
-      }, allowedWidths);
+    const routedRequest = new Request(request, { headers });
+
+    if (url.pathname.startsWith("/_next/image")) {
+      return handleImageOptimization(routedRequest, env, ctx, {
+        deviceSizes: DEFAULT_DEVICE_SIZES,
+        imageSizes: DEFAULT_IMAGE_SIZES,
+      });
     }
 
-    return handler.fetch(request, env, ctx);
+    return handler.fetch(routedRequest, env, ctx);
   },
 };
 
