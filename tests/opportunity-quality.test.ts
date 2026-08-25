@@ -82,6 +82,15 @@ test("clearly senior search noise and year-old search results are suppressed wit
   assert.equal(result.leads[0].provider, "greenhouse");
 });
 
+test("associate and junior roles stay visible even when a manager keyword is present", () => {
+  const result = consolidateOpportunityLeads([
+    lead({ title: "Associate Product Manager", canonicalUrl: "https://www.linkedin.com/jobs/view/apm", sourceUrl: "https://www.linkedin.com/jobs/view/apm" }),
+    lead({ title: "Junior Program Manager", canonicalUrl: "https://www.linkedin.com/jobs/view/junior", sourceUrl: "https://www.linkedin.com/jobs/view/junior" }),
+  ], now);
+  assert.equal(result.leads.length, 2);
+  assert.equal(result.summary.suppressedLowSignal, 0);
+});
+
 test("forms and unresolved generic leads remain visible but low-signal rather than auto-rejected", () => {
   const result = consolidateOpportunityLeads([
     lead({ platformId: "tally", company: "Unresolved Tally lead", title: "Internship application form", canonicalUrl: "https://tally.so/r/example", sourceUrl: "https://tally.so/r/example", location: "" }),
