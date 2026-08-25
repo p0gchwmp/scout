@@ -1,4 +1,5 @@
 import { classifyApplicationUrl } from "./application-sites.ts";
+import { PROFILE_AUTOFILL_ALIASES } from "./form-intelligence.ts";
 
 export const BROWSER_TASK_CAPABILITIES = Object.freeze({
   fillVerifiedTextFields: true,
@@ -12,19 +13,6 @@ type ApplicationPacket = {
   applicationUrl?: unknown;
   safeFields?: unknown;
   channel?: { id?: unknown; automation?: unknown } | null;
-};
-
-const aliases: Record<string, string[]> = {
-  full_name: ["full name", "name", "applicant name", "candidate name"],
-  email: ["email", "email address"],
-  phone: ["phone", "phone number", "mobile", "mobile number"],
-  current_location: ["current location", "location", "city", "current city"],
-  university: ["university", "college", "institution", "school"],
-  program: ["program", "programme", "course", "degree", "field of study"],
-  graduation_year: ["graduation year", "year of graduation", "expected graduation"],
-  linkedin_url: ["linkedin", "linkedin url", "linkedin profile"],
-  github_url: ["github", "github url", "github profile"],
-  portfolio_url: ["portfolio", "portfolio url", "website", "personal website"],
 };
 
 function packetObject(value: unknown) {
@@ -59,7 +47,7 @@ export function buildBrowserAssistTask(input: {
   if (channel.automation === "manual_lead" && !channel.easyApplyAssist) throw new Error("This channel is not approved for browser fill assistance yet");
 
   const fields = safeFields(packet.safeFields);
-  const answers = Object.entries(fields).flatMap(([field, value]) => (aliases[field] ?? []).map((key) => ({
+  const answers = Object.entries(fields).flatMap(([field, value]) => (PROFILE_AUTOFILL_ALIASES[field] ?? []).map((key) => ({
     key,
     value,
     verified: true as const,
