@@ -73,7 +73,7 @@ export type OpportunityQualityAssessment = {
 const EARLY_CAREER_PATTERN = /\b(?:intern|internship|trainee|apprentice|co[- ]?op|graduate|new grad|entry[- ]?level|fresher|student|associate)\b/i;
 const MONEY_VALUE = String.raw`(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)\s?[\d,.]+(?:\s*(?:-|–|to)\s*(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)?\s?[\d,.]+)?`;
 const PAID_PATTERN = new RegExp(
-  String.raw`\b(?:paid internship|paid intern)\b|\b(?:stipend|salary|compensation|remuneration)\b.{0,35}(?:${MONEY_VALUE}|\d[\d,.]{2,})|${MONEY_VALUE}.{0,35}\b(?:stipend|salary|compensation|remuneration|per month|monthly|per week|weekly|per hour|hourly)\b`,
+  String.raw`\b(?:paid internship|paid intern)\b|\b(?:stipend|salary|compensation|remuneration|pay rate|pay range|hourly pay|monthly pay|weekly pay)\b.{0,35}(?:${MONEY_VALUE}|\d[\d,.]{2,})|${MONEY_VALUE}(?:.{0,35}\b(?:stipend|salary|compensation|remuneration|per month|monthly|per week|weekly|per hour|hourly)\b|\s*\/\s*(?:month|week|hour|year)\b)`,
   "i",
 );
 const UNPAID_PATTERN = /\b(?:unpaid internship|unpaid intern|this (?:role|internship) is unpaid|no stipend|without stipend|unpaid position)\b/i;
@@ -136,7 +136,7 @@ function compensationFrom(text: string) {
   if (unpaid) return { status: "explicit_unpaid" as const, text: excerptAround(text, unpaid) };
   const paid = firstAffirmativeMatch(text, PAID_PATTERN);
   if (paid) return { status: "explicit_paid" as const, text: excerptAround(text, paid) };
-  const mentioned = text.match(/\b(?:compensation|salary|stipend|pay|remuneration)\b/i);
+  const mentioned = text.match(/\b(?:compensation|salary|stipend|remuneration|pay rate|pay range|hourly pay|monthly pay|weekly pay)\b/i);
   if (mentioned) return { status: "mentioned" as const, text: excerptAround(text, mentioned) };
   return { status: "not_published" as const, text: null };
 }
