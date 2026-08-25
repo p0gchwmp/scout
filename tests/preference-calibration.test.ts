@@ -11,7 +11,7 @@ import {
 
 const jobs = [
   { id: "analytics-1", title: "Business Analyst Intern", description: "Analyze business metrics and operations data." },
-  { id: "analytics-2", title: "Product Analyst Intern", description: "Product analytics, dashboards and insights." },
+  { id: "analytics-2", title: "Data Analyst Intern", description: "Data analytics, dashboards and insights." },
   { id: "ops-1", title: "Operations Intern", description: "Workflow and operations execution." },
   { id: "ops-2", title: "Program Operations Intern", description: "Program operations and process improvement." },
   { id: "software-1", title: "Software Engineering Intern", description: "Backend software engineering and APIs." },
