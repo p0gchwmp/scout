@@ -180,6 +180,6 @@ export function SourceHealthWorkspace() {
       </article>)}
     </section>
 
-    <footer className={styles.boundary}>Source Health is evidence from Scout's persisted checks. A temporary ATS failure does not close jobs, disable a source, or authorize broader scraping. LinkedIn remains a lead/context surface, not an email-harvesting source.</footer>
+    <footer className={styles.boundary}>Source Health is evidence from Scout&apos;s persisted checks. A temporary ATS failure does not close jobs, disable a source, or authorize broader scraping. LinkedIn remains a lead/context surface, not an email-harvesting source.</footer>
   </main>;
 }
