@@ -119,8 +119,16 @@ function ageInDays(value: string | null | undefined, now: Date) {
   return Math.max(0, Math.floor((now.getTime() - timestamp) / 86_400_000));
 }
 
+function calendarAgeInDays(value: string | null | undefined, now: Date) {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  const observed = new Date(timestamp);
+  return Math.max(0, Math.floor((localCalendarEpoch(now) - localCalendarEpoch(observed)) / 86_400_000));
+}
+
 export function roleFreshness(postedAt: string | null, lastSeenAt: string, now = new Date()) {
-  const ageDays = ageInDays(postedAt, now);
+  const ageDays = calendarAgeInDays(postedAt, now);
   if (ageDays === null) return { ageDays: null, label: `Recently observed ${ageInDays(lastSeenAt, now) ?? "?"} day(s) ago; posting date unavailable` };
   if (ageDays <= 3) return { ageDays, label: "New posting" };
   if (ageDays <= 14) return { ageDays, label: "Recent posting" };
