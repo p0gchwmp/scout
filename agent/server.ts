@@ -10,6 +10,7 @@ import { createOrReuseGmailDraft } from "./gmail-drafts.ts";
 import { resolveSearchLeadToOfficialAts } from "./official-resolution.ts";
 
 const port = Number(process.env.PORT ?? process.env.SCOUT_AGENT_PORT ?? 8788);
+const host = process.env.SCOUT_AGENT_HOST?.trim() || "0.0.0.0";
 const secret = process.env.SCOUT_AGENT_SHARED_SECRET?.trim() ?? "";
 const replayGuard = new InMemoryAgentReplayGuard();
 
@@ -17,6 +18,7 @@ if (!/^[a-f0-9]{64}$/i.test(secret)) {
   throw new Error("SCOUT_AGENT_SHARED_SECRET must be exactly 64 hex characters before starting the Scout agent service");
 }
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Scout agent port is invalid");
+if (!["0.0.0.0", "127.0.0.1", "::1", "localhost"].includes(host)) throw new Error("SCOUT_AGENT_HOST must be a supported explicit bind host");
 
 function json(response: import("node:http").ServerResponse, status: number, value: unknown) {
   const body = JSON.stringify(value);
@@ -25,13 +27,13 @@ function json(response: import("node:http").ServerResponse, status: number, valu
 }
 
 function toWebRequest(request: import("node:http").IncomingMessage, body: string) {
-  const host = request.headers.host ?? `127.0.0.1:${port}`;
+  const requestHost = request.headers.host ?? `127.0.0.1:${port}`;
   const headers = new Headers();
   for (const [key, value] of Object.entries(request.headers)) {
     if (Array.isArray(value)) for (const item of value) headers.append(key, item);
     else if (value !== undefined) headers.set(key, value);
   }
-  return new Request(`http://${host}${request.url ?? "/"}`, { method: request.method ?? "GET", headers, body: body || undefined });
+  return new Request(`http://${requestHost}${request.url ?? "/"}`, { method: request.method ?? "GET", headers, body: body || undefined });
 }
 
 async function readBody(request: import("node:http").IncomingMessage) {
@@ -286,6 +288,6 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Scout agent service listening on port ${port}`);
+server.listen(port, host, () => {
+  console.log(`Scout agent service listening on ${host}:${port}`);
 });
