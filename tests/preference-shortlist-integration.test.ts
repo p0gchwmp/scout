@@ -10,7 +10,7 @@ const claims = [
 
 const feedbackJobs = [
   { id: "a1", title: "Business Analyst Intern", description: "Business analysis and data insights." },
-  { id: "a2", title: "Product Analyst Intern", description: "Product analytics and dashboards." },
+  { id: "a2", title: "Data Analyst Intern", description: "Data analytics and dashboards." },
   { id: "o1", title: "Operations Intern", description: "Operations execution." },
   { id: "o2", title: "Program Operations Intern", description: "Program operations." },
 ];
