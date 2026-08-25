@@ -51,13 +51,27 @@ function modelPreference(name) {
   return 1;
 }
 
-async function enableLocalOllamaIfAvailable() {
-  const aiKeys = ["SCOUT_AI_ENDPOINT_URL", "SCOUT_AI_API_KEY", "SCOUT_AI_MODEL", "SCOUT_AI_COST_CLASS"];
-  const explicitAi = aiKeys.filter((key) => env[key]?.trim());
+function configuredHostedFreeProviders() {
+  const candidates = [
+    ["NVIDIA NIM", "SCOUT_NIM_FREE_API_KEY"],
+    ["Groq", "SCOUT_GROQ_FREE_API_KEY"],
+    ["Gemini", "SCOUT_GEMINI_FREE_API_KEY"],
+    ["Cerebras", "SCOUT_CEREBRAS_FREE_API_KEY"],
+    ["OpenRouter", "SCOUT_OPENROUTER_FREE_API_KEY"],
+  ];
+  return candidates.flatMap(([label, key]) => env[key]?.trim() ? [label] : []);
+}
+
+async function enableLocalOllamaFallbackIfAvailable() {
+  const explicitAiKeys = ["SCOUT_AI_ENDPOINT_URL", "SCOUT_AI_API_KEY", "SCOUT_AI_MODEL", "SCOUT_AI_COST_CLASS"];
+  const explicitAi = explicitAiKeys.filter((key) => env[key]?.trim());
   if (explicitAi.length) {
-    console.log(`Scout AI: using explicit configuration (${explicitAi.length}/${aiKeys.length} required fields present); local Ollama auto-detection skipped.`);
+    console.log(`Scout AI: using explicit single-provider configuration (${explicitAi.length}/${explicitAiKeys.length} required fields present); router auto-configuration skipped.`);
     return;
   }
+
+  const hosted = configuredHostedFreeProviders();
+  if (hosted.length) console.log(`Scout AI: quality router found configured free/included providers: ${hosted.join(", ")}.`);
 
   try {
     const response = await fetch("http://127.0.0.1:11434/api/tags", {
@@ -73,15 +87,14 @@ async function enableLocalOllamaIfAvailable() {
     const model = names[0];
     if (!model) throw new Error("No local Ollama model is installed");
 
-    env.SCOUT_AI_ENDPOINT_URL = "http://127.0.0.1:11434/v1/chat/completions";
-    env.SCOUT_AI_API_KEY = "ollama-local-dev";
-    env.SCOUT_AI_MODEL = model;
-    env.SCOUT_AI_COST_CLASS = "free_or_included";
-    env.SCOUT_AI_ALLOW_LOOPBACK_DEV = "1";
-    env.SCOUT_AI_JSON_MODE = "0";
-    console.log(`Scout AI: local Ollama enabled with ${model}; no paid AI provider was activated.`);
+    env.SCOUT_OLLAMA_ENDPOINT_URL = "http://127.0.0.1:11434/v1/chat/completions";
+    env.SCOUT_OLLAMA_API_KEY = "ollama-local-dev";
+    env.SCOUT_OLLAMA_MODEL = model;
+    env.SCOUT_OLLAMA_JSON_MODE = "0";
+    console.log(`Scout AI: local Ollama ${model} enabled as the final offline fallback; no paid AI provider was activated.`);
   } catch {
-    console.log("Scout AI: local Ollama not detected; deterministic discovery, resolution, application prep, and contact research remain available.");
+    if (!hosted.length) console.log("Scout AI: no configured free cloud provider or local Ollama detected; deterministic Scout features remain available.");
+    else console.log("Scout AI: local Ollama not detected; configured free/included cloud providers remain available.");
   }
 }
 
@@ -107,7 +120,7 @@ if (!explicitAgentBaseUrl) {
   env.SCOUT_AGENT_ALLOW_LOOPBACK_DEV = "1";
   env.SCOUT_AGENT_HOST = AGENT_HOST;
   env.SCOUT_AGENT_PORT = String(port);
-  await enableLocalOllamaIfAvailable();
+  await enableLocalOllamaFallbackIfAvailable();
 
   const agentServer = fileURLToPath(new URL("../agent/server.ts", import.meta.url));
   agentChild = spawn(process.execPath, ["--experimental-strip-types", agentServer], { env, stdio: "inherit" });
@@ -215,7 +228,7 @@ await new Promise((resolve, reject) => {
 console.log(`Scout discovery bridge: http://${DISCOVERY_HOST}:${DISCOVERY_PORT}/discover`);
 
 const vinextCli = fileURLToPath(new URL("../node_modules/vinext/dist/cli.js", import.meta.url));
-let vinextChild = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: "inherit" });
+const vinextChild = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: "inherit" });
 let stopping = false;
 
 function stopChild(child) {
