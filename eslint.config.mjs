@@ -7,6 +7,12 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+const reactHooksRecommendedLatest = reactHooks.configs.flat?.["recommended-latest"]
+  ?? reactHooks.configs["recommended-latest"];
+if (!reactHooksRecommendedLatest) {
+  throw new Error("eslint-plugin-react-hooks does not expose the recommended-latest flat preset");
+}
+
 const eslintConfig = defineConfig([
   globalIgnores([
     ".next/**",
@@ -21,7 +27,7 @@ const eslintConfig = defineConfig([
   ...tseslint.configs.recommended,
   react.configs.flat.recommended,
   react.configs.flat["jsx-runtime"],
-  reactHooks.configs["recommended-latest"],
+  reactHooksRecommendedLatest,
   jsxA11y.flatConfigs.recommended,
   next.configs["core-web-vitals"],
   {
