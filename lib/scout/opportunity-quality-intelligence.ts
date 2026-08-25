@@ -78,7 +78,7 @@ const PAID_PATTERN = new RegExp(
 );
 const UNPAID_PATTERN = /\b(?:unpaid internship|unpaid intern|this (?:role|internship) is unpaid|no stipend|without stipend|unpaid position)\b/i;
 const COMMISSION_ONLY_PATTERN = /\b(?:commission[- ]only|commission based only|solely commission|100% commission)\b/i;
-const FEE_PATTERN = /\b(?:registration fee|training fee|application fee|security deposit|refundable deposit|pay.{0,35}(?:join|internship|training)|fee.{0,35}(?:join|internship|training))\b/i;
+const FEE_PATTERN = /\b(?:(?:registration|training|application)\s+fee\s*(?::|-)?\s*(?:(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)\s?[\d,.]+|\d[\d,.]{1,})|(?:registration|training|application)\s+fee.{0,35}\b(?:required|payable|must be paid|must pay|to join|to apply|before joining)|(?:security|refundable)\s+deposit.{0,35}\b(?:required|payable|must be paid|must pay|to join|to apply|before joining)|(?:pay|deposit).{0,35}\b(?:to join|to apply|to register|for registration|application fee|training fee|security deposit))\b/i;
 const UNPAID_TRIAL_PATTERN = /\b(?:unpaid trial|unpaid probation|work for free|free trial work)\b/i;
 const DURATION_PATTERNS = [
   /\b(?:internship\s+duration|program(?:me)?\s+duration|duration)\s*[-:]?\s*(\d{1,2}\s*(?:weeks?|months?)|(?:three|four|five|six|eight|nine|twelve)\s+(?:weeks?|months?))\b/i,
