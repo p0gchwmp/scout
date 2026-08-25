@@ -155,15 +155,19 @@ test("npm dev wrapper bootstraps only a fresh local shell and worker injects aut
 
 test("local discovery serializes boards per ATS provider and bounds transient retries", async () => {
   const { readFile } = await import("node:fs/promises");
-  const devScript = await readFile(new URL("../scripts/scout-dev.mjs", import.meta.url), "utf8");
+  const [devScript, providerModule] = await Promise.all([
+    readFile(new URL("../scripts/scout-dev.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/scout-local-discovery.mjs", import.meta.url), "utf8"),
+  ]);
   assert.match(devScript, /async function discoverSettledByProvider\(\)/);
   assert.match(devScript, /const grouped = new Map\(\)/);
   assert.match(devScript, /await Promise\.all\(\[\.\.\.grouped\.values\(\)\]\.map/);
   assert.match(devScript, /for \(const \{ source, index \} of group\)/);
+  assert.match(devScript, /discoverLocalSource\(source\)/);
   assert.doesNotMatch(devScript, /Promise\.allSettled\(catalog\.map/);
-  assert.match(devScript, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
-  assert.match(devScript, /rate-limited after one bounded retry/);
-  assert.match(devScript, /timed out after one bounded retry/);
+  assert.match(providerModule, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
+  assert.match(providerModule, /rate-limited after one bounded retry/);
+  assert.match(providerModule, /timed out after one bounded retry/);
 });
 
 
