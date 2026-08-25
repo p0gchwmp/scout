@@ -62,12 +62,20 @@ test("contact and outreach evidence determine the next review step", () => {
     drafts: [{ state: "draft" }],
   });
   assert.equal(draftReview.nextAction.label, "Review outreach");
+  assert.equal(draftReview.nextAction.href, "/review");
 });
 
-test("deadline signal is preserved only when the official text explicitly labels a deadline", () => {
+test("deadline signal is preserved only when official evidence explicitly labels a deadline", () => {
   assert.equal(explicitDeadlineSignal("Interview on September 12, 2026."), null);
   assert.match(explicitDeadlineSignal("Applications close on 30 September 2026. Interviews follow.") ?? "", /Applications close/i);
   assert.match(explicitDeadlineSignal(job.description) ?? "", /Apply by September 15, 2026/i);
+  assert.match(buildApplicationProgress({ job, application, contacts: [], drafts: [] }).deadlineSignal ?? "", /Apply by September 15, 2026/i);
+  assert.equal(buildApplicationProgress({
+    job: { ...job, currentSnapshotId: null },
+    application: null,
+    contacts: [],
+    drafts: [],
+  }).deadlineSignal, null);
 });
 
 test("application progress has no submit, deadline inference, submission inference or form-review inference capability", () => {
