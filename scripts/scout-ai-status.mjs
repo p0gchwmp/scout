@@ -9,6 +9,8 @@ const providers = [
 ];
 
 const allowStandard = process.env.SCOUT_USE_STANDARD_FREE_PROVIDER_KEYS?.trim() === "1";
+const qualityMode = process.env.SCOUT_AI_QUALITY_MODE?.trim().toLowerCase() === "balanced" ? "balanced" : "high";
+console.log(`Scout AI quality mode: ${qualityMode}${qualityMode === "high" ? " (deliberate second-pass refinement for external writing)" : ""}`);
 console.log(`Scout AI standard-key reuse: ${allowStandard ? "enabled" : "disabled"}`);
 for (const [label, scoutKey, standardKeys] of providers) {
   const scoutConfigured = Boolean(process.env[scoutKey]?.trim());
