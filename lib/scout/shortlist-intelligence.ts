@@ -1,4 +1,5 @@
 import { evaluateResumeAlignment, type ResumeAlignment, type ResumeClaimText } from "./resume-alignment.ts";
+import { classifyRoleTaxonomy, type RoleFamilyId, type RolePreferenceLane, type RoleSectorTag } from "./role-taxonomy.ts";
 
 export type ShortlistJob = {
   title: string;
@@ -21,6 +22,12 @@ export type ShortlistAssessment = {
   locationTags: string[];
   freshnessLabel: string;
   freshnessDays: number | null;
+  roleFamilyId: RoleFamilyId;
+  roleFamilyLabel: string;
+  matchedRoleFamilies: string[];
+  preferenceLane: RolePreferenceLane;
+  preferenceLabel: string;
+  sectorTags: RoleSectorTag[];
   supportingClaimIds: string[];
   gaps: string[];
   reasons: string[];
@@ -28,7 +35,7 @@ export type ShortlistAssessment = {
   alignment: ResumeAlignment;
 };
 
-const INDIA_PATTERN = /\b(india|bharat|bengaluru|bangalore|chennai|hyderabad|noida|gurugram|gurgaon|mumbai|delhi|new delhi|pune|kolkata|jammu|ahmedabad|jaipur|kochi|cochin|thiruvananthapuram|trivandrum|chandigarh|mohali|bhubaneswar|indore|lucknow|gurugram|goa)\b/i;
+const INDIA_PATTERN = /\b(india|bharat|bengaluru|bangalore|chennai|hyderabad|noida|gurugram|gurgaon|mumbai|delhi|new delhi|pune|kolkata|jammu|ahmedabad|jaipur|kochi|cochin|thiruvananthapuram|trivandrum|chandigarh|mohali|bhubaneswar|indore|lucknow|goa)\b/i;
 const REMOTE_PATTERN = /\b(remote|work from home|wfh|distributed)\b/i;
 
 function daysSince(value: string | null | undefined, now: Date) {
@@ -78,6 +85,7 @@ function priorityFor(score: number, alignment: ResumeAlignment): Pick<ShortlistA
 
 export function evaluateShortlist(job: ShortlistJob, claims: ResumeClaimText[], now = new Date()): ShortlistAssessment {
   const alignment = evaluateResumeAlignment(job, claims);
+  const taxonomy = classifyRoleTaxonomy(job);
   const fresh = freshness(job, now);
   const place = locationContext(job);
   const claimIds = [...new Set(alignment.supportingClaims.flatMap((support) => support.claimIds))].sort();
@@ -93,22 +101,30 @@ export function evaluateShortlist(job: ShortlistJob, claims: ResumeClaimText[], 
   const themePoints = Math.min(15, alignment.matches.length * 3);
   const gapPoints = gaps.length === 0 ? 8 : gaps.length === 1 ? 3 : 0;
   const snapshotPoints = job.currentSnapshotId ? 5 : 0;
-  const score = Math.min(100, base[alignment.band] + themePoints + gapPoints + snapshotPoints + fresh.points);
+  const lanePoints = taxonomy.preferenceLane === "software_stretch" ? -8 : 5;
+  const score = Math.max(0, Math.min(100, base[alignment.band] + themePoints + gapPoints + snapshotPoints + fresh.points + lanePoints));
   const priority = priorityFor(score, alignment);
 
   const reasons = [
     alignment.label,
+    `Role family: ${taxonomy.primaryFamily.label}`,
+    taxonomy.preferenceLabel,
     alignment.matches.length ? `${alignment.matches.length} evidenced fit theme${alignment.matches.length === 1 ? "" : "s"}` : "No evidenced fit themes yet",
     claimIds.length ? `${claimIds.length} approved supporting claim${claimIds.length === 1 ? "" : "s"}` : "No approved supporting claims matched",
     gaps.length ? `${gaps.length} explicit gap${gaps.length === 1 ? "" : "s"} to review` : "No explicit eligibility gap detected by current rules",
     fresh.label,
     job.currentSnapshotId ? "Official immutable snapshot captured" : "Official snapshot still required",
+    ...taxonomy.sectorTags.map((tag) => `${tag} sector context`),
     ...place.tags.map((tag) => `${tag} context`),
   ];
 
   let whyWorthYourTime: string;
   if (alignment.band === "unranked") {
     whyWorthYourTime = "Approve candidate claims first so Scout can judge this role against evidence instead of guessing.";
+  } else if (taxonomy.preferenceLane === "software_stretch") {
+    whyWorthYourTime = priority.priority === "high" || priority.priority === "review"
+      ? "This is primarily software development, so Scout keeps it in the stretch lane; the approved evidence overlap is still strong enough to justify a deliberate look."
+      : "This is primarily software development, so Scout keeps it visible but behind equally supported analyst, product, operations, research, finance and technical-systems roles.";
   } else if (priority.priority === "high") {
     whyWorthYourTime = `Strong evidence overlap${fresh.days !== null && fresh.days <= 30 ? " on a recent posting" : ""}; this deserves an early review.`;
   } else if (priority.priority === "review") {
@@ -131,6 +147,12 @@ export function evaluateShortlist(job: ShortlistJob, claims: ResumeClaimText[], 
     locationTags: place.tags,
     freshnessLabel: fresh.label,
     freshnessDays: fresh.days,
+    roleFamilyId: taxonomy.primaryFamily.id,
+    roleFamilyLabel: taxonomy.primaryFamily.label,
+    matchedRoleFamilies: taxonomy.matchedFamilies.map((family) => family.label),
+    preferenceLane: taxonomy.preferenceLane,
+    preferenceLabel: taxonomy.preferenceLabel,
+    sectorTags: taxonomy.sectorTags,
     supportingClaimIds: claimIds,
     gaps,
     reasons,
