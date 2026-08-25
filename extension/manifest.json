@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Scout Safe Fill",
-  "version": "0.3.0",
-  "description": "Fills only Scout-approved application fields and stops on sensitive questions.",
+  "version": "0.4.0",
+  "description": "Classifies visible application fields, fills only Scout-approved evidence, and keeps sensitive or uncertain answers manual.",
   "permissions": ["activeTab", "scripting", "storage"],
   "optional_host_permissions": [
     "https://*/*",
