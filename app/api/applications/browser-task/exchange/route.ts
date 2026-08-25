@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { applications, candidateClaims, jobs, profileEvidence } from "../../../../../db/schema";
-import { buildAiApplicationAnswerEnvelope, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
+import { buildAiApplicationAnswerEnvelope, type AiApplicationAnswer, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
+import { buildApplicationAnswerReview } from "../../../../../lib/scout/application-answer-review";
 import { draftApplicationAnswersViaAgent } from "../../../../../lib/scout/application-answer-runtime";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
         reason: field.reason,
       }));
 
-    let aiDraftAnswers: Array<{ key: string; value: string; verified: false; aiDraft: true; sourceField: string; usedClaimIds: string[] }> = [];
+    let aiAnswers: AiApplicationAnswer[] = [];
     let aiModel: string | null = null;
     let aiError: string | null = null;
 
@@ -155,15 +156,7 @@ export async function POST(request: Request) {
             });
             const ai = await draftApplicationAnswersViaAgent(env as unknown as Record<string, unknown>, envelope);
             aiModel = ai.model || null;
-            const byId = new Map(draftableQuestions.map((question) => [question.id, question]));
-            aiDraftAnswers = ai.answers.map((answer) => ({
-              key: byId.get(answer.questionId)!.label.toLowerCase(),
-              value: answer.answer,
-              verified: false as const,
-              aiDraft: true as const,
-              sourceField: `ai:${answer.questionId}`,
-              usedClaimIds: answer.usedClaimIds,
-            }));
+            aiAnswers = ai.answers;
           } else {
             aiError = "Verified full_name is required before Scout can draft free-text answers";
           }
@@ -175,13 +168,16 @@ export async function POST(request: Request) {
       }
     }
 
+    const answerReview = buildApplicationAnswerReview({ questions: draftableQuestions, answers: aiAnswers });
+
     return json({
       task: {
         ...task,
-        answers: [...task.answers, ...aiDraftAnswers],
+        answers: task.answers,
         formIntelligence: { summary: form.summary },
-        aiDraftAnswersRequireReview: aiDraftAnswers.length > 0,
+        aiDraftAnswersRequireReview: answerReview.drafts.length > 0,
       },
+      answerReview,
       formIntelligence: {
         summary: form.summary,
         fields: form.fields.map((field) => ({
@@ -193,7 +189,7 @@ export async function POST(request: Request) {
           reason: field.reason,
         })),
       },
-      ai: { model: aiModel, drafted: aiDraftAnswers.length, error: aiError },
+      ai: { model: aiModel, drafted: answerReview.drafts.length, error: aiError },
       manualQuestions,
       safety: {
         browserSentFieldValues: false,
@@ -201,6 +197,7 @@ export async function POST(request: Request) {
         sensitiveQuestionsRequireReview: true,
         unknownAnswersRequireUser: true,
         aiAnswersAreDrafts: true,
+        aiAnswersRequireExplicitApprovalBeforeFill: true,
         solveCaptcha: false,
         submitApplication: false,
       },
