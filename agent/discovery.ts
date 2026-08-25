@@ -45,13 +45,18 @@ export async function runAgentDiscovery(
   }));
   const observedAt = now();
   const quality = consolidateOpportunityLeads([...controlledLeads, ...search.leads], new Date(observedAt));
+  const leads = quality.leads.map((lead) => ({
+    ...lead,
+    focus: `${lead.focus} · ${lead.qualityTier} quality · ${lead.authorityLabel}${lead.duplicateCount ? ` · ${lead.duplicateCount} duplicate lead${lead.duplicateCount === 1 ? "" : "s"} consolidated` : ""}`.slice(0, 500),
+    nextStep: `${lead.nextStep}${lead.provenanceUrls.length > 1 ? ` Discovery provenance observed across ${lead.provenanceUrls.length} public URL(s); the most authoritative lead was retained.` : ""}`.slice(0, 1000),
+  }));
 
   return {
     schemaVersion: 1 as const,
     observedAt,
-    found: quality.leads.length,
+    found: leads.length,
     failures: [...controlled.failures, ...search.failures],
-    leads: quality.leads,
+    leads,
     qualitySummary: quality.summary,
     discoveryModes: {
       controlledAts: true,
