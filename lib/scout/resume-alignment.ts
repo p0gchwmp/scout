@@ -1,3 +1,5 @@
+import { classifyRoleTaxonomy } from "./role-taxonomy.ts";
+
 export type ResumeClaimText = {
   id: string;
   statement: string;
@@ -143,24 +145,34 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
     return claimIds.length ? [{ theme: theme.label, label: theme.label, claimIds }] : [];
   });
   const matches = supportingClaims.map((match) => match.theme);
+  const distinctSupportingClaimIds = [...new Set(supportingClaims.flatMap((support) => support.claimIds))];
   const approvedClaimText = approvedClaims.map((claim) => `${claim.statement} ${claim.evidence}`).join(" ");
   const unmetRequirements = REQUIREMENT_GAPS
     .filter((requirement) => requirement.job.test(jobText) && !requirement.claim.test(approvedClaimText));
   const gaps = unmetRequirements.map((requirement) => requirement.message);
   const hasBlockingGap = unmetRequirements.some((requirement) => requirement.blocking);
+  const taxonomy = classifyRoleTaxonomy({ title: job.title, description: job.description });
 
-  const band: ResumeAlignmentBand = hasBlockingGap || gaps.length >= 2
+  const band: ResumeAlignmentBand = taxonomy.preferenceLane === "software_stretch"
     ? "stretch"
-    : matches.length >= 4 && gaps.length === 0
-      ? "strong"
-      : matches.length >= 2
-        ? "partial"
-        : "stretch";
+    : hasBlockingGap || gaps.length >= 2
+      ? "stretch"
+      : matches.length >= 4 && distinctSupportingClaimIds.length >= 2 && gaps.length === 0
+        ? "strong"
+        : matches.length >= 2
+          ? "partial"
+          : "stretch";
   const labels: Record<Exclude<ResumeAlignmentBand, "unranked">, string> = {
     strong: "Strong evidence overlap",
     partial: "Partial evidence overlap",
     stretch: "Stretch role",
   };
+
+  const basisParts = [
+    `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}`,
+    `${distinctSupportingClaimIds.length} distinct supporting claim${distinctSupportingClaimIds.length === 1 ? "" : "s"} for this role`,
+  ];
+  if (taxonomy.preferenceLane === "software_stretch") basisParts.push("pure software-development roles remain a stretch lane by default");
 
   return {
     band,
@@ -169,7 +181,7 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
     supportingClaims,
     gaps,
     eligibilityGaps: gaps,
-    basis: `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}`,
+    basis: basisParts.join(" · "),
     notChecked: [...NOT_CHECKED],
     caveats: [...NOT_CHECKED],
   };
