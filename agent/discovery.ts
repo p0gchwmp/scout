@@ -1,4 +1,5 @@
 import { discoverControlledInternships } from "../lib/scout/lead-discovery.ts";
+import { consolidateOpportunityLeads } from "../lib/scout/opportunity-quality.ts";
 import type { AtsProvider } from "../lib/scout/types.ts";
 import { discoverSearchIndexInternships } from "./search-discovery.ts";
 
@@ -6,6 +7,9 @@ export const AGENT_DISCOVERY_CAPABILITIES = Object.freeze({
   controlledCatalog: true,
   optionalSearchIndex: true,
   fixedSearchQueriesOnly: true,
+  opportunityDedupe: true,
+  preferOfficialAts: true,
+  suppressClearlySeniorSearchNoise: true,
   callerSuppliedSources: false,
   arbitraryUrlFetch: false,
   linkedinScrape: false,
@@ -39,14 +43,16 @@ export async function runAgentDiscovery(
     platformId: lead.channel.id,
     nextStep: lead.nextStep,
   }));
-  const leads = [...new Map([...controlledLeads, ...search.leads].map((lead) => [lead.canonicalUrl, lead])).values()].slice(0, 100);
+  const observedAt = now();
+  const quality = consolidateOpportunityLeads([...controlledLeads, ...search.leads], new Date(observedAt));
 
   return {
     schemaVersion: 1 as const,
-    observedAt: now(),
-    found: leads.length,
+    observedAt,
+    found: quality.leads.length,
     failures: [...controlled.failures, ...search.failures],
-    leads,
+    leads: quality.leads,
+    qualitySummary: quality.summary,
     discoveryModes: {
       controlledAts: true,
       searchIndex: search.enabled,
