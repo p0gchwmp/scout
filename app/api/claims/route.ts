@@ -27,53 +27,16 @@ async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-export async function GET() {
-  const unauthorized = await requireScoutApiUser();
-  if (unauthorized) return unauthorized;
-  try {
-    const claims = await getDb().select().from(candidateClaims).orderBy(desc(candidateClaims.createdAt));
-    return Response.json({ claims });
-  } catch (error) {
-    return scoutServerError("claims.list", error, "Unable to load claims");
-  }
+function isMutation(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const action = (value as { action?: unknown }).action;
+  return action === "edit" || action === "approve" || action === "reject";
 }
 
-export async function POST(request: Request) {
-  const unauthorized = await requireScoutApiUser();
-  if (unauthorized) return unauthorized;
-  const crossOrigin = requireSameOriginMutation(request);
-  if (crossOrigin) return crossOrigin;
-
-  let payload: ReturnType<typeof parseClaimCreatePayload>;
-  try {
-    payload = parseClaimCreatePayload(await readJson(request));
-  } catch (error) {
-    if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400 });
-    return Response.json({ error: "Invalid request" }, { status: 400 });
-  }
-
-  try {
-    const [claim] = await getDb().insert(candidateClaims).values({
-      id: crypto.randomUUID(),
-      ...payload,
-      status: "draft",
-      version: 1,
-    }).returning();
-    return Response.json({ claim }, { status: 201 });
-  } catch (error) {
-    return scoutServerError("claims.create", error, "Unable to create claim");
-  }
-}
-
-export async function PATCH(request: Request) {
-  const unauthorized = await requireScoutApiUser();
-  if (unauthorized) return unauthorized;
-  const crossOrigin = requireSameOriginMutation(request);
-  if (crossOrigin) return crossOrigin;
-
+async function mutateClaim(raw: unknown) {
   let payload: ReturnType<typeof parseClaimMutationPayload>;
   try {
-    payload = parseClaimMutationPayload(await readJson(request));
+    payload = parseClaimMutationPayload(raw);
   } catch (error) {
     if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400 });
     return Response.json({ error: "Invalid request" }, { status: 400 });
@@ -117,4 +80,68 @@ export async function PATCH(request: Request) {
     }
     return scoutServerError("claims.update", error, "Unable to update claim");
   }
+}
+
+export async function GET() {
+  const unauthorized = await requireScoutApiUser();
+  if (unauthorized) return unauthorized;
+  try {
+    const claims = await getDb().select().from(candidateClaims).orderBy(desc(candidateClaims.createdAt));
+    return Response.json({ claims });
+  } catch (error) {
+    return scoutServerError("claims.list", error, "Unable to load claims");
+  }
+}
+
+export async function POST(request: Request) {
+  const unauthorized = await requireScoutApiUser();
+  if (unauthorized) return unauthorized;
+  const crossOrigin = requireSameOriginMutation(request);
+  if (crossOrigin) return crossOrigin;
+
+  let raw: unknown;
+  try {
+    raw = await readJson(request);
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: 400 });
+  }
+
+  // Compatibility for the existing Dashboard: mutations remain fully validated
+  // and owner/same-origin protected even when that client uses POST.
+  if (isMutation(raw)) return mutateClaim(raw);
+
+  let payload: ReturnType<typeof parseClaimCreatePayload>;
+  try {
+    payload = parseClaimCreatePayload(raw);
+  } catch (error) {
+    if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400 });
+    return Response.json({ error: "Invalid request" }, { status: 400 });
+  }
+
+  try {
+    const [claim] = await getDb().insert(candidateClaims).values({
+      id: crypto.randomUUID(),
+      ...payload,
+      status: "draft",
+      version: 1,
+    }).returning();
+    return Response.json({ claim }, { status: 201 });
+  } catch (error) {
+    return scoutServerError("claims.create", error, "Unable to create claim");
+  }
+}
+
+export async function PATCH(request: Request) {
+  const unauthorized = await requireScoutApiUser();
+  if (unauthorized) return unauthorized;
+  const crossOrigin = requireSameOriginMutation(request);
+  if (crossOrigin) return crossOrigin;
+
+  let raw: unknown;
+  try {
+    raw = await readJson(request);
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: 400 });
+  }
+  return mutateClaim(raw);
 }
