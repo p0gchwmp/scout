@@ -2,8 +2,35 @@ import { env } from "cloudflare:workers";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { companySources, jobSnapshots, jobs, syncRuns } from "../../../../db/schema";
-import { localDiscoverySnapshot, verifyLocalDiscoveryEnvelope } from "../../../../lib/scout/local-discovery-import";
+import { localDiscoverySnapshot, verifyLocalDiscoveryEnvelope, type LocalBridgeLead, type LocalBridgeSourceObservation } from "../../../../lib/scout/local-discovery-import";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
+
+type LocalSourceIdentity = Pick<LocalBridgeLead, "provider" | "slug" | "company" | "companyDomain" | "sourceUrl"> | LocalBridgeSourceObservation;
+
+async function ensureRegisteredSource(db: ReturnType<typeof getDb>, source: LocalSourceIdentity) {
+  const [registered] = await db.select().from(companySources).where(and(
+    eq(companySources.provider, source.provider),
+    eq(companySources.boardToken, source.slug),
+  )).limit(1);
+  if (registered) return registered;
+  const sourceId = `catalog-${source.provider}-${source.slug}`;
+  const [created] = await db.insert(companySources).values({
+    id: sourceId,
+    provider: source.provider,
+    companyName: source.company,
+    boardToken: source.slug,
+    companyDomain: source.companyDomain,
+    careersUrl: source.sourceUrl,
+    enabled: true,
+  }).onConflictDoNothing().returning();
+  if (created) return created;
+  const [concurrent] = await db.select().from(companySources).where(and(
+    eq(companySources.provider, source.provider),
+    eq(companySources.boardToken, source.slug),
+  )).limit(1);
+  if (!concurrent) throw new Error(`Unable to register controlled ${source.provider} source`);
+  return concurrent;
+}
 
 export async function POST(request: Request) {
   const unauthorized = await requireScoutApiUser();
@@ -25,16 +52,7 @@ export async function POST(request: Request) {
     for (const lead of discovery.leads) {
       const [byUrl] = await db.select().from(jobs).where(eq(jobs.canonicalUrl, lead.canonicalUrl)).limit(1);
       const official = await localDiscoverySnapshot(lead);
-      const sourceId = `catalog-${lead.provider}-${lead.slug}`;
-      const [registered] = await db.select().from(companySources).where(and(
-        eq(companySources.provider, lead.provider),
-        eq(companySources.boardToken, lead.slug),
-      )).limit(1);
-      const source = registered ?? (await db.insert(companySources).values({
-        id: sourceId, provider: lead.provider, companyName: lead.company, boardToken: lead.slug,
-        companyDomain: lead.companyDomain, careersUrl: lead.sourceUrl, enabled: true,
-      }).returning())[0];
-      if (!source) throw new Error(`Unable to register controlled ${lead.provider} source`);
+      const source = await ensureRegisteredSource(db, lead);
 
       const existingJob = byUrl ?? (await db.select().from(jobs).where(and(eq(jobs.sourceRegistryId, source.id), eq(jobs.externalId, lead.externalId))).limit(1))[0];
       if (existingJob?.currentSnapshotId) {
@@ -81,8 +99,29 @@ export async function POST(request: Request) {
       else created += 1;
     }
 
+    let sourceChecks = 0;
+    for (const observation of discovery.sources) {
+      const source = await ensureRegisteredSource(db, observation);
+      await db.insert(syncRuns).values({
+        id: crypto.randomUUID(),
+        sourceId: source.id,
+        idempotencyKey: `local-health:${Date.parse(discovery.observedAt)}`,
+        status: observation.status,
+        observedAt: discovery.observedAt,
+        discoveredCount: observation.internshipCount,
+        createdCount: 0,
+        updatedCount: 0,
+        unchangedCount: 0,
+        closedCount: 0,
+        completedAt: discovery.observedAt,
+        error: observation.reason,
+        createdAt: discovery.observedAt,
+      }).onConflictDoNothing();
+      sourceChecks += 1;
+    }
+
     return Response.json({
-      found: discovery.leads.length, created, upgraded, existing, pending: 0, failures: discovery.failures,
+      found: discovery.leads.length, created, upgraded, existing, pending: 0, failures: discovery.failures, sourceChecks,
       leads: discovery.leads.map((lead) => ({
         canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title, provider: lead.provider,
         sourceUrl: lead.sourceUrl, focus: lead.focus, location: lead.location, postedAt: lead.postedAt,
