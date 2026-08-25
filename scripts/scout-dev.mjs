@@ -158,16 +158,21 @@ async function discover() {
   const settled = await discoverSettledByProvider();
   const leads = [];
   const failures = [];
+  const sources = [];
   settled.forEach((result, index) => {
     const source = catalog[index];
     if (result.status === "rejected") {
-      failures.push({ company: source.company, provider: source.provider, reason: stableDiscoveryFailure(result.reason) });
+      const reason = stableDiscoveryFailure(result.reason);
+      failures.push({ slug: source.slug, company: source.company, provider: source.provider, reason });
+      sources.push({ provider: source.provider, slug: source.slug, status: "failed", internshipCount: 0, reason });
       return;
     }
-    for (const job of result.value.jobs) if (relevant(job)) leads.push(job);
+    const internships = result.value.jobs.filter(relevant);
+    leads.push(...internships);
+    sources.push({ provider: source.provider, slug: source.slug, status: "completed", internshipCount: internships.length, reason: null });
   });
   const deduped = [...new Map(leads.map((lead) => [lead.canonicalUrl, lead])).values()].slice(0, 100);
-  const payload = JSON.stringify({ schemaVersion: 1, observedAt: new Date().toISOString(), leads: deduped, failures });
+  const payload = JSON.stringify({ schemaVersion: 2, observedAt: new Date().toISOString(), leads: deduped, failures, sources });
   const signature = createHmac("sha256", secret).update(payload).digest("hex");
   return { payload, signature, found: deduped.length, failures: failures.length };
 }
