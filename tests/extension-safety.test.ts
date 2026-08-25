@@ -48,7 +48,8 @@ test("Safe Fill requires explicit answer review before any AI text can be insert
   assert.match(popup, /Approve for fill/);
   assert.match(popup, /reviewed: true/);
   assert.match(popup, /pendingAnswerReview/);
-  assert.match(popup, /revokeEditedApproval/);
+  assert.match(popup, /revokeDraftApproval/);
+  assert.match(popup, /textarea\.disabled = draft\.decision === "approved"/);
   assert.match(html, /Application answer review/);
   assert.match(html, /Unreviewed drafts can never be inserted into the form/);
 });
