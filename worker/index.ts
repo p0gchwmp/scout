@@ -31,7 +31,7 @@ const USER_FULL_NAME_ENCODING_HEADER =
   "oai-authenticated-user-full-name-encoding";
 const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
-const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice", "/review", "/shortlist", "/readiness", "/applications", "/sources"]);
+const OWNER_PAGE_PATHS = new Set(["/", "/setup", "/inbox", "/assist", "/voice", "/review", "/shortlist", "/readiness", "/applications", "/sources"]);
 OWNER_PAGE_PATHS.add("/evidence");
 OWNER_PAGE_PATHS.add("/preferences");
 OWNER_PAGE_PATHS.add("/quality");
