@@ -4,6 +4,7 @@ import { Dashboard } from "./dashboard";
 import { requireScoutPageOwner } from "./scout-api";
 
 const workspaceLinks = [
+  ["Start Here", "/setup"],
   ["Inbox", "/inbox"],
   ["Sources", "/sources"],
   ["Evidence", "/evidence"],
