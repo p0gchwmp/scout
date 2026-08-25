@@ -28,6 +28,10 @@ function required(name: string, raw: string | undefined) {
   return candidate;
 }
 
+function highQualityMode(environment: NodeJS.ProcessEnv) {
+  return value(environment, "SCOUT_AI_QUALITY_MODE").toLowerCase() !== "balanced";
+}
+
 function candidate(input: {
   id: string;
   endpointUrl: string;
@@ -35,6 +39,7 @@ function candidate(input: {
   model: string;
   jsonMode?: boolean;
   allowLoopbackDev?: boolean;
+  alwaysRefineWriting?: boolean;
 }): RoutedAiCandidate {
   return {
     id: input.id,
@@ -45,6 +50,7 @@ function candidate(input: {
       costClass: "free_or_included",
       jsonMode: input.jsonMode,
       allowLoopbackDev: input.allowLoopbackDev,
+      alwaysRefineWriting: input.alwaysRefineWriting,
     }),
   };
 }
@@ -65,6 +71,7 @@ function freeProviderKey(environment: NodeJS.ProcessEnv, scoutKey: string, stand
 }
 
 export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.env) {
+  const refineWriting = highQualityMode(environment);
   const explicitFields = ["SCOUT_AI_ENDPOINT_URL", "SCOUT_AI_API_KEY", "SCOUT_AI_MODEL", "SCOUT_AI_COST_CLASS"] as const;
   const explicitCount = explicitFields.filter((name) => value(environment, name)).length;
   if (explicitCount) {
@@ -83,6 +90,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
         allowMeteredAi: environment.SCOUT_ALLOW_METERED_AI === "1",
         allowLoopbackDev: environment.SCOUT_AI_ALLOW_LOOPBACK_DEV === "1",
         jsonMode: environment.SCOUT_AI_JSON_MODE !== "0",
+        alwaysRefineWriting: refineWriting,
       }),
     };
     return createQualityAiRouter({ classification: [explicit], writing: [explicit] });
@@ -103,6 +111,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: groqKey,
     model: value(environment, "SCOUT_GROQ_FAST_MODEL") || DEFAULT_MODELS.groqFast,
     jsonMode: true,
+    alwaysRefineWriting: refineWriting,
   }) : null;
   const groqReasoning = groqKey ? candidate({
     id: "groq:gpt-oss-120b",
@@ -110,6 +119,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: groqKey,
     model: value(environment, "SCOUT_GROQ_REASONING_MODEL") || DEFAULT_MODELS.groqReasoning,
     jsonMode: true,
+    alwaysRefineWriting: refineWriting,
   }) : null;
 
   const nimLightning = nimKey ? candidate({
@@ -118,6 +128,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: nimKey,
     model: value(environment, "SCOUT_NIM_LIGHTNING_MODEL") || DEFAULT_MODELS.nimLightning,
     jsonMode: false,
+    alwaysRefineWriting: refineWriting,
   }) : null;
   const nimReasoning = nimKey ? candidate({
     id: "nim:deepseek-v4-flash-0731",
@@ -125,6 +136,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: nimKey,
     model: value(environment, "SCOUT_NIM_REASONING_MODEL") || DEFAULT_MODELS.nimReasoning,
     jsonMode: false,
+    alwaysRefineWriting: refineWriting,
   }) : null;
   const nimUltra = nimKey ? candidate({
     id: "nim:nemotron-3-ultra",
@@ -132,6 +144,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: nimKey,
     model: value(environment, "SCOUT_NIM_ULTRA_MODEL") || DEFAULT_MODELS.nimUltra,
     jsonMode: false,
+    alwaysRefineWriting: refineWriting,
   }) : null;
 
   const gemini = geminiKey ? candidate({
@@ -140,6 +153,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: geminiKey,
     model: value(environment, "SCOUT_GEMINI_MODEL") || DEFAULT_MODELS.gemini,
     jsonMode: false,
+    alwaysRefineWriting: refineWriting,
   }) : null;
   const cerebras = cerebrasKey ? candidate({
     id: "cerebras:gpt-oss-120b",
@@ -147,6 +161,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: cerebrasKey,
     model: value(environment, "SCOUT_CEREBRAS_MODEL") || DEFAULT_MODELS.cerebras,
     jsonMode: false,
+    alwaysRefineWriting: refineWriting,
   }) : null;
   const openrouter = openrouterKey ? candidate({
     id: "openrouter:free",
@@ -154,6 +169,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     apiKey: openrouterKey,
     model: value(environment, "SCOUT_OPENROUTER_MODEL") || DEFAULT_MODELS.openrouter,
     jsonMode: false,
+    alwaysRefineWriting: refineWriting,
   }) : null;
   const ollama = ollamaEndpoint && ollamaKey && ollamaModel ? candidate({
     id: `ollama:${ollamaModel}`,
@@ -162,10 +178,11 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     model: ollamaModel,
     jsonMode: value(environment, "SCOUT_OLLAMA_JSON_MODE") === "1",
     allowLoopbackDev: true,
+    alwaysRefineWriting: refineWriting,
   }) : null;
 
   const classification: RoutedAiCandidate[] = [];
-  for (const item of [groqFast, nimLightning, groqReasoning, gemini, nimReasoning, nimUltra, cerebras, openrouter, ollama]) {
+  for (const item of [nimLightning, nimReasoning, groqReasoning, groqFast, gemini, nimUltra, cerebras, openrouter, ollama]) {
     pushUnique(classification, item);
   }
 
