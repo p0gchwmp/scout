@@ -13,6 +13,7 @@ import {
 } from "../../../../db/schema";
 import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-runtime";
 import { buildApplicationPreparation } from "../../../../lib/scout/application-prep";
+import { sameOpportunityIdentity } from "../../../../lib/scout/opportunity-quality";
 import { evaluateResumeAlignment } from "../../../../lib/scout/resume-alignment";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
@@ -29,6 +30,13 @@ function unresolvedDomain(value: string | null | undefined) {
   return !value || value.endsWith(".invalid");
 }
 
+function storedDiscoveryProvider(source: string) {
+  if (source === "lead:agent:search_index" || source.startsWith("lead:linkedin") || source.startsWith("lead:internshala") || source.startsWith("lead:form")) {
+    return "search_index";
+  }
+  return source.startsWith("lead:agent:") ? source.slice("lead:agent:".length) : source.startsWith("lead:") ? "search_index" : source;
+}
+
 export async function POST(request: Request) {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
@@ -40,19 +48,62 @@ export async function POST(request: Request) {
     const client = createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>);
     const discovery = await client.discoverInternships();
     const discoveredJobIds: string[] = [];
+    const knownJobs = await db.select().from(jobs);
     let created = 0;
     let existing = 0;
+    let duplicatesReused = 0;
+    let unresolvedUpgradedToOfficialLead = 0;
 
     for (const lead of discovery.leads) {
-      const [found] = await db.select().from(jobs).where(eq(jobs.canonicalUrl, lead.canonicalUrl)).limit(1);
+      const found = knownJobs.find((job) => sameOpportunityIdentity({
+        provider: storedDiscoveryProvider(job.source),
+        canonicalUrl: job.canonicalUrl,
+        company: job.company,
+        title: job.title,
+        location: job.location,
+        postedAt: job.postedAt,
+      }, {
+        provider: lead.provider,
+        canonicalUrl: lead.canonicalUrl,
+        company: lead.company,
+        title: lead.title,
+        location: lead.location,
+        postedAt: lead.postedAt,
+      }));
+
       if (found) {
         discoveredJobIds.push(found.id);
         existing += 1;
+        if (found.canonicalUrl !== lead.canonicalUrl) duplicatesReused += 1;
+
+        if (!found.currentSnapshotId && lead.provider !== "search_index" && found.canonicalUrl !== lead.canonicalUrl) {
+          const observedAt = discovery.observedAt || new Date().toISOString();
+          const [upgraded] = await db.update(jobs).set({
+            source: `lead:agent:${lead.provider}`,
+            canonicalUrl: lead.canonicalUrl,
+            company: lead.company,
+            title: lead.title,
+            location: lead.location,
+            postedAt: lead.postedAt,
+            fingerprint: `agent-lead|${lead.canonicalUrl}`,
+            scoreExplanation: [
+              `Discovered by signed Scout cloud agent from controlled public ${lead.provider} source`,
+              "Duplicate intelligence reused the existing unresolved opportunity and preferred the official ATS lead",
+              `Discovery context: ${lead.focus}`.slice(0, 1000),
+            ],
+            lastSeenAt: observedAt,
+          }).where(eq(jobs.id, found.id)).returning();
+          if (upgraded) {
+            Object.assign(found, upgraded);
+            unresolvedUpgradedToOfficialLead += 1;
+          }
+        }
         continue;
       }
+
       const id = crypto.randomUUID();
       const observedAt = discovery.observedAt || new Date().toISOString();
-      await db.insert(jobs).values({
+      const [inserted] = await db.insert(jobs).values({
         id,
         source: `lead:agent:${lead.provider}`,
         sourceRegistryId: null,
@@ -64,7 +115,11 @@ export async function POST(request: Request) {
         location: lead.location,
         workplaceType: "unspecified",
         score: 0,
-        scoreExplanation: [`Discovered by signed Scout cloud agent from controlled public ${lead.provider} source`],
+        scoreExplanation: [
+          `Discovered by signed Scout cloud agent from controlled public ${lead.provider} source`,
+          `Discovery context: ${lead.focus}`.slice(0, 1000),
+          `Resolution policy: ${lead.nextStep}`.slice(0, 1000),
+        ],
         eligibilityRisks: ["Official immutable posting snapshot required before application preparation"],
         state: "saved",
         lifecycleState: "active",
@@ -74,7 +129,8 @@ export async function POST(request: Request) {
         lastSeenAt: observedAt,
         missingCount: 0,
         currentSnapshotId: null,
-      });
+      }).returning();
+      if (inserted) knownJobs.push(inserted);
       discoveredJobIds.push(id);
       created += 1;
     }
@@ -329,6 +385,8 @@ export async function POST(request: Request) {
           found: discovery.found,
           created,
           existing,
+          duplicatesReused,
+          unresolvedUpgradedToOfficialLead,
           failures: discovery.failures,
           leads: discovery.leads,
         },
