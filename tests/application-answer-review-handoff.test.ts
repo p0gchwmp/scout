@@ -12,14 +12,15 @@ test("browser exchange keeps AI drafts outside the fillable task until local app
   assert.doesNotMatch(route, /answers:\s*\[\.\.\.task\.answers,\s*\.\.\.ai/i);
 });
 
-test("Safe Fill review approval is local, exact-task bound and reversible on edit", async () => {
+test("Safe Fill review approval is local, exact-task bound and must be revoked before editing", async () => {
   const popup = await readFile(new URL("../extension/popup.js", import.meta.url), "utf8");
   assert.match(popup, /review\.applicationId === task\.applicationId/);
   assert.match(popup, /review\.artifactVersion === task\.artifactVersion/);
   assert.match(popup, /review\.expiresAt === task\.expiresAt/);
   assert.match(popup, /reviewedAt: Date\.now\(\)/);
   assert.match(popup, /sourceField: answerSource\(questionId\)/);
-  assert.match(popup, /revokeEditedApproval/);
+  assert.match(popup, /revokeDraftApproval/);
+  assert.match(popup, /textarea\.disabled = draft\.decision === "approved"/);
   assert.match(popup, /withoutReviewedAnswer/);
   assert.doesNotMatch(popup, /fetch\([^\n]*approve|send.*answer.*review/i);
 });
