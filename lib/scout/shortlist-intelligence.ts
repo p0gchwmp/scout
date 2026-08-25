@@ -140,7 +140,7 @@ export function evaluateShortlist(
   } else if (taxonomy.preferenceLane === "software_stretch") {
     whyWorthYourTime = priority.priority === "high" || priority.priority === "review"
       ? "This is primarily software development, so Scout keeps it in the stretch lane; the approved evidence overlap is still strong enough to justify a deliberate look."
-      : "This is primarily software development, so Scout keeps it visible but behind equally supported analyst, product, operations, research, finance and technical-systems roles.";
+      : "This is primarily software development, so Scout keeps it visible in the stretch lane but behind equally supported analyst, product, operations, research, finance and technical-systems roles.";
   } else if (priority.priority === "high") {
     whyWorthYourTime = `Strong evidence overlap${fresh.days !== null && fresh.days <= 30 ? " on a recent posting" : ""}; this deserves an early review.`;
   } else if (priority.priority === "review") {
