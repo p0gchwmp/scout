@@ -1,16 +1,28 @@
 # Scout quality-first AI router
 
-Scout can route AI work across multiple free/included providers while keeping paid overage disabled by default.
+Scout can route AI work across multiple free/included providers while keeping paid overage disabled by default. The routing objective is output quality first; speed and provider cost are secondary so long as the configured credential is explicitly treated as free/included/no-extra-billing capacity.
+
+## Quality mode
+
+`high` quality is the default. External-facing outreach and non-sensitive application-answer drafts receive a deliberate second refinement pass even when the first response already satisfies the deterministic validators. The refinement pass must preserve exact claim bindings and is rejected if it introduces unsupported facts or leaves style-policy warnings.
+
+To reduce model calls temporarily, use:
+
+```powershell
+$env:SCOUT_AI_QUALITY_MODE = "balanced"
+```
+
+Balanced mode still performs the second pass whenever Scout's deterministic writing checks find a problem; it simply skips the always-refine pass for already-clean drafts.
 
 ## Route policy
 
 Structured classification/extraction prefers:
 
-1. Groq — `qwen/qwen3.6-27b`
-2. NVIDIA NIM — `nvidia/nemotron-3.5-lightning-30b-a3b`
+1. NVIDIA NIM — `nvidia/nemotron-3.5-lightning-30b-a3b`
+2. NVIDIA NIM — `deepseek-ai/deepseek-v4-flash-0731`
 3. Groq — `openai/gpt-oss-120b`
-4. Gemini — `gemini-3.7-flash`
-5. NVIDIA NIM — `deepseek-ai/deepseek-v4-flash-0731`
+4. Groq — `qwen/qwen3.6-27b`
+5. Gemini — `gemini-3.7-flash`
 6. NVIDIA NIM — `nvidia/nemotron-3-ultra-550b-a55b`
 7. Cerebras — `gpt-oss-120b`
 8. OpenRouter — `openrouter/free`
@@ -28,7 +40,7 @@ Writing/reasoning prefers:
 8. OpenRouter — `openrouter/free`
 9. local Ollama fallback
 
-Scout stops at the first valid result. It does not call every model by default. Provider/network/quota/schema failures fall through to the next configured candidate.
+Scout stops at the first valid result for the requested task. It does not call every model by default. Provider/network/quota/schema failures fall through to the next configured candidate. Deterministic evidence validation stays in force across every provider.
 
 ## Provider keys
 
@@ -60,7 +72,17 @@ CEREBRAS_API_KEY
 OPENROUTER_API_KEY
 ```
 
-Without the opt-in flag, generic provider keys are ignored.
+Without the opt-in flag, generic provider keys are ignored. This avoids accidentally treating a credential with paid billing attached as free capacity.
+
+## Check the active router
+
+Run:
+
+```powershell
+npm run scout:ai:status
+```
+
+The command prints which providers are configured and the exact classification and writing routes without printing secrets.
 
 ## Local fallback
 
@@ -81,4 +103,4 @@ If any explicit single-provider field is configured, all four are required. `met
 
 ## Safety boundaries
 
-The router does not change Scout's evidence rules. Models cannot invent contacts, use unapproved candidate claims, answer sensitive application fields, submit applications, or send email. Provider failover never relaxes those boundaries.
+The router does not change Scout's evidence rules. Models cannot invent contacts, use unapproved candidate claims, answer sensitive application fields, submit applications, or send email. Provider failover and quality refinement never relax those boundaries.
