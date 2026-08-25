@@ -71,7 +71,7 @@ export function BrowserAssist() {
   return <main className={styles.shell}>
     <header className={styles.header}>
       <div><p className={styles.kicker}>SCOUT / BROWSER ASSIST</p><h1>Hand the boring form fields to Scout.</h1><p>Generate a short-lived task for one reviewed application. The extension fills verified profile fields and can draft non-sensitive free-text answers from approved claims. CAPTCHA, sensitive questions and final submit stay with you.</p></div>
-      <div className={styles.links}><Link href="/">Dashboard</Link><Link href="/inbox">Internship Inbox</Link><Link href="/review">Review Queue</Link><Link href="/voice">Voice</Link></div>
+      <div className={styles.links}><Link href="/readiness">Application Readiness</Link><Link href="/">Dashboard</Link><Link href="/inbox">Internship Inbox</Link><Link href="/review">Review Queue</Link><Link href="/voice">Voice</Link></div>
     </header>
 
     {notice && <div className={styles.notice}>{notice}</div>}
@@ -85,7 +85,7 @@ export function BrowserAssist() {
 
     <section className={styles.listHead}><div><p className={styles.kicker}>READY APPLICATIONS</p><h2>{applications.length} packet(s)</h2></div><p>Only `ready_for_review` packets can create a browser task.</p></section>
     <section className={styles.list}>
-      {!applications.length && <div className={styles.empty}>No application packet is ready for browser assistance yet. Run Scout or prepare an application from the dashboard first.</div>}
+      {!applications.length && <div className={styles.empty}>No application packet is ready for browser assistance yet. Open Application Readiness to see exactly what each role is missing.</div>}
       {applications.map((application) => <article className={styles.card} key={application.id}>
         <div><p className={styles.source}>{application.submittedFields.channel?.label ?? "Application"} · packet v{application.artifactVersion}</p><h3>{application.job?.company ?? "Unknown company"} — {application.job?.title ?? "Role"}</h3><p>{application.blockers.length ? `${application.blockers.length} blocker(s)` : "Verified reusable fields are ready. Non-sensitive free-text questions can be drafted when the extension inspects the form."}</p></div>
         <button disabled={busy === application.id} onClick={() => void createHandoff(application)}>{busy === application.id ? "Creating…" : "Create extension handoff"}</button>
