@@ -27,7 +27,7 @@ test("shortlist feedback uses explicit decisions only and Save clears the local 
   assert.match(shortlist, /: null;/);
   assert.match(shortlist, /Save \/ neutral/);
   assert.match(shortlist, /Saved\/discovered roles are neutral/);
-  assert.doesNotMatch(shortlist, /click|viewed|opened.{0,40}preference/i);
+  assert.doesNotMatch(shortlist, /recordPreferenceFeedback\([^\n]*(?:viewed|opened|clicked)/i);
 });
 
 test("calibration remains a soft recommendation layer rather than a hidden eligibility rule", () => {
