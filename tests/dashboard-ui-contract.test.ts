@@ -26,7 +26,7 @@ test("root workspace navigation is styled and keeps all current owner workflows 
     readFile(new URL("../app/dashboard-ui.css", import.meta.url), "utf8"),
   ]);
 
-  for (const href of ["/inbox", "/shortlist", "/applications", "/readiness", "/review", "/assist", "/voice"]) {
+  for (const href of ["/inbox", "/sources", "/shortlist", "/applications", "/readiness", "/review", "/assist", "/voice"]) {
     assert.ok(page.includes(`"${href}"`), `workspace navigation should include ${href}`);
   }
   assert.match(page, /dashboard-topbar/);
