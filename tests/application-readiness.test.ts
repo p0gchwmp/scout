@@ -60,6 +60,23 @@ test("draft or rejected claims cannot make an application ready", () => {
   assert.ok(result.blockers.some((blocker) => blocker.includes("No approved resume claims")));
 });
 
+test("approved but unrelated claims do not satisfy role-specific readiness", () => {
+  const result = assessApplicationReadiness({
+    job,
+    profileFields: verifiedProfile(),
+    claims: [{
+      id: "claim-unrelated",
+      statement: "Reviewed antibiotic price differences for desk research.",
+      evidence: "Approved GMC Jammu resume evidence",
+      status: "approved",
+    }],
+  });
+  assert.equal(result.status, "almost_ready");
+  assert.equal(result.preparationStatus, "needs_input");
+  assert.deepEqual(result.claimIds, []);
+  assert.ok(result.blockers.some((blocker) => blocker.includes("role-specific answers")));
+});
+
 test("missing official snapshot is a critical blocker even with a complete profile", () => {
   const result = assessApplicationReadiness({
     job: { ...job, currentSnapshotId: null },
