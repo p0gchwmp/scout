@@ -20,8 +20,8 @@ test("quality router stops at the first valid provider and fails over in configu
   const calls: string[] = [];
   const router = createQualityAiRouter({
     classification: [
-      { id: "fast-fail", worker: worker("fast-fail", calls, true) },
-      { id: "fast-good", worker: worker("fast-good", calls) },
+      { id: "quality-fail", worker: worker("quality-fail", calls, true) },
+      { id: "quality-good", worker: worker("quality-good", calls) },
       { id: "unused", worker: worker("unused", calls) },
     ],
     writing: [
@@ -32,7 +32,7 @@ test("quality router stops at the first valid provider and fails over in configu
 
   await router.classifyPublishedContacts([]);
   await router.draftApplicationAnswers({} as never);
-  assert.deepEqual(calls, ["fast-fail:classification", "fast-good:classification", "writer-good:application"]);
+  assert.deepEqual(calls, ["quality-fail:classification", "quality-good:classification", "writer-good:application"]);
 });
 
 test("quality router exposes only provider ids and reports exhaustion without leaking provider errors", async () => {
@@ -48,7 +48,7 @@ test("quality router exposes only provider ids and reports exhaustion without le
   );
 });
 
-test("agent runtime prefers fast models for classification and stronger models for writing", () => {
+test("agent runtime prefers stronger structured models for classification and strongest configured models for writing", () => {
   const router = createAgentAiProvider({
     SCOUT_NIM_FREE_API_KEY: "n".repeat(32),
     SCOUT_GROQ_FREE_API_KEY: "g".repeat(32),
@@ -56,11 +56,11 @@ test("agent runtime prefers fast models for classification and stronger models f
   });
 
   assert.deepEqual(router.routePlan.classification.slice(0, 5), [
-    "groq:qwen3.6-27b",
     "nim:nemotron-3.5-lightning",
-    "groq:gpt-oss-120b",
-    "gemini:3.7-flash",
     "nim:deepseek-v4-flash-0731",
+    "groq:gpt-oss-120b",
+    "groq:qwen3.6-27b",
+    "gemini:3.7-flash",
   ]);
   assert.deepEqual(router.routePlan.writing.slice(0, 5), [
     "nim:deepseek-v4-flash-0731",
@@ -86,6 +86,6 @@ test("router can reuse existing standard free-provider keys only after explicit 
     GROQ_API_KEY: "g".repeat(32),
     GEMINI_API_KEY: "m".repeat(32),
   });
-  assert.equal(router.routePlan.classification[0], "groq:qwen3.6-27b");
+  assert.equal(router.routePlan.classification[0], "nim:nemotron-3.5-lightning");
   assert.equal(router.routePlan.writing[0], "nim:deepseek-v4-flash-0731");
 });
