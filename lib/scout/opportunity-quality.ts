@@ -51,7 +51,7 @@ const ATS_PLATFORM_IDS = new Set([
 ]);
 const JOB_BOARD_IDS = new Set(["linkedin", "internshala", "glassdoor", "indeed", "naukri", "wellfound", "unstop", "cutshort", "foundit"]);
 const FORM_IDS = new Set(["tally", "google_forms", "typeform", "fillout", "jotform", "microsoft_forms"]);
-const EARLY_CAREER_PATTERN = /\b(?:intern|internship|trainee|apprentice|co[- ]?op|graduate|new grad|entry[- ]?level|fresher|student)\b/i;
+const EARLY_CAREER_PATTERN = /\b(?:intern|internship|trainee|apprentice|co[- ]?op|graduate|new grad|entry[- ]?level|fresher|student|associate|junior)\b/i;
 const SENIOR_PATTERN = /\b(?:senior|staff|principal|director|head of|vice president|vp|engineering manager|product manager|program manager|project manager|team lead)\b/i;
 const GENERIC_TITLE_PATTERN = /^(?:intern|internship|internship opportunity|job opportunity|career opportunity|application form|internship application form)$/i;
 
