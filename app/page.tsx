@@ -9,6 +9,7 @@ const workspaceLinks = [
   ["Evidence", "/evidence"],
   ["Preferences", "/preferences"],
   ["Quality", "/quality"],
+  ["Roles", "/roles"],
   ["Shortlist", "/shortlist"],
   ["Applications", "/applications"],
   ["Readiness", "/readiness"],
