@@ -168,12 +168,6 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
     stretch: "Stretch role",
   };
 
-  const basisParts = [
-    `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}`,
-    `${distinctSupportingClaimIds.length} distinct supporting claim${distinctSupportingClaimIds.length === 1 ? "" : "s"} for this role`,
-  ];
-  if (taxonomy.preferenceLane === "software_stretch") basisParts.push("pure software-development roles remain a stretch lane by default");
-
   return {
     band,
     label: labels[band],
@@ -181,7 +175,7 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
     supportingClaims,
     gaps,
     eligibilityGaps: gaps,
-    basis: basisParts.join(" · "),
+    basis: `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}`,
     notChecked: [...NOT_CHECKED],
     caveats: [...NOT_CHECKED],
   };
