@@ -53,6 +53,17 @@ function pushUnique(target: RoutedAiCandidate[], item: RoutedAiCandidate | null)
   if (item && !target.some((candidate) => candidate.id === item.id)) target.push(item);
 }
 
+function freeProviderKey(environment: NodeJS.ProcessEnv, scoutKey: string, standardKeys: readonly string[]) {
+  const explicit = value(environment, scoutKey);
+  if (explicit) return explicit;
+  if (value(environment, "SCOUT_USE_STANDARD_FREE_PROVIDER_KEYS") !== "1") return "";
+  for (const standardKey of standardKeys) {
+    const found = value(environment, standardKey);
+    if (found) return found;
+  }
+  return "";
+}
+
 export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.env) {
   const explicitFields = ["SCOUT_AI_ENDPOINT_URL", "SCOUT_AI_API_KEY", "SCOUT_AI_MODEL", "SCOUT_AI_COST_CLASS"] as const;
   const explicitCount = explicitFields.filter((name) => value(environment, name)).length;
@@ -77,11 +88,11 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     return createQualityAiRouter({ classification: [explicit], writing: [explicit] });
   }
 
-  const nimKey = value(environment, "SCOUT_NIM_FREE_API_KEY");
-  const groqKey = value(environment, "SCOUT_GROQ_FREE_API_KEY");
-  const geminiKey = value(environment, "SCOUT_GEMINI_FREE_API_KEY");
-  const cerebrasKey = value(environment, "SCOUT_CEREBRAS_FREE_API_KEY");
-  const openrouterKey = value(environment, "SCOUT_OPENROUTER_FREE_API_KEY");
+  const nimKey = freeProviderKey(environment, "SCOUT_NIM_FREE_API_KEY", ["NVIDIA_API_KEY", "NGC_API_KEY"]);
+  const groqKey = freeProviderKey(environment, "SCOUT_GROQ_FREE_API_KEY", ["GROQ_API_KEY"]);
+  const geminiKey = freeProviderKey(environment, "SCOUT_GEMINI_FREE_API_KEY", ["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
+  const cerebrasKey = freeProviderKey(environment, "SCOUT_CEREBRAS_FREE_API_KEY", ["CEREBRAS_API_KEY"]);
+  const openrouterKey = freeProviderKey(environment, "SCOUT_OPENROUTER_FREE_API_KEY", ["OPENROUTER_API_KEY"]);
   const ollamaEndpoint = value(environment, "SCOUT_OLLAMA_ENDPOINT_URL");
   const ollamaKey = value(environment, "SCOUT_OLLAMA_API_KEY");
   const ollamaModel = value(environment, "SCOUT_OLLAMA_MODEL");
