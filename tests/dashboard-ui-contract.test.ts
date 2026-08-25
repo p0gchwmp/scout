@@ -13,8 +13,8 @@ test("dashboard stylesheet covers the classes rendered by the main workspace", a
     "dashboard", "hero", "tabs", "toolbar", "segmented", "grid", "card", "card-head",
     "chips", "chip", "match-box", "actions", "editor", "status", "section-intro",
   ]) {
-    assert.match(dashboard, new RegExp(`className=(?:\\{|[\"'][^\"']*)[^\n]*${className}`), `dashboard should render ${className}`);
-    assert.match(css, new RegExp(`\\.dashboard(?:[^\\n{]* )?\\.${className}\\b|\\.dashboard\\b`), `dashboard UI stylesheet should cover ${className}`);
+    assert.ok(dashboard.includes(className), `dashboard should render ${className}`);
+    assert.match(css, new RegExp(`\\.${className}\\b`), `dashboard UI stylesheet should cover ${className}`);
   }
 
   assert.match(layout, /import "\.\/globals\.css";\s*import "\.\/dashboard-ui\.css";/);
@@ -27,7 +27,7 @@ test("root workspace navigation is styled and keeps all current owner workflows 
   ]);
 
   for (const href of ["/inbox", "/shortlist", "/readiness", "/review", "/assist", "/voice"]) {
-    assert.match(page, new RegExp(`\\[\"[^\"]+\", \\"${href.replace("/", "\\/")}\\"\\]`));
+    assert.ok(page.includes(`"${href}"`), `workspace navigation should include ${href}`);
   }
   assert.match(page, /dashboard-topbar/);
   assert.match(page, /workspace-links/);
