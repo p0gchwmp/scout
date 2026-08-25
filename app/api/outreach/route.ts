@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreachDrafts } from "../../../db/schema";
+import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreachDrafts, profileEvidence } from "../../../db/schema";
 import {
   parseOutreachCreatePayload,
   parseOutreachMutationPayload,
@@ -46,6 +46,18 @@ async function readJson(request: Request): Promise<unknown> {
   }
 }
 
+async function withVerifiedCandidateName(raw: unknown, db: ReturnType<typeof getDb>) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const current = raw as Record<string, unknown>;
+  if (typeof current.candidateName === "string" && current.candidateName.trim()) return raw;
+  const [name] = await db.select().from(profileEvidence).where(and(
+    eq(profileEvidence.kind, "full_name"),
+    eq(profileEvidence.verified, true),
+  )).limit(1);
+  if (!name) throw new PayloadValidationError("Verify full_name in the application profile before creating outreach");
+  return { ...current, candidateName: name.claim };
+}
+
 export async function GET() {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
@@ -67,16 +79,17 @@ export async function POST(request: Request) {
   const crossOrigin = requireSameOriginMutation(request);
   if (crossOrigin) return crossOrigin;
 
+  const db = getDb();
   let payload: ReturnType<typeof parseOutreachCreatePayload>;
   try {
-    payload = parseOutreachCreatePayload(await readJson(request));
+    const raw = await readJson(request);
+    payload = parseOutreachCreatePayload(await withVerifiedCandidateName(raw, db));
   } catch (error) {
     if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400 });
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
   try {
-    const db = getDb();
     const [job] = await db.select().from(jobs).where(eq(jobs.id, payload.jobId)).limit(1);
     if (!job?.currentSnapshotId) return Response.json({ error: "Current job snapshot not found" }, { status: 404 });
     const [contact] = await db.select().from(contactEvidence).where(and(
