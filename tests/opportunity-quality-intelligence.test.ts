@@ -73,6 +73,16 @@ test("currency, month and remote words need opportunity context before extractio
   assert.equal(result.arrangement, "unspecified");
 });
 
+test("actual pay-rate context is recognized without treating employer-paid costs as compensation", () => {
+  const payRate = assessOpportunityQuality(job({ description: "Pay rate: $20/hour. Internship duration: 12 weeks. Work remotely with a mentor." }), source(), now);
+  assert.equal(payRate.compensation.status, "explicit_paid");
+  assert.match(payRate.compensation.text ?? "", /\$20|pay rate/i);
+
+  const employerCosts = assessOpportunityQuality(job({ description: "We pay for training and travel costs. The internship includes mentorship and a supervised project." }), source(), now);
+  assert.equal(employerCosts.compensation.status, "not_published");
+  assert.equal(employerCosts.flags.some((flag) => flag.code === "candidate_payment"), false);
+});
+
 test("explicit unpaid status is a caution but never an automatic rejection", () => {
   const result = assessOpportunityQuality(job({ description: "This internship is unpaid. You will work on a supervised market-research project. Internship duration: 3 months." }), source(), now);
   assert.equal(result.compensation.status, "explicit_unpaid");
