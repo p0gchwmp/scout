@@ -2,10 +2,11 @@ import { env } from "cloudflare:workers";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { applications, candidateClaims, jobs, profileEvidence } from "../../../../../db/schema";
-import { buildAiApplicationAnswerEnvelope, isSensitiveApplicationQuestion, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
+import { buildAiApplicationAnswerEnvelope, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
 import { draftApplicationAnswersViaAgent } from "../../../../../lib/scout/application-answer-runtime";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
+import { analyzeFormFields, draftableApplicationQuestions } from "../../../../../lib/scout/form-intelligence";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -44,13 +45,26 @@ function cleanQuestions(value: unknown): ApplicationQuestion[] {
   });
 }
 
+function legacyQuestionFields(questions: ApplicationQuestion[]) {
+  return questions.map((question) => ({
+    id: question.id,
+    label: question.label,
+    controlKind: "textarea" as const,
+    inputType: "textarea",
+    maxLength: question.maxLength,
+    required: false,
+  }));
+}
+
 function payload(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("A JSON object is required");
   const record = value as Record<string, unknown>;
   if (typeof record.token !== "string" || record.token.length < 40 || record.token.length > 4000) throw new Error("Handoff token is invalid");
   if (typeof record.currentUrl !== "string" || record.currentUrl.length < 10 || record.currentUrl.length > 2000) throw new Error("Current application URL is invalid");
-  if (Object.keys(record).some((key) => key !== "token" && key !== "currentUrl" && key !== "questions")) throw new Error("Unexpected browser handoff field");
-  return { token: record.token, currentUrl: record.currentUrl, questions: cleanQuestions(record.questions) };
+  if (Object.keys(record).some((key) => key !== "token" && key !== "currentUrl" && key !== "questions" && key !== "fields")) throw new Error("Unexpected browser handoff field");
+  const questions = cleanQuestions(record.questions);
+  const form = record.fields === undefined ? null : analyzeFormFields(record.fields);
+  return { token: record.token, currentUrl: record.currentUrl, questions, form };
 }
 
 export async function OPTIONS() {
@@ -60,7 +74,7 @@ export async function OPTIONS() {
 export async function POST(request: Request) {
   let input: ReturnType<typeof payload>;
   try { input = payload(await request.json()); }
-  catch { return json({ error: "A valid handoff token and current application URL are required" }, 400); }
+  catch { return json({ error: "A valid handoff token, application URL and bounded visible-field description are required" }, 400); }
 
   let verified: Awaited<ReturnType<typeof verifyBrowserHandoffToken>>;
   try {
@@ -89,8 +103,18 @@ export async function POST(request: Request) {
     });
     if (task.allowedUrl !== verified.allowedUrl) return json({ error: "The application URL changed after the handoff was minted" }, 409);
 
-    const manualQuestions = input.questions.filter((question) => isSensitiveApplicationQuestion(question.label));
-    const draftableQuestions = input.questions.filter((question) => !isSensitiveApplicationQuestion(question.label));
+    const form = input.form ?? analyzeFormFields(legacyQuestionFields(input.questions));
+    const draftableQuestions = draftableApplicationQuestions(form.fields);
+    const manualQuestions = form.fields
+      .filter((field) => field.category === "sensitive_manual" || field.category === "needs_user_answer" || field.category === "unsupported_manual")
+      .map((field) => ({
+        id: field.id,
+        label: field.label,
+        category: field.category,
+        required: field.required,
+        reason: field.reason,
+      }));
+
     let aiDraftAnswers: Array<{ key: string; value: string; verified: false; aiDraft: true; sourceField: string; usedClaimIds: string[] }> = [];
     let aiModel: string | null = null;
     let aiError: string | null = null;
@@ -146,13 +170,27 @@ export async function POST(request: Request) {
       task: {
         ...task,
         answers: [...task.answers, ...aiDraftAnswers],
+        formIntelligence: { summary: form.summary },
         aiDraftAnswersRequireReview: aiDraftAnswers.length > 0,
       },
+      formIntelligence: {
+        summary: form.summary,
+        fields: form.fields.map((field) => ({
+          id: field.id,
+          label: field.label,
+          category: field.category,
+          required: field.required,
+          sourceField: field.sourceField,
+          reason: field.reason,
+        })),
+      },
       ai: { model: aiModel, drafted: aiDraftAnswers.length, error: aiError },
-      manualQuestions: manualQuestions.map((question) => ({ id: question.id, label: question.label, reason: "Sensitive or per-application confirmation required" })),
+      manualQuestions,
       safety: {
+        browserSentFieldValues: false,
         bearerTokenContainsProfileData: false,
         sensitiveQuestionsRequireReview: true,
+        unknownAnswersRequireUser: true,
         aiAnswersAreDrafts: true,
         solveCaptcha: false,
         submitApplication: false,
