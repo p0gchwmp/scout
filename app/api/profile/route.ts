@@ -9,6 +9,29 @@ async function readJson(request: Request) {
   catch { throw new PayloadValidationError("A JSON body is required"); }
 }
 
+function dashboardReviewPayload(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as { id?: unknown; action?: unknown; verified?: unknown };
+  if (raw.action !== "verify" && raw.action !== "unverify") return null;
+  const action = typeof raw.verified === "boolean"
+    ? (raw.verified ? "verify" : "unverify")
+    : raw.action;
+  return { id: raw.id, action };
+}
+
+async function reviewProfile(raw: unknown) {
+  let payload: ReturnType<typeof parseProfileReviewPayload>;
+  try { payload = parseProfileReviewPayload(raw); }
+  catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Invalid profile action" }, { status: 400 }); }
+  try {
+    const [field] = await getDb().update(profileEvidence).set({ verified: payload.action === "verify", updatedAt: new Date().toISOString() }).where(eq(profileEvidence.id, payload.id)).returning();
+    if (!field) return Response.json({ error: "Profile field not found" }, { status: 404 });
+    return Response.json({ field });
+  } catch (error) {
+    return scoutServerError("profile.review", error, "Unable to review application profile field");
+  }
+}
+
 export async function GET() {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
@@ -25,8 +48,18 @@ export async function POST(request: Request) {
   if (unauthorized) return unauthorized;
   const crossOrigin = requireSameOriginMutation(request);
   if (crossOrigin) return crossOrigin;
+
+  let raw: unknown;
+  try { raw = await readJson(request); }
+  catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Invalid profile field" }, { status: 400 }); }
+
+  // Compatibility for the existing Dashboard. The canonical review verb is PATCH,
+  // but an already-open client may POST {action:"verify", id, verified:false}.
+  const review = dashboardReviewPayload(raw);
+  if (review) return reviewProfile(review);
+
   let payload: ReturnType<typeof parseProfileUpsertPayload>;
-  try { payload = parseProfileUpsertPayload(await readJson(request)); }
+  try { payload = parseProfileUpsertPayload(raw); }
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Invalid profile field" }, { status: 400 }); }
   try {
     const db = getDb();
@@ -49,14 +82,8 @@ export async function PATCH(request: Request) {
   if (unauthorized) return unauthorized;
   const crossOrigin = requireSameOriginMutation(request);
   if (crossOrigin) return crossOrigin;
-  let payload: ReturnType<typeof parseProfileReviewPayload>;
-  try { payload = parseProfileReviewPayload(await readJson(request)); }
+  let raw: unknown;
+  try { raw = await readJson(request); }
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Invalid profile action" }, { status: 400 }); }
-  try {
-    const [field] = await getDb().update(profileEvidence).set({ verified: payload.action === "verify", updatedAt: new Date().toISOString() }).where(eq(profileEvidence.id, payload.id)).returning();
-    if (!field) return Response.json({ error: "Profile field not found" }, { status: 404 });
-    return Response.json({ field });
-  } catch (error) {
-    return scoutServerError("profile.review", error, "Unable to review application profile field");
-  }
+  return reviewProfile(raw);
 }
