@@ -26,6 +26,33 @@ test("AI provider refuses metered use unless explicitly enabled", () => {
   }), /Metered AI is disabled/);
 });
 
+test("AI provider allows HTTP only for explicit loopback development", () => {
+  const base = {
+    apiKey: "test-api-key",
+    model: "test-model",
+    costClass: "free_or_included" as const,
+  };
+  assert.throws(() => createStructuredAiProvider({
+    ...base,
+    endpointUrl: "http://127.0.0.1:11434/v1/chat/completions",
+  }), /HTTPS outside explicit loopback development/);
+  assert.doesNotThrow(() => createStructuredAiProvider({
+    ...base,
+    endpointUrl: "http://127.0.0.1:11434/v1/chat/completions",
+    allowLoopbackDev: true,
+  }));
+  assert.doesNotThrow(() => createStructuredAiProvider({
+    ...base,
+    endpointUrl: "http://localhost:11434/v1/chat/completions",
+    allowLoopbackDev: true,
+  }));
+  assert.throws(() => createStructuredAiProvider({
+    ...base,
+    endpointUrl: "http://192.168.1.50:11434/v1/chat/completions",
+    allowLoopbackDev: true,
+  }), /HTTPS outside explicit loopback development/);
+});
+
 test("AI provider classifies only explicitly published candidate IDs", async () => {
   const provider = providerWith({ classifications: [{ candidateId: "c1", suitability: "high", reason: "Explicit careers inbox" }] });
   const result = await provider.classifyPublishedContacts([{ id: "c1", email: "careers@example.com", sourceUrl: "https://example.com/careers", excerpt: "Internships: careers@example.com", sourceType: "official_careers" }]);
