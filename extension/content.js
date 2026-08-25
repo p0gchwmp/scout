@@ -158,7 +158,7 @@ function setControlValue(input, value) {
 
 function answerForField(task, field, input) {
   const normalizedLabel = normalizeLabel(field.label);
-  const normalizedName = normalizeLabel(`${input.name || ""}`.replace(/[\[\]_-]+/g, " "));
+  const normalizedName = normalizeLabel(`${input.name || ""}`.replace(/[[\]_-]+/g, " "));
   return task.answers.find((item) => {
     if (!item || typeof item.key !== "string" || typeof item.value !== "string") return false;
     if (item.verified !== true && !(item.aiDraft === true && item.reviewed === true)) return false;
