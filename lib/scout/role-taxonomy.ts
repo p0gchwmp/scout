@@ -91,7 +91,7 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   },
 ] as const;
 
-const SECTOR_RULES: readonly Array<{ tag: RoleSectorTag; pattern: RegExp }> = [
+const SECTOR_RULES: ReadonlyArray<{ tag: RoleSectorTag; pattern: RegExp }> = [
   { tag: "Health-tech", pattern: /\b(?:health[- ]?tech|healthcare|health care|medical|clinic|patient|pharma|pharmaceutical|biotech|digital health)\b/i },
   { tag: "Policy / governance", pattern: /\b(?:public policy|policy research|government|governance|legislative|public sector|think tank|regulatory policy|development sector)\b/i },
   { tag: "Fintech", pattern: /\b(?:fintech|payments?|banking|financial services|lending|credit platform|digital payments?|neobank)\b/i },
