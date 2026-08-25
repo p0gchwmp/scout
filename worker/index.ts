@@ -62,24 +62,26 @@ const worker = {
     }
 
     if (OWNER_PAGE_PATHS.has(url.pathname) || url.pathname.startsWith("/api/")) {
-      const ownerId = request.headers.get(SCOUT_OWNER_USER_ID_HEADER)?.trim()
-        || env.SCOUT_OWNER_USER_ID?.trim();
-      if (!ownerId) return new Response("Scout owner is not configured", { status: 503 });
-      const userId = request.headers.get(USER_ID_HEADER)?.trim();
-      if (!userId) return new Response("Authentication required", { status: 401 });
-      if (userId !== ownerId) return new Response("Forbidden", { status: 403 });
+      const authenticatedUserId = request.headers.get(USER_ID_HEADER);
+      if (authenticatedUserId) {
+        const ownerId = env.SCOUT_OWNER_USER_ID?.trim();
+        if (!ownerId) return Response.json({ error: "Scout owner is not configured" }, { status: 503 });
+        if (authenticatedUserId !== ownerId) return Response.json({ error: "Forbidden" }, { status: 403 });
+        const routedHeaders = new Headers(request.headers);
+        routedHeaders.set(SCOUT_OWNER_USER_ID_HEADER, ownerId);
+        request = new Request(request, { headers: routedHeaders });
+      }
     }
 
-    if (url.pathname === "/_next/image") {
-      return handleImageOptimization(request, env, ctx, {
-        deviceSizes: DEFAULT_DEVICE_SIZES,
-        imageSizes: DEFAULT_IMAGE_SIZES,
-        remotePatterns: [],
-        localPatterns: undefined,
-        minimumCacheTTL: 60,
-        formats: ["image/webp"],
-        qualities: [75],
-      });
+    if (url.pathname === "/_vinext/image") {
+      const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
+      return handleImageOptimization(request, {
+        fetchAsset: (path) => env.ASSETS.fetch(new Request(new URL(path, request.url))),
+        transformImage: async (body, { width, format, quality }) => {
+          const result = await env.IMAGES.input(body).transform(width > 0 ? { width } : {}).output({ format, quality });
+          return result.response();
+        },
+      }, allowedWidths);
     }
 
     return handler.fetch(request, env, ctx);
