@@ -28,6 +28,7 @@ export async function GET() {
       db.select({
         id: syncRuns.id,
         sourceId: syncRuns.sourceId,
+        idempotencyKey: syncRuns.idempotencyKey,
         status: syncRuns.status,
         observedAt: syncRuns.observedAt,
         discoveredCount: syncRuns.discoveredCount,
@@ -38,7 +39,7 @@ export async function GET() {
         completedAt: syncRuns.completedAt,
         error: syncRuns.error,
         createdAt: syncRuns.createdAt,
-      }).from(syncRuns).orderBy(desc(syncRuns.createdAt)).limit(500),
+      }).from(syncRuns).orderBy(desc(syncRuns.observedAt), desc(syncRuns.createdAt)).limit(500),
       db.select({
         sourceId: jobs.sourceRegistryId,
         lifecycleState: jobs.lifecycleState,
@@ -50,7 +51,11 @@ export async function GET() {
     const latestRunBySource = new Map<string, (typeof recentRuns)[number]>();
     const lastSuccessfulAtBySource = new Map<string, string>();
     for (const run of recentRuns) {
-      if (!latestRunBySource.has(run.sourceId)) latestRunBySource.set(run.sourceId, run);
+      const current = latestRunBySource.get(run.sourceId);
+      const preferSourceObservation = current?.observedAt === run.observedAt
+        && run.idempotencyKey.startsWith("local-health:")
+        && !current.idempotencyKey.startsWith("local-health:");
+      if (!current || run.observedAt > current.observedAt || preferSourceObservation) latestRunBySource.set(run.sourceId, run);
       if (run.status === "completed" && !lastSuccessfulAtBySource.has(run.sourceId)) {
         lastSuccessfulAtBySource.set(run.sourceId, run.completedAt ?? run.observedAt);
       }
