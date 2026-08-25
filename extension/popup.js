@@ -4,6 +4,8 @@ const fillButton = document.querySelector("#fill");
 const loadButton = document.querySelector("#load-task");
 const scoutUrlInput = document.querySelector("#scout-url");
 const handoffInput = document.querySelector("#handoff");
+const intelligence = document.querySelector("#intelligence");
+const counts = document.querySelector("#counts");
 
 function normalizeScoutBaseUrl(raw) {
   const url = new URL(raw.trim());
@@ -32,17 +34,55 @@ async function send(type) {
   }
 }
 
+function renderIntelligence(summary) {
+  if (!summary || !Number.isFinite(summary.total)) {
+    intelligence.hidden = true;
+    counts.textContent = "";
+    return;
+  }
+  const items = [
+    [summary.safeAutofill ?? 0, "Safe autofill", "safe"],
+    [summary.claimDrafts ?? 0, "Claim drafts", "draft"],
+    [summary.needsUser ?? 0, "Needs your answer", "manual"],
+    [(summary.sensitiveManual ?? 0) + (summary.unsupportedManual ?? 0), "Sensitive / manual", "manual"],
+  ];
+  counts.replaceChildren(...items.map(([number, label, className]) => {
+    const card = document.createElement("div");
+    card.className = `count ${className}`;
+    const strong = document.createElement("strong");
+    strong.textContent = String(number);
+    card.append(strong, document.createTextNode(String(label)));
+    return card;
+  }));
+  intelligence.hidden = false;
+}
+
+function fieldMetadata(inspection) {
+  const fields = inspection?.formIntelligence?.fields;
+  if (!Array.isArray(fields)) return [];
+  return fields.map((field) => ({
+    id: field.id,
+    label: field.label,
+    controlKind: field.controlKind,
+    inputType: field.inputType,
+    maxLength: field.maxLength,
+    required: field.required === true,
+  }));
+}
+
 async function refreshInspection() {
   const result = await send("SCOUT_INSPECT");
+  renderIntelligence(result?.formIntelligence?.summary);
   if (!result?.supported) {
     status.textContent = "This page is not a recognized or Scout-approved application form.";
     fillButton.disabled = true;
     return result;
   }
   status.classList.remove("blocked");
+  const total = result.formIntelligence?.summary?.total ?? result.fields ?? 0;
   status.textContent = result.taskReady
-    ? `${result.fields} form fields found on ${result.platform}. Scout has an exact-page task ready; AI text remains a draft until you review the form.`
-    : `${result.fields} form fields found on ${result.platform}. Generate a browser handoff in Scout, then load it here.`;
+    ? `${total} visible field(s) found on ${result.platform}. Scout has an exact-page task ready; uncertain and sensitive fields stay manual.`
+    : `${total} visible field(s) found on ${result.platform}. Generate a browser handoff in Scout, then load it here.`;
   fillButton.disabled = !result.taskReady;
   return result;
 }
@@ -67,7 +107,7 @@ async function loadApprovedTask() {
   const response = await fetch(`${baseUrl}/api/applications/browser-task/exchange`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token, currentUrl: tab.url, questions: inspection?.questions ?? [] }),
+    body: JSON.stringify({ token, currentUrl: tab.url, fields: fieldMetadata(inspection) }),
     cache: "no-store",
     credentials: "omit",
   });
@@ -75,10 +115,12 @@ async function loadApprovedTask() {
   if (!response.ok || !payload?.task) throw new Error(payload?.error || "Scout rejected the browser handoff.");
   await chrome.storage.local.set({ approvedTask: payload.task, scoutBaseUrl: baseUrl });
   handoffInput.value = "";
+  renderIntelligence(payload.formIntelligence?.summary);
   const aiCount = payload.ai?.drafted ?? 0;
   const manualCount = payload.manualQuestions?.length ?? 0;
+  const safeCount = payload.formIntelligence?.summary?.safeAutofill ?? 0;
   const aiNote = payload.ai?.error ? ` ${payload.ai.error}.` : "";
-  status.textContent = `Task loaded. ${aiCount} non-sensitive free-text answer draft(s) prepared; ${manualCount} question(s) require you.${aiNote} Review everything before submitting.`;
+  status.textContent = `Task loaded. ${safeCount} profile-backed field(s) classified safe, ${aiCount} claim-backed text draft(s) prepared, and ${manualCount} field(s) stay with you.${aiNote} Review everything before submitting.`;
   fillButton.disabled = false;
 }
 
@@ -88,6 +130,7 @@ chrome.storage.local.get(["scoutBaseUrl"]).then(({ scoutBaseUrl }) => {
 
 refreshInspection().catch(() => {
   status.textContent = "Scout could not inspect this page.";
+  intelligence.hidden = true;
   fillButton.disabled = true;
 });
 
@@ -104,6 +147,7 @@ fillButton.addEventListener("click", async () => {
   const result = await send("SCOUT_FILL");
   const filled = result?.filled ?? 0;
   const aiDrafts = result?.aiDraftsFilled ?? 0;
+  renderIntelligence(result?.formIntelligence);
   if (result?.blockers?.length) {
     status.classList.add("blocked");
     status.textContent = `${filled} safe field(s) filled${aiDrafts ? `, including ${aiDrafts} AI draft answer(s)` : ""}. Still needs you: ${result.blockers.join(" · ")}. Review the form before submit.`;
