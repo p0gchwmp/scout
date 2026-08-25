@@ -22,7 +22,7 @@ test("opportunity quality workspace is owner-only and read-only", async () => {
 
 test("quality intelligence never certifies legitimacy, invents pay, or mutates fit", async () => {
   const client = await readFile(new URL("../app/quality/quality-client.tsx", import.meta.url), "utf8");
-  assert.match(client, /does not certify a company as legitimate/i);
+  assert.match(client, /without certifying a company as legitimate/i);
   assert.match(client, /Compensation not published/);
   assert.match(client, /No role is auto-rejected/);
   assert.equal(OPPORTUNITY_QUALITY_INTELLIGENCE_CAPABILITIES.persistedEvidenceOnly, true);
