@@ -21,6 +21,7 @@ export const AI_PROVIDER_CAPABILITIES = Object.freeze({
   structuredOutreachDrafting: true,
   structuredApplicationAnswerDrafting: true,
   humanWritingSecondPass: true,
+  deliberateQualityRefinement: true,
   arbitraryToolUse: false,
   browseInternet: false,
   inventContacts: false,
@@ -38,6 +39,7 @@ export type AiProviderOptions = {
   allowMeteredAi?: boolean;
   allowLoopbackDev?: boolean;
   jsonMode?: boolean;
+  alwaysRefineWriting?: boolean;
   fetcher?: typeof fetch;
 };
 
@@ -159,16 +161,16 @@ export function createStructuredAiProvider(options: AiProviderOptions) {
       );
       const first = validateAiOutreachResult(firstRaw, envelope);
       const warnings = lintHumanWriting(`${first.subject}\n${first.body}`, "outreach", envelope.voice.sample);
-      if (!warnings.length) return first;
+      if (!options.alwaysRefineWriting && !warnings.length) return first;
 
       const revisedRaw = await requestJson(
         [
-          "Rewrite the supplied draft for style only. Keep every factual claim and the exact usedClaimIds set unchanged. Do not add a new fact, number, metric, credential, date, eligibility statement, referral, email address, or URL. Return JSON {subject,body,usedClaimIds}.",
+          "Refine the supplied outreach draft for clarity, specificity, restraint and natural human tone. Preserve every factual claim and the exact usedClaimIds set. Do not add a new fact, number, metric, credential, date, eligibility statement, availability claim, referral, email address, or URL. Keep it concise and non-pushy. Return JSON {subject,body,usedClaimIds}.",
           humanInstruction,
           envelope.voice.styleNote ? `Verified style note: ${envelope.voice.styleNote}` : "",
         ].filter(Boolean).join("\n"),
         { envelope, draft: first, warnings },
-        0.2,
+        0.15,
       );
       const revised = validateAiOutreachResult(revisedRaw, envelope);
       if (!sameStringSet(first.usedClaimIds, revised.usedClaimIds)) throw new Error("Humanization changed the outreach claim bindings");
@@ -190,16 +192,16 @@ export function createStructuredAiProvider(options: AiProviderOptions) {
       );
       const first = validateAiApplicationAnswers(firstRaw, envelope);
       const warnings = applicationAnswerStyleWarnings(first, envelope.voice.sample);
-      if (!warnings.length) return first;
+      if (!options.alwaysRefineWriting && !warnings.length) return first;
 
       const revisedRaw = await requestJson(
         [
-          "Rewrite the supplied application answers for style only. Preserve each questionId and its exact usedClaimIds set. Keep every factual claim unchanged and do not introduce a new fact, number, metric, credential, date, eligibility statement, referral, email address, or URL. Return JSON {answers:[{questionId,answer,usedClaimIds}]}.",
+          "Refine the supplied application answers for clarity, relevance, specificity and natural human tone. Preserve each questionId and its exact usedClaimIds set. Keep every factual claim unchanged and do not introduce a new fact, number, metric, credential, date, eligibility statement, availability claim, referral, email address, or URL. Prefer direct answers over generic enthusiasm. Return JSON {answers:[{questionId,answer,usedClaimIds}]}.",
           humanInstruction,
           envelope.voice.styleNote ? `Verified style note: ${envelope.voice.styleNote}` : "",
         ].filter(Boolean).join("\n"),
         { envelope, answers: first, warnings },
-        0.2,
+        0.15,
       );
       const revised = validateAiApplicationAnswers(revisedRaw, envelope);
       if (!sameApplicationClaimBindings(first, revised)) throw new Error("Humanization changed application-answer claim bindings");
