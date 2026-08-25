@@ -7,6 +7,7 @@ const workspaceLinks = [
   ["Inbox", "/inbox"],
   ["Sources", "/sources"],
   ["Evidence", "/evidence"],
+  ["Preferences", "/preferences"],
   ["Shortlist", "/shortlist"],
   ["Applications", "/applications"],
   ["Readiness", "/readiness"],
