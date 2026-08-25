@@ -41,6 +41,8 @@ export type OpportunityQualitySummary = {
   suppressedLowSignal: number;
 };
 
+type OpportunityIdentityInput = Pick<OpportunityDiscoveryLead, "provider" | "canonicalUrl" | "company" | "title" | "location" | "postedAt">;
+
 const ATS_PLATFORM_IDS = new Set([
   "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "bamboohr",
   "icims", "jobvite", "recruitee", "teamtailor", "breezyhr", "jazzhr", "pinpoint", "personio",
@@ -114,7 +116,7 @@ function postedTimestamp(value: string | null) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function locationsCompatible(left: OpportunityDiscoveryLead, right: OpportunityDiscoveryLead) {
+function locationsCompatible(left: OpportunityIdentityInput, right: OpportunityIdentityInput) {
   const a = normalizeLocation(left.location);
   const b = normalizeLocation(right.location);
   if (a === b) return true;
@@ -131,7 +133,7 @@ function locationsCompatible(left: OpportunityDiscoveryLead, right: OpportunityD
   return Math.abs(leftPosted - rightPosted) <= 45 * 86_400_000;
 }
 
-function duplicateIdentity(left: OpportunityDiscoveryLead, right: OpportunityDiscoveryLead) {
+export function sameOpportunityIdentity(left: OpportunityIdentityInput, right: OpportunityIdentityInput) {
   if (normalizedUrl(left.canonicalUrl) === normalizedUrl(right.canonicalUrl)) return true;
   const leftCompany = normalizeCompany(left.company);
   const rightCompany = normalizeCompany(right.company);
@@ -186,7 +188,7 @@ export function consolidateOpportunityLeads<T extends OpportunityDiscoveryLead>(
 
   const groups: Array<{ representative: T; members: T[] }> = [];
   for (const lead of sorted) {
-    const existing = groups.find((group) => group.members.some((member) => duplicateIdentity(member, lead)));
+    const existing = groups.find((group) => group.members.some((member) => sameOpportunityIdentity(member, lead)));
     if (existing) existing.members.push(lead);
     else groups.push({ representative: lead, members: [lead] });
   }
