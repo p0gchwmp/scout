@@ -71,15 +71,19 @@ export type OpportunityQualityAssessment = {
 };
 
 const EARLY_CAREER_PATTERN = /\b(?:intern|internship|trainee|apprentice|co[- ]?op|graduate|new grad|entry[- ]?level|fresher|student|associate)\b/i;
-const PAID_PATTERN = /(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)\s?[\d,.]+(?:\s*(?:-|–|to)\s*(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)?\s?[\d,.]+)?(?:\s*\/\s*(?:month|mo|week|wk|hour|hr|year|yr))?|\b(?:paid internship|paid intern|stipend(?:ed)?\s*(?:of|:)?\s*(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)?\s?[\d,.]+)\b/i;
+const MONEY_VALUE = String.raw`(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)\s?[\d,.]+(?:\s*(?:-|–|to)\s*(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp|aed|sgd)?\s?[\d,.]+)?`;
+const PAID_PATTERN = new RegExp(
+  String.raw`\b(?:paid internship|paid intern)\b|\b(?:stipend|salary|compensation|remuneration)\b.{0,35}(?:${MONEY_VALUE}|\d[\d,.]{2,})|${MONEY_VALUE}.{0,35}\b(?:stipend|salary|compensation|remuneration|per month|monthly|per week|weekly|per hour|hourly)\b`,
+  "i",
+);
 const UNPAID_PATTERN = /\b(?:unpaid internship|unpaid intern|this (?:role|internship) is unpaid|no stipend|without stipend|unpaid position)\b/i;
 const COMMISSION_ONLY_PATTERN = /\b(?:commission[- ]only|commission based only|solely commission|100% commission)\b/i;
 const FEE_PATTERN = /\b(?:registration fee|training fee|application fee|security deposit|refundable deposit|pay.{0,35}(?:join|internship|training)|fee.{0,35}(?:join|internship|training))\b/i;
 const UNPAID_TRIAL_PATTERN = /\b(?:unpaid trial|unpaid probation|work for free|free trial work)\b/i;
 const DURATION_PATTERNS = [
-  /\b(?:duration\s*[-:]?\s*)?(\d{1,2}\s*(?:weeks?|months?))\b/i,
-  /\b((?:three|four|five|six|eight|nine|twelve)\s+(?:weeks?|months?))\b/i,
-  /\b((?:summer|winter)\s+internship)\b/i,
+  /\b(?:internship\s+duration|program(?:me)?\s+duration|duration)\s*[-:]?\s*(\d{1,2}\s*(?:weeks?|months?)|(?:three|four|five|six|eight|nine|twelve)\s+(?:weeks?|months?))\b/i,
+  /\b(\d{1,2}[- ](?:week|month)s?|(?:three|four|five|six|eight|nine|twelve)[- ](?:week|month)s?)[- ](?:internship|program(?:me)?)\b/i,
+  /\b(?:internship|program(?:me)?)\s+(?:runs?|lasts?|for)\s+(?:for\s+)?(\d{1,2}\s*(?:weeks?|months?)|(?:three|four|five|six|eight|nine|twelve)\s+(?:weeks?|months?))\b/i,
 ] as const;
 const MENTORSHIP_PATTERN = /\b(?:mentor|mentorship|coaching|supervision|buddy program|learning and development)\b/i;
 const PROJECT_PATTERN = /\b(?:project|deliverable|ownership|responsibilit(?:y|ies)|cross[- ]functional|presentation|research project|capstone)\b/i;
@@ -150,11 +154,11 @@ function arrangementFrom(job: OpportunityQualityJob, text: string): { arrangemen
   if (workplace === "remote") return { arrangement: "remote", evidence: "Persisted workplace type: remote" };
   if (workplace === "hybrid") return { arrangement: "hybrid", evidence: "Persisted workplace type: hybrid" };
   if (workplace === "onsite" || workplace === "on-site" || workplace === "office") return { arrangement: "onsite", evidence: `Persisted workplace type: ${job.workplaceType}` };
-  const hybrid = text.match(/\bhybrid\b/i);
+  const hybrid = text.match(/\b(?:hybrid (?:role|position|internship|work|schedule|model)|work(?:ing)? in a hybrid (?:model|arrangement))\b/i);
   if (hybrid) return { arrangement: "hybrid", evidence: excerptAround(text, hybrid) };
-  const remote = text.match(/\b(?:remote|work from home|distributed)\b/i);
+  const remote = text.match(/\b(?:fully remote|remote[- ]first|remote (?:role|position|internship|job|work)|work(?:ing)? remotely|work from home)\b/i);
   if (remote) return { arrangement: "remote", evidence: excerptAround(text, remote) };
-  const onsite = text.match(/\b(?:on[- ]?site|in[- ]office|work from office)\b/i);
+  const onsite = text.match(/\b(?:on[- ]?site (?:role|position|internship|job|work)|in[- ]office (?:role|position|work|schedule)|work from office)\b/i);
   if (onsite) return { arrangement: "onsite", evidence: excerptAround(text, onsite) };
   return { arrangement: "unspecified", evidence: null };
 }
