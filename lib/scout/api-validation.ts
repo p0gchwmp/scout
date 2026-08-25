@@ -67,6 +67,18 @@ function expectedVersion(value: unknown): number {
   return value as number;
 }
 
+function optionalHttpsUrl(value: unknown, field: string) {
+  if (value === undefined || value === null || value === "") return null;
+  const raw = boundedString(value, field, 2000, true);
+  let parsed: URL;
+  try { parsed = new URL(raw); }
+  catch { throw new PayloadValidationError(`${field} must be a valid HTTPS URL`); }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+    throw new PayloadValidationError(`${field} must be a valid HTTPS URL`);
+  }
+  return parsed.toString();
+}
+
 export function parseClaimCreatePayload(value: unknown) {
   const payload = record(value);
   return {
@@ -182,6 +194,23 @@ export function parseProfileReviewPayload(value: unknown) {
 export function parseApplicationPreparePayload(value: unknown) {
   const payload = record(value);
   return { jobId: id(payload.jobId, "Job id") };
+}
+
+export function parseApplicationProgressMutationPayload(value: unknown) {
+  const payload = record(value);
+  if (payload.action !== "mark_external_submission" && payload.action !== "clear_external_submission") {
+    throw new PayloadValidationError("A valid application progress action is required");
+  }
+  const common = {
+    applicationId: id(payload.applicationId, "Application id"),
+    expectedArtifactVersion: expectedVersion(payload.expectedArtifactVersion),
+  };
+  if (payload.action === "clear_external_submission") return { ...common, action: payload.action } as const;
+  return {
+    ...common,
+    action: payload.action,
+    confirmationUrl: optionalHttpsUrl(payload.confirmationUrl, "Confirmation URL"),
+  } as const;
 }
 
 export function parseInternshipIntakePayload(value: unknown) {
