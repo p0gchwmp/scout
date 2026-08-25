@@ -1,4 +1,5 @@
 import { evaluateResumeAlignment, type ResumeAlignment, type ResumeClaimText } from "./resume-alignment.ts";
+import { preferenceForFamily, type PreferenceCalibration } from "./preference-calibration.ts";
 import { classifyRoleTaxonomy, type RoleFamilyId, type RolePreferenceLane, type RoleSectorTag } from "./role-taxonomy.ts";
 
 export type ShortlistJob = {
@@ -27,6 +28,9 @@ export type ShortlistAssessment = {
   matchedRoleFamilies: string[];
   preferenceLane: RolePreferenceLane;
   preferenceLabel: string;
+  learnedPreferencePoints: number;
+  learnedPreferenceLabel: string;
+  learnedPreferenceSignalCount: number;
   sectorTags: RoleSectorTag[];
   supportingClaimIds: string[];
   gaps: string[];
@@ -83,9 +87,16 @@ function priorityFor(score: number, alignment: ResumeAlignment): Pick<ShortlistA
   return { priority: "low", label: "Lower priority" };
 }
 
-export function evaluateShortlist(job: ShortlistJob, claims: ResumeClaimText[], now = new Date()): ShortlistAssessment {
+export function evaluateShortlist(
+  job: ShortlistJob,
+  claims: ResumeClaimText[],
+  now = new Date(),
+  calibration?: PreferenceCalibration,
+): ShortlistAssessment {
   const alignment = evaluateResumeAlignment(job, claims);
   const taxonomy = classifyRoleTaxonomy(job);
+  const learnedPreference = preferenceForFamily(calibration, taxonomy.primaryFamily.id);
+  const learnedPreferencePoints = learnedPreference?.adjustment ?? 0;
   const fresh = freshness(job, now);
   const place = locationContext(job);
   const claimIds = [...new Set(alignment.supportingClaims.flatMap((support) => support.claimIds))].sort();
@@ -102,13 +113,18 @@ export function evaluateShortlist(job: ShortlistJob, claims: ResumeClaimText[], 
   const gapPoints = gaps.length === 0 ? 8 : gaps.length === 1 ? 3 : 0;
   const snapshotPoints = job.currentSnapshotId ? 5 : 0;
   const lanePoints = taxonomy.preferenceLane === "software_stretch" ? -8 : 5;
-  const score = Math.max(0, Math.min(100, base[alignment.band] + themePoints + gapPoints + snapshotPoints + fresh.points + lanePoints));
+  const score = Math.max(0, Math.min(100, base[alignment.band] + themePoints + gapPoints + snapshotPoints + fresh.points + lanePoints + learnedPreferencePoints));
   const priority = priorityFor(score, alignment);
 
   const reasons = [
     alignment.label,
     `Role family: ${taxonomy.primaryFamily.label}`,
     taxonomy.preferenceLabel,
+    learnedPreferencePoints
+      ? `Repeated explicit feedback adds ${learnedPreferencePoints > 0 ? "+" : ""}${learnedPreferencePoints} soft preference points`
+      : learnedPreference?.signalCount
+        ? learnedPreference.label
+        : "No active learned preference nudge for this role family",
     alignment.matches.length ? `${alignment.matches.length} evidenced fit theme${alignment.matches.length === 1 ? "" : "s"}` : "No evidenced fit themes yet",
     claimIds.length ? `${claimIds.length} approved supporting claim${claimIds.length === 1 ? "" : "s"}` : "No approved supporting claims matched",
     gaps.length ? `${gaps.length} explicit gap${gaps.length === 1 ? "" : "s"} to review` : "No explicit eligibility gap detected by current rules",
@@ -138,6 +154,9 @@ export function evaluateShortlist(job: ShortlistJob, claims: ResumeClaimText[], 
   } else {
     whyWorthYourTime = "Keep this behind stronger matches unless the company or role is unusually interesting to you.";
   }
+  if (learnedPreferencePoints) {
+    whyWorthYourTime += ` Your repeated Shortlist/Reject feedback currently applies a small ${learnedPreferencePoints > 0 ? "+" : ""}${learnedPreferencePoints}-point preference nudge; evidence and eligibility still control the decision.`;
+  }
 
   return {
     score,
@@ -152,6 +171,9 @@ export function evaluateShortlist(job: ShortlistJob, claims: ResumeClaimText[], 
     matchedRoleFamilies: taxonomy.matchedFamilies.map((family) => family.label),
     preferenceLane: taxonomy.preferenceLane,
     preferenceLabel: taxonomy.preferenceLabel,
+    learnedPreferencePoints,
+    learnedPreferenceLabel: learnedPreference?.label ?? "No learned preference signal",
+    learnedPreferenceSignalCount: learnedPreference?.signalCount ?? 0,
     sectorTags: taxonomy.sectorTags,
     supportingClaimIds: claimIds,
     gaps,
