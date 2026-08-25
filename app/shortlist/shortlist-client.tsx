@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  buildPreferenceCalibration,
+  parsePreferenceFeedback,
+  PREFERENCE_STORAGE_KEY,
+  recordPreferenceFeedback,
+  serializePreferenceFeedback,
+  type PreferenceFeedback,
+} from "../../lib/scout/preference-calibration";
 import { ROLE_FAMILIES, type RoleFamilyId } from "../../lib/scout/role-taxonomy";
 import { evaluateShortlist, type ShortlistAssessment } from "../../lib/scout/shortlist-intelligence";
 import styles from "./shortlist.module.css";
@@ -52,6 +60,7 @@ export function ShortlistWorkspace() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [preferenceFeedback, setPreferenceFeedback] = useState<PreferenceFeedback[]>([]);
   const [filter, setFilter] = useState<Filter>("All");
   const [familyFilter, setFamilyFilter] = useState<FamilyFilter>("all");
   const [query, setQuery] = useState("");
@@ -89,15 +98,25 @@ export function ShortlistWorkspace() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const ranked = useMemo<RankedJob[]>(() => jobs
-    .filter((job) => job.lifecycleState === "active" && job.state !== "rejected")
-    .map((job) => ({ job, assessment: evaluateShortlist(job, claims) }))
-    .sort((left, right) => {
-      if (right.assessment.score !== left.assessment.score) return right.assessment.score - left.assessment.score;
-      const rightPosted = Date.parse(right.job.postedAt ?? "") || 0;
-      const leftPosted = Date.parse(left.job.postedAt ?? "") || 0;
-      return rightPosted - leftPosted || left.job.company.localeCompare(right.job.company);
-    }), [jobs, claims]);
+  useEffect(() => {
+    try { setPreferenceFeedback(parsePreferenceFeedback(window.localStorage.getItem(PREFERENCE_STORAGE_KEY))); }
+    catch { setPreferenceFeedback([]); }
+  }, []);
+
+  const calibration = useMemo(() => buildPreferenceCalibration(jobs, preferenceFeedback), [jobs, preferenceFeedback]);
+
+  const ranked = useMemo<RankedJob[]>(() => {
+    const now = new Date();
+    return jobs
+      .filter((job) => job.lifecycleState === "active" && job.state !== "rejected")
+      .map((job) => ({ job, assessment: evaluateShortlist(job, claims, now, calibration) }))
+      .sort((left, right) => {
+        if (right.assessment.score !== left.assessment.score) return right.assessment.score - left.assessment.score;
+        const rightPosted = Date.parse(right.job.postedAt ?? "") || 0;
+        const leftPosted = Date.parse(left.job.postedAt ?? "") || 0;
+        return rightPosted - leftPosted || left.job.company.localeCompare(right.job.company);
+      });
+  }, [jobs, claims, calibration]);
 
   const visible = useMemo(() => ranked.filter(({ job, assessment }) => {
     const text = `${job.company} ${job.title} ${job.location} ${job.description}`.toLowerCase();
@@ -118,6 +137,18 @@ export function ShortlistWorkspace() {
     shortlisted: ranked.filter(({ job }) => job.state === "shortlisted").length,
   }), [ranked]);
 
+  function savePreference(jobId: string, state: Job["state"]) {
+    const signal = state === "shortlisted" ? "interested" as const : state === "rejected" ? "not_interested" as const : null;
+    const next = recordPreferenceFeedback(preferenceFeedback, jobId, signal);
+    setPreferenceFeedback(next);
+    try {
+      window.localStorage.setItem(PREFERENCE_STORAGE_KEY, serializePreferenceFeedback(next));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function updateJob(jobId: string, state: Job["state"]) {
     setBusy(`job:${jobId}`); setError(""); setNotice("");
     try {
@@ -128,7 +159,15 @@ export function ShortlistWorkspace() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to update job");
-      setNotice(state === "shortlisted" ? "Role shortlisted." : state === "saved" ? "Role saved for later." : "Role rejected and removed from the active shortlist.");
+      const preferencePersisted = savePreference(jobId, state);
+      const preferenceNote = !preferencePersisted
+        ? " The job state changed, but this browser could not persist the local preference signal."
+        : state === "shortlisted"
+          ? " A soft positive preference signal was recorded locally."
+          : state === "rejected"
+            ? " A soft negative preference signal was recorded locally; one rejection never blocks a role family."
+            : " Any local preference signal for this role was cleared to neutral.";
+      setNotice(`${state === "shortlisted" ? "Role shortlisted." : state === "saved" ? "Role saved for later." : "Role rejected and removed from the active shortlist."}${preferenceNote}`);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to update job");
@@ -177,7 +216,7 @@ export function ShortlistWorkspace() {
         <h1>Broad prospects. Evidence-backed ranking.</h1>
         <p>Product, analytics, business, finance, operations, research and technical-systems roles are first-class lanes. Pure software development stays visible as a stretch preference rather than being hidden.</p>
       </div>
-      <div className={styles.headerLinks}><Link href="/inbox">Internship Inbox</Link><Link href="/">Dashboard</Link></div>
+      <div className={styles.headerLinks}><Link href="/preferences">Preference calibration</Link><Link href="/inbox">Internship Inbox</Link><Link href="/">Dashboard</Link></div>
     </header>
 
     {notice && <div className={styles.notice}>{notice}</div>}
@@ -190,6 +229,11 @@ export function ShortlistWorkspace() {
       <div><strong>{summary.india}</strong><span>India context</span></div>
       <div><strong>{summary.remote}</strong><span>Remote</span></div>
     </section>
+
+    <div className={styles.preferenceStrip}>
+      <strong>{calibration.active ? "Preference calibration active" : "Preference calibration warming up"}</strong>
+      <span>{calibration.summary} Saved/discovered roles are neutral; geography is never learned.</span>
+    </div>
 
     <section className={styles.controls}>
       <div className={styles.filters}>{filters.map((item) => <button key={item} className={filter === item ? styles.active : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
@@ -220,6 +264,7 @@ export function ShortlistWorkspace() {
           <div className={styles.context}>
             <span className={styles.roleFamily}>{assessment.roleFamilyLabel}</span>
             <span>{assessment.preferenceLabel}</span>
+            {assessment.learnedPreferencePoints !== 0 && <span className={styles.learnedPreference}>{assessment.learnedPreferencePoints > 0 ? "+" : ""}{assessment.learnedPreferencePoints} learned preference</span>}
             {assessment.sectorTags.map((tag) => <span key={tag}>{tag}</span>)}
             {assessment.locationTags.map((tag) => <span key={tag}>{tag}</span>)}
             <span>{assessment.freshnessLabel}</span>
@@ -238,7 +283,7 @@ export function ShortlistWorkspace() {
 
           <div className={styles.actions}>
             <button className={styles.primary} disabled={busy === `job:${job.id}`} onClick={() => void updateJob(job.id, "shortlisted")}>Shortlist</button>
-            <button disabled={busy === `job:${job.id}`} onClick={() => void updateJob(job.id, "saved")}>Save</button>
+            <button disabled={busy === `job:${job.id}`} onClick={() => void updateJob(job.id, "saved")}>Save / neutral</button>
             <button disabled={busy === `apply:${job.id}` || !job.currentSnapshotId} onClick={() => void prepareApplication(job.id)}>Prepare application</button>
             <button disabled={busy === `contact:${job.id}` || !job.currentSnapshotId} onClick={() => void researchContact(job.id)}>{contactCount ? "Refresh contact research" : "Research contact"}</button>
             <a href={job.canonicalUrl} target="_blank" rel="noreferrer">Official posting ↗</a>
@@ -248,6 +293,6 @@ export function ShortlistWorkspace() {
       })}
     </section>
 
-    <footer className={styles.boundary}>Scout ranks and prepares. It does not send email or submit applications.</footer>
+    <footer className={styles.boundary}>Scout ranks and prepares. Preference feedback is a small browser-local ranking nudge; it never changes approved evidence, eligibility checks, geography scope, email sending, or application submission.</footer>
   </main>;
 }
