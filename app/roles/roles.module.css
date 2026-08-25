@@ -1,0 +1,22 @@
+.shell { max-width: 1100px; margin: 0 auto; padding: 48px 28px 80px; color: #18221c; }
+.header { display: flex; justify-content: space-between; gap: 32px; align-items: flex-start; padding-bottom: 26px; border-bottom: 1px solid #d8d5ca; }
+.header h1 { margin: 7px 0 12px; max-width: 760px; font: 400 clamp(38px, 6vw, 64px)/.98 Georgia, serif; }
+.header p:not(.kicker) { margin: 0; max-width: 760px; color: #69726b; line-height: 1.6; }
+.kicker { margin: 0; font-size: 10px; letter-spacing: .14em; font-weight: 800; color: #496452; }
+.links { display: flex; flex-wrap: wrap; gap: 14px; justify-content: flex-end; }
+.links a, .open { color: #234d36; text-decoration: none; font-weight: 750; }
+.error { margin: 18px 0; padding: 12px 14px; border: 1px solid #d4aaa4; background: #fbefed; color: #783b34; }
+.controls { margin: 20px 0 14px; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.controls input { min-width: 320px; min-height: 40px; border: 1px solid #cbc8bd; background: #fffdf7; padding: 8px 11px; color: #18221c; }
+.controls span { color: #727a75; font-size: 10px; }
+.list { display: grid; gap: 10px; }
+.card { border: 1px solid #d8d5ca; background: #fffdf7; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 20px; align-items: start; }
+.company { margin: 0 0 5px; color: #496452; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.card h2 { margin: 0; font: 400 24px Georgia, serif; }
+.meta { margin: 7px 0 0; color: #69726b; font-size: 10px; }
+.tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.tags span { padding: 5px 7px; background: #eef1ec; color: #496452; font-size: 9px; border-radius: 3px; }
+.open { align-self: center; white-space: nowrap; font-size: 11px; }
+.empty { border: 1px dashed #b8bab3; padding: 36px; text-align: center; color: #69726b; background: #faf8f1; }
+.boundary { margin-top: 24px; padding-top: 16px; border-top: 1px solid #d8d5ca; color: #69726b; font-size: 10px; }
+@media (max-width: 700px) { .shell { padding: 28px 16px 56px; } .header { flex-direction: column; } .links { justify-content: flex-start; } .controls { align-items: stretch; flex-direction: column; } .controls input { min-width: 0; width: 100%; } .card { grid-template-columns: 1fr; } .open { align-self: start; } }
