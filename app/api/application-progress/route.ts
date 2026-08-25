@@ -33,7 +33,10 @@ export async function PATCH(request: Request) {
     if (!current) return Response.json({ error: "Application packet changed; reload before updating progress" }, { status: 409 });
 
     const values = payload.action === "mark_external_submission"
-      ? { submittedAt: current.submittedAt ?? new Date().toISOString(), confirmationUrl: payload.confirmationUrl }
+      ? {
+        submittedAt: current.submittedAt ?? new Date().toISOString(),
+        confirmationUrl: payload.confirmationUrl ?? current.confirmationUrl,
+      }
       : { submittedAt: null, confirmationUrl: null };
 
     const [application] = await db.update(applications).set(values).where(and(
