@@ -55,7 +55,7 @@ export function BrowserAssist() {
       const payload = await response.json() as { handoffToken?: string; handoffExpiresAt?: number; task?: { allowedUrl?: string }; error?: string };
       if (!response.ok || !payload.handoffToken || !payload.handoffExpiresAt || !payload.task?.allowedUrl) throw new Error(payload.error ?? "Unable to create browser handoff");
       setHandoff({ applicationId: application.id, token: payload.handoffToken, expiresAt: payload.handoffExpiresAt, applicationUrl: payload.task.allowedUrl });
-      setNotice("Short-lived handoff created. Open the exact application page, paste this token into Scout Safe Fill, then review everything before submitting.");
+      setNotice("Short-lived handoff created. Open the exact application page and load this token in Scout Safe Fill. Verified profile fields can fill immediately; generated text stays locked until you review and approve each answer.");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to create browser handoff"); }
     finally { setBusy(null); }
   }
@@ -70,7 +70,7 @@ export function BrowserAssist() {
 
   return <main className={styles.shell}>
     <header className={styles.header}>
-      <div><p className={styles.kicker}>SCOUT / BROWSER ASSIST</p><h1>Hand the boring form fields to Scout.</h1><p>Generate a short-lived task for one reviewed application. The extension fills verified profile fields and can draft non-sensitive free-text answers from approved claims. CAPTCHA, sensitive questions and final submit stay with you.</p></div>
+      <div><p className={styles.kicker}>SCOUT / BROWSER ASSIST</p><h1>Fill the boring fields. Review the meaningful ones.</h1><p>Generate a short-lived task for one reviewed application. The extension fills verified profile fields, inspects non-sensitive free-text questions, and shows claim-backed drafts for your explicit approval before insertion. CAPTCHA, sensitive questions, file uploads and final submit stay with you.</p></div>
       <div className={styles.links}><Link href="/readiness">Application Readiness</Link><Link href="/">Dashboard</Link><Link href="/inbox">Internship Inbox</Link><Link href="/review">Review Queue</Link><Link href="/voice">Voice</Link></div>
     </header>
 
@@ -87,11 +87,11 @@ export function BrowserAssist() {
     <section className={styles.list}>
       {!applications.length && <div className={styles.empty}>No application packet is ready for browser assistance yet. Open Application Readiness to see exactly what each role is missing.</div>}
       {applications.map((application) => <article className={styles.card} key={application.id}>
-        <div><p className={styles.source}>{application.submittedFields.channel?.label ?? "Application"} · packet v{application.artifactVersion}</p><h3>{application.job?.company ?? "Unknown company"} — {application.job?.title ?? "Role"}</h3><p>{application.blockers.length ? `${application.blockers.length} blocker(s)` : "Verified reusable fields are ready. Non-sensitive free-text questions can be drafted when the extension inspects the form."}</p></div>
+        <div><p className={styles.source}>{application.submittedFields.channel?.label ?? "Application"} · packet v{application.artifactVersion}</p><h3>{application.job?.company ?? "Unknown company"} — {application.job?.title ?? "Role"}</h3><p>{application.blockers.length ? `${application.blockers.length} blocker(s)` : "Verified reusable fields are ready. If the live form has non-sensitive free-text questions, Scout can propose evidence-bound answers that remain unfillable until you approve them in the extension."}</p></div>
         <button disabled={busy === application.id} onClick={() => void createHandoff(application)}>{busy === application.id ? "Creating…" : "Create extension handoff"}</button>
       </article>)}
     </section>
 
-    <section className={styles.safety}><strong>Still manual:</strong> work authorization, visa/sponsorship, salary, availability, demographics, consent/signature, CAPTCHA, file uploads and final Submit.</section>
+    <section className={styles.safety}><strong>Still manual:</strong> work authorization, visa/sponsorship, salary, availability, demographics, consent/signature, CAPTCHA, file uploads and final Submit. Editing an AI draft is treated as your explicit input and requires approval again before fill.</section>
   </main>;
 }
