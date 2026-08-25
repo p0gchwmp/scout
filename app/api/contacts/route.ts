@@ -5,6 +5,26 @@ import { parseContactExtractionPayload, parseContactReviewPayload } from "../../
 import { extractPublishedBusinessEmails } from "../../../lib/scout/contact-extraction";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
+function looksLikeReview(value: unknown) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && "reviewState" in value);
+}
+
+async function reviewContact(raw: unknown) {
+  let payload: ReturnType<typeof parseContactReviewPayload>;
+  try { payload = parseContactReviewPayload(raw); }
+  catch { return Response.json({ error: "A valid contact review body is required" }, { status: 400 }); }
+  try {
+    const [contact] = await getDb().update(contactEvidence)
+      .set({ reviewState: payload.reviewState })
+      .where(eq(contactEvidence.id, payload.id))
+      .returning();
+    if (!contact) return Response.json({ error: "Contact evidence not found" }, { status: 404 });
+    return Response.json({ contact });
+  } catch (error) {
+    return scoutServerError("contacts.review", error, "Unable to review contact evidence");
+  }
+}
+
 export async function GET() {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
@@ -21,8 +41,17 @@ export async function POST(request: Request) {
   if (unauthorized) return unauthorized;
   const crossOrigin = requireSameOriginMutation(request);
   if (crossOrigin) return crossOrigin;
+
+  let raw: unknown;
+  try { raw = await request.json(); }
+  catch { return Response.json({ error: "A valid contact extraction body is required" }, { status: 400 }); }
+
+  // Dashboard compatibility: review remains a validated local-only mutation and
+  // never triggers contact discovery, sending, or any other external side effect.
+  if (looksLikeReview(raw)) return reviewContact(raw);
+
   let payload: ReturnType<typeof parseContactExtractionPayload>;
-  try { payload = parseContactExtractionPayload(await request.json()); }
+  try { payload = parseContactExtractionPayload(raw); }
   catch { return Response.json({ error: "A valid contact extraction body is required" }, { status: 400 }); }
 
   try {
@@ -61,17 +90,8 @@ export async function PATCH(request: Request) {
   if (unauthorized) return unauthorized;
   const crossOrigin = requireSameOriginMutation(request);
   if (crossOrigin) return crossOrigin;
-  let payload: ReturnType<typeof parseContactReviewPayload>;
-  try { payload = parseContactReviewPayload(await request.json()); }
+  let raw: unknown;
+  try { raw = await request.json(); }
   catch { return Response.json({ error: "A valid contact review body is required" }, { status: 400 }); }
-  try {
-    const [contact] = await getDb().update(contactEvidence)
-      .set({ reviewState: payload.reviewState })
-      .where(eq(contactEvidence.id, payload.id))
-      .returning();
-    if (!contact) return Response.json({ error: "Contact evidence not found" }, { status: 404 });
-    return Response.json({ contact });
-  } catch (error) {
-    return scoutServerError("contacts.review", error, "Unable to review contact evidence");
-  }
+  return reviewContact(raw);
 }
