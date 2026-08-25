@@ -12,7 +12,14 @@ export type ApplicationProfileField = { id: string; kind: string; claim: string;
 export type PrepJob = { id: string; company: string; title: string; canonicalUrl: string; currentSnapshotId: string | null };
 export type PrepClaim = { id: string; statement: string; status: "draft" | "approved" | "rejected" };
 
-const requiredKeys: ApplicationProfileKey[] = ["full_name", "email", "current_location", "university", "program", "graduation_year", "resume_reference"];
+export const REQUIRED_APPLICATION_PROFILE_KEYS: readonly ApplicationProfileKey[] = Object.freeze([
+  "full_name", "email", "current_location", "university", "program", "graduation_year", "resume_reference",
+]);
+
+export const ALWAYS_CONFIRM_APPLICATION_FIELDS = Object.freeze([
+  "work_authorization", "visa_or_sponsorship", "salary_or_compensation", "availability",
+  "demographic_questions", "consent_or_signature",
+] as const);
 
 export function buildApplicationPreparation(input: {
   job: PrepJob;
@@ -22,9 +29,11 @@ export function buildApplicationPreparation(input: {
 }) {
   const channel = classifyApplicationUrl(input.job.canonicalUrl);
   const verified = new Map(input.profileFields.filter((field) => field.verified).map((field) => [field.kind, field.claim.trim()]));
+  const verifiedProfileKeys = APPLICATION_PROFILE_KEYS.filter((key) => Boolean(verified.get(key)));
+  const missingProfileKeys = REQUIRED_APPLICATION_PROFILE_KEYS.filter((key) => !verified.get(key));
   const blockers: string[] = [];
   if (!input.job.currentSnapshotId) blockers.push("Current immutable job snapshot is missing");
-  for (const key of requiredKeys) if (!verified.get(key)) blockers.push(`Missing verified profile field: ${key}`);
+  for (const key of missingProfileKeys) blockers.push(`Missing verified profile field: ${key}`);
   if (channel.requiresOfficialResolution) blockers.push("Prefer the official company or ATS application URL before automation");
   if (channel.id === "unknown") blockers.push("Application portal is not recognized");
 
@@ -47,9 +56,12 @@ export function buildApplicationPreparation(input: {
       applicationUrl: input.job.canonicalUrl,
       channel,
       safeFields,
+      requiredProfileKeys: [...REQUIRED_APPLICATION_PROFILE_KEYS],
+      verifiedProfileKeys,
+      missingProfileKeys,
       claimIds: selected.map((claim) => claim.id),
       claimStatements: selected.map((claim) => claim.statement),
-      alwaysConfirmPerApplication: ["work_authorization", "visa_or_sponsorship", "salary_or_compensation", "availability", "demographic_questions", "consent_or_signature"],
+      alwaysConfirmPerApplication: [...ALWAYS_CONFIRM_APPLICATION_FIELDS],
       externalSideEffect: false,
     },
   };
