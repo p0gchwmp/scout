@@ -17,6 +17,7 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     model: required("SCOUT_AI_MODEL", environment.SCOUT_AI_MODEL),
     costClass,
     allowMeteredAi: environment.SCOUT_ALLOW_METERED_AI === "1",
+    allowLoopbackDev: environment.SCOUT_AI_ALLOW_LOOPBACK_DEV === "1",
     jsonMode: environment.SCOUT_AI_JSON_MODE !== "0",
   });
 }
