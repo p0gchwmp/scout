@@ -64,7 +64,7 @@ export function assessApplicationReadiness(input: {
   if (input.job.currentSnapshotId) score += 20;
   score += channel.id === "unknown" ? 0 : channel.requiresOfficialResolution ? 5 : 20;
   score += Math.round((verifiedRequiredKeys.length / REQUIRED_APPLICATION_PROFILE_KEYS.length) * 35);
-  score += relevantClaimIds.length ? Math.min(15, relevantClaimIds.length * 5) : 0;
+  score += relevantClaimIds.length ? 15 : 0;
   score += prepared.blockers.length === 0 ? 10 : Math.max(0, 10 - prepared.blockers.length * 2);
   if (criticalBlockers.length) score = Math.min(score, 49);
   score = Math.max(0, Math.min(100, score));
