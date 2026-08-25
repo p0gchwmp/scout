@@ -38,6 +38,7 @@ type Application = {
   status: string;
   artifactVersion: number;
   blockers: string[];
+  submittedAt: string | null;
   submittedFields: Record<string, unknown>;
 };
 
@@ -139,7 +140,7 @@ export function ApplicationReadinessWorkspace() {
         <h1>Know what is actually ready before opening the form.</h1>
         <p>Scout checks immutable job evidence, verified reusable profile fields, approved role-relevant claims and the application channel. Legal and sensitive questions remain yours every time.</p>
       </div>
-      <div className={styles.links}><Link href="/shortlist">Shortlist</Link><Link href="/assist">Safe Fill</Link><Link href="/">Dashboard</Link></div>
+      <div className={styles.links}><Link href="/applications">Application Workspace</Link><Link href="/shortlist">Shortlist</Link><Link href="/assist">Safe Fill</Link><Link href="/">Dashboard</Link></div>
     </header>
 
     {notice && <div className={styles.notice}>{notice}</div>}
@@ -157,14 +158,14 @@ export function ApplicationReadinessWorkspace() {
     <section className={styles.list}>
       {!visible.length && <div className={styles.empty}>No applications match this readiness view.</div>}
       {visible.map(({ job, readiness, application }) => {
-        const safeFillUnlocked = readiness.status === "ready" && application?.status === "ready_for_review";
+        const safeFillUnlocked = readiness.status === "ready" && application?.status === "ready_for_review" && !application.submittedAt;
         return <article className={styles.card} key={job.id}>
           <div className={styles.cardHead}>
             <div><p className={styles.company}>{job.company}</p><h2>{job.title}</h2><p className={styles.meta}>{job.location || "Location unspecified"} · {readiness.channel.label}</p></div>
             <div className={`${styles.score} ${styles[readiness.status as ApplicationReadinessStatus]}`}><strong>{readiness.score}</strong><span>{readiness.label}</span></div>
           </div>
 
-          <div className={styles.packetLine}><span>{application ? `Current packet v${application.artifactVersion} · ${application.status.replace(/_/g, " ")}` : "No application packet prepared yet"}</span><span>{readiness.profileSummary}</span></div>
+          <div className={styles.packetLine}><span>{application ? `Current packet v${application.artifactVersion} · ${application.status.replace(/_/g, " ")}${application.submittedAt ? " · submitted externally" : ""}` : "No application packet prepared yet"}</span><span>{readiness.profileSummary}</span></div>
 
           <div className={styles.columns}>
             <div>
@@ -181,13 +182,13 @@ export function ApplicationReadinessWorkspace() {
 
           {readiness.blockers.length > 0 && <div className={styles.blockers}><strong>What is stopping Safe Fill</strong>{readiness.blockers.map((blocker) => <p key={blocker}>{blocker}</p>)}</div>}
 
-          <div className={styles.next}><strong>Next action</strong>{readiness.nextActions.map((action) => <span key={action}>{action}</span>)}</div>
+          <div className={styles.next}><strong>Next action</strong>{application?.submittedAt ? <span>Submission is already recorded. Continue from Application Workspace for follow-up.</span> : readiness.nextActions.map((action) => <span key={action}>{action}</span>)}</div>
 
           <details className={styles.manual}><summary>Questions Scout will never silently reuse</summary><p>{readiness.manualConfirmations.join(" · ")}</p><p>CAPTCHA, file-upload choices and the final Submit action also stay manual.</p></details>
 
           <div className={styles.actions}>
             <button className={styles.primary} disabled={busy === job.id || !job.currentSnapshotId} onClick={() => void prepare(job.id)}>{busy === job.id ? "Preparing…" : application ? "Refresh packet" : "Prepare packet"}</button>
-            {safeFillUnlocked ? <Link className={styles.safeFill} href="/assist">Open Safe Fill →</Link> : <button disabled title="Prepare a ready_for_review packet first">Safe Fill locked</button>}
+            {application?.submittedAt ? <Link href="/applications">View submission progress →</Link> : safeFillUnlocked ? <Link className={styles.safeFill} href="/assist">Open Safe Fill →</Link> : <button disabled title="Prepare a ready_for_review packet first">Safe Fill locked</button>}
             <a href={job.canonicalUrl} target="_blank" rel="noreferrer">Official posting ↗</a>
             <Link href="/">Profile & Claims</Link>
           </div>
