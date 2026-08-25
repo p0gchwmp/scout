@@ -64,7 +64,7 @@ const worker = {
       request = new Request(request, { headers: routedHeaders });
     }
 
-    if (OWNER_PAGE_PATHS.has(url.pathname) || url.pathname.startsWith("/api/")) {
+    if (OWNER_PAGE_PATHS.has(url.pathname) || url.pathname.startsWith("/roles/") || url.pathname.startsWith("/api/")) {
       const authenticatedUserId = request.headers.get(USER_ID_HEADER);
       if (authenticatedUserId) {
         const ownerId = env.SCOUT_OWNER_USER_ID?.trim();
