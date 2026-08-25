@@ -38,8 +38,8 @@ export function buildApplicationPreparation(input: {
   if (channel.id === "unknown") blockers.push("Application portal is not recognized");
 
   const approved = input.claims.filter((claim) => claim.status === "approved");
-  const requested = new Set(input.relevantClaimIds ?? []);
-  const selected = (requested.size ? approved.filter((claim) => requested.has(claim.id)) : approved).slice(0, 6);
+  const requested = input.relevantClaimIds === undefined ? null : new Set(input.relevantClaimIds);
+  const selected = (requested === null ? approved : approved.filter((claim) => requested.has(claim.id))).slice(0, 6);
   if (!selected.length) blockers.push("No approved resume claims are available for role-specific answers");
 
   const safeFields = Object.fromEntries(APPLICATION_PROFILE_KEYS.flatMap((key) => {
