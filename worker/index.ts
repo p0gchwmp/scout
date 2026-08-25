@@ -31,7 +31,7 @@ const USER_FULL_NAME_ENCODING_HEADER =
   "oai-authenticated-user-full-name-encoding";
 const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
-const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice", "/review", "/shortlist", "/readiness"]);
+const OWNER_PAGE_PATHS = new Set(["/", "/inbox", "/assist", "/voice", "/review", "/shortlist", "/readiness", "/applications"]);
 
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
