@@ -32,9 +32,12 @@ test("sources API merges the controlled catalog with persisted health and job ev
 test("verified catalog expansion keeps both India context and global internship coverage", async () => {
   const catalog = JSON.parse(await readFile(new URL("../config/discovery-sources.json", import.meta.url), "utf8")) as Array<{ provider: string; slug: string; company: string; focus: string }>;
   const bySlug = new Map(catalog.map((source) => [source.slug, source]));
-  for (const slug of ["stable-money1", "aleph", "sitetracker", "getwingapp", "sezzleinternships"]) assert.ok(bySlug.has(slug), slug);
+  for (const slug of ["stable-money1", "aleph", "sitetracker", "getwingapp", "sezzleinternships", "flagright.com", "2070health", "BoschGroup"]) assert.ok(bySlug.has(slug), slug);
   assert.match(bySlug.get("stable-money1")?.focus ?? "", /India finance/i);
   assert.match(bySlug.get("getwingapp")?.focus ?? "", /global remote/i);
-  assert.ok(catalog.length >= 23);
-  assert.ok(catalog.every((source) => source.provider === "greenhouse" || source.provider === "lever"), "this catalog stays compatible with local Scout discovery");
+  assert.match(bySlug.get("2070health")?.focus ?? "", /India health-tech/i);
+  assert.match(bySlug.get("flagright.com")?.focus ?? "", /product operations, implementation, automation, QA/i);
+  assert.ok(catalog.length >= 26);
+  const locallySupported = new Set(["greenhouse", "lever", "ashby", "workable", "smartrecruiters"]);
+  assert.ok(catalog.every((source) => locallySupported.has(source.provider)), "controlled catalog must stay executable by local Scout discovery");
 });
