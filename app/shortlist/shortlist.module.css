@@ -15,7 +15,10 @@
 .filters { display: flex; gap: 7px; flex-wrap: wrap; }
 .filters button { border: 1px solid #cbc8bd; background: #fffdf7; padding: 8px 12px; border-radius: 999px; font-size: 11px; cursor: pointer; }
 .filters button.active { background: #234d36; color: white; border-color: #234d36; }
-.controls input { min-width: 280px; min-height: 38px; border: 1px solid #cbc8bd; background: #fffdf7; padding: 8px 11px; color: #18221c; }
+.controlFields { display: flex; gap: 8px; align-items: center; }
+.controls input, .controls select { min-height: 38px; border: 1px solid #cbc8bd; background: #fffdf7; padding: 8px 11px; color: #18221c; }
+.controls input { min-width: 280px; }
+.controls select { min-width: 155px; }
 .list { display: grid; gap: 12px; }
 .empty { border: 1px dashed #b8bab3; padding: 38px; text-align: center; color: #69726b; background: #faf8f1; }
 .card { position: relative; border: 1px solid #d8d5ca; background: #fffdf7; padding: 22px; display: grid; gap: 16px; }
@@ -34,6 +37,7 @@
 .unranked { color: #69726b; }
 .context { display: flex; gap: 7px; flex-wrap: wrap; }
 .context span { padding: 6px 8px; background: #eef1ec; color: #496452; font-size: 10px; border-radius: 3px; }
+.context span.roleFamily { background: #234d36; color: white; }
 .why { border-left: 3px solid #234d36; padding: 10px 12px; background: #f2f6f2; }
 .why strong { font-size: 11px; }
 .why p { margin: 5px 0 0; color: #526058; font-size: 12px; line-height: 1.55; }
@@ -52,5 +56,5 @@
 .actions button.reject { color: #8d3229; border-color: #d0aaa3; }
 .actions button:disabled { opacity: .5; cursor: not-allowed; }
 .boundary { margin-top: 28px; padding-top: 18px; border-top: 1px solid #d8d5ca; color: #69726b; font-size: 11px; }
-@media (max-width: 820px) { .summary { grid-template-columns: repeat(2, 1fr); } .controls, .topline { align-items: stretch; flex-direction: column; } .controls input { min-width: 0; width: 100%; } .priority { justify-items: start; } .columns { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { .shell { padding: 28px 16px 56px; } .header { flex-direction: column; } .headerLinks { justify-content: flex-start; } .summary { grid-template-columns: 1fr 1fr; } .actions { display: grid; grid-template-columns: 1fr; } .actions button, .actions a { justify-content: center; } }
+@media (max-width: 820px) { .summary { grid-template-columns: repeat(2, 1fr); } .controls, .topline { align-items: stretch; flex-direction: column; } .controlFields { width: 100%; } .controls input, .controls select { min-width: 0; width: 100%; } .priority { justify-items: start; } .columns { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .shell { padding: 28px 16px 56px; } .header { flex-direction: column; } .headerLinks { justify-content: flex-start; } .summary { grid-template-columns: 1fr 1fr; } .controlFields { flex-direction: column; align-items: stretch; } .actions { display: grid; grid-template-columns: 1fr; } .actions button, .actions a { justify-content: center; } }
