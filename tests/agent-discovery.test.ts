@@ -32,7 +32,7 @@ test("cloud agent discovery returns compact controlled lead metadata", async () 
       postedAt: "2026-08-23T00:00:00Z",
     }],
     failures: [{ company: "Other", provider: "greenhouse", reason: "temporarily unavailable" }],
-  }), () => "2026-08-24T01:00:00.000Z");
+  }), () => "2026-08-24T01:00:00.000Z", async () => ({ enabled: false, leads: [], failures: [] }));
 
   assert.equal(discovery.found, 2);
   assert.equal(discovery.leads[0].platformId, "lever");
@@ -40,10 +40,57 @@ test("cloud agent discovery returns compact controlled lead metadata", async () 
   assert.equal(discovery.leads[1].provider, "ashby");
   assert.equal("description" in discovery.leads[0], false);
   assert.equal(discovery.failures.length, 1);
+  assert.equal(discovery.qualitySummary.inputCount, 2);
+  assert.equal(discovery.qualitySummary.duplicatesCollapsed, 0);
+});
+
+test("cloud agent collapses a job-board copy into the controlled official ATS lead", async () => {
+  const discovery = await runAgentDiscovery(async () => ({
+    leads: [{
+      canonicalUrl: "https://jobs.lever.co/acme/official-1",
+      company: "Acme Technologies",
+      title: "Business Analyst Intern",
+      channel: { id: "lever", label: "Lever", kind: "ats", automation: "structured", note: "test", requiresOfficialResolution: false, easyApplyAssist: false },
+      snapshotRequired: true,
+      nextStep: "Resolve official ATS evidence",
+      provider: "lever",
+      sourceUrl: "https://jobs.lever.co/acme",
+      focus: "analytics",
+      location: "Bengaluru, India",
+      description: "Business analysis internship",
+      postedAt: "2026-08-24T00:00:00Z",
+    }],
+    failures: [],
+  }), () => "2026-08-25T00:00:00.000Z", async () => ({
+    enabled: true,
+    leads: [{
+      provider: "search_index" as const,
+      canonicalUrl: "https://www.linkedin.com/jobs/view/123456",
+      company: "Acme Technologies Pvt Ltd",
+      title: "Business Analyst Internship",
+      sourceUrl: "https://www.linkedin.com/jobs/view/123456",
+      focus: "analytics",
+      location: "Bengaluru, India",
+      postedAt: null,
+      platformId: "linkedin",
+      nextStep: "Resolve employer and official job evidence before application preparation.",
+    }],
+    failures: [],
+  }));
+
+  assert.equal(discovery.found, 1);
+  assert.equal(discovery.leads[0].provider, "lever");
+  assert.match(discovery.leads[0].focus, /1 duplicate lead consolidated/);
+  assert.match(discovery.leads[0].nextStep, /Discovery provenance observed across/);
+  assert.equal(discovery.qualitySummary.inputCount, 2);
+  assert.equal(discovery.qualitySummary.uniqueCount, 1);
+  assert.equal(discovery.qualitySummary.duplicatesCollapsed, 1);
 });
 
 test("cloud agent discovery cannot accept arbitrary sources or perform external side effects", () => {
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.controlledCatalog, true);
+  assert.equal(AGENT_DISCOVERY_CAPABILITIES.opportunityDedupe, true);
+  assert.equal(AGENT_DISCOVERY_CAPABILITIES.preferOfficialAts, true);
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.callerSuppliedSources, false);
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.arbitraryUrlFetch, false);
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.linkedinScrape, false);
