@@ -49,7 +49,7 @@ test("extension exchange is bearer-token scoped and exposes no submission surfac
 
 test("browser extension never submits and separates AI drafts from verified profile answers", async () => {
   const content = await readFile(new URL("../extension/content.js", import.meta.url), "utf8");
-  assert.match(content, /item\.verified !== true && item\.aiDraft !== true/);
+  assert.match(content, /item\.verified !== true && !\(item\.aiDraft === true && item\.reviewed === true\)/);
   assert.match(content, /Needs confirmation:/);
   assert.match(content, /submitAvailable: false/);
   assert.match(content, /captcha/i);
