@@ -1,23 +1,171 @@
 import { createStructuredAiProvider } from "../lib/scout/ai-provider.ts";
+import { createQualityAiRouter, type RoutedAiCandidate } from "./ai-router.ts";
 
-function required(name: string, value: string | undefined) {
-  const candidate = value?.trim() ?? "";
+const NIM_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions";
+const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
+const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const CEREBRAS_ENDPOINT = "https://api.cerebras.ai/v1/chat/completions";
+const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+
+const DEFAULT_MODELS = Object.freeze({
+  nimLightning: "nvidia/nemotron-3.5-lightning-30b-a3b",
+  nimReasoning: "deepseek-ai/deepseek-v4-flash-0731",
+  nimUltra: "nvidia/nemotron-3-ultra-550b-a55b",
+  groqFast: "qwen/qwen3.6-27b",
+  groqReasoning: "openai/gpt-oss-120b",
+  gemini: "gemini-3.7-flash",
+  cerebras: "gpt-oss-120b",
+  openrouter: "openrouter/free",
+} as const);
+
+function value(environment: NodeJS.ProcessEnv, name: string) {
+  return environment[name]?.trim() ?? "";
+}
+
+function required(name: string, raw: string | undefined) {
+  const candidate = raw?.trim() ?? "";
   if (!candidate) throw new Error(`${name} is required for Scout AI tasks`);
   return candidate;
 }
 
+function candidate(input: {
+  id: string;
+  endpointUrl: string;
+  apiKey: string;
+  model: string;
+  jsonMode?: boolean;
+  allowLoopbackDev?: boolean;
+}): RoutedAiCandidate {
+  return {
+    id: input.id,
+    worker: createStructuredAiProvider({
+      endpointUrl: input.endpointUrl,
+      apiKey: input.apiKey,
+      model: input.model,
+      costClass: "free_or_included",
+      jsonMode: input.jsonMode,
+      allowLoopbackDev: input.allowLoopbackDev,
+    }),
+  };
+}
+
+function pushUnique(target: RoutedAiCandidate[], item: RoutedAiCandidate | null) {
+  if (item && !target.some((candidate) => candidate.id === item.id)) target.push(item);
+}
+
 export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.env) {
-  const costClass = required("SCOUT_AI_COST_CLASS", environment.SCOUT_AI_COST_CLASS);
-  if (costClass !== "free_or_included" && costClass !== "metered") {
-    throw new Error("SCOUT_AI_COST_CLASS must be free_or_included or metered");
+  const explicitFields = ["SCOUT_AI_ENDPOINT_URL", "SCOUT_AI_API_KEY", "SCOUT_AI_MODEL", "SCOUT_AI_COST_CLASS"] as const;
+  const explicitCount = explicitFields.filter((name) => value(environment, name)).length;
+  if (explicitCount) {
+    if (explicitCount !== explicitFields.length) throw new Error("Explicit Scout AI configuration is incomplete");
+    const costClass = required("SCOUT_AI_COST_CLASS", environment.SCOUT_AI_COST_CLASS);
+    if (costClass !== "free_or_included" && costClass !== "metered") {
+      throw new Error("SCOUT_AI_COST_CLASS must be free_or_included or metered");
+    }
+    const explicit: RoutedAiCandidate = {
+      id: `explicit:${required("SCOUT_AI_MODEL", environment.SCOUT_AI_MODEL)}`,
+      worker: createStructuredAiProvider({
+        endpointUrl: required("SCOUT_AI_ENDPOINT_URL", environment.SCOUT_AI_ENDPOINT_URL),
+        apiKey: required("SCOUT_AI_API_KEY", environment.SCOUT_AI_API_KEY),
+        model: required("SCOUT_AI_MODEL", environment.SCOUT_AI_MODEL),
+        costClass,
+        allowMeteredAi: environment.SCOUT_ALLOW_METERED_AI === "1",
+        allowLoopbackDev: environment.SCOUT_AI_ALLOW_LOOPBACK_DEV === "1",
+        jsonMode: environment.SCOUT_AI_JSON_MODE !== "0",
+      }),
+    };
+    return createQualityAiRouter({ classification: [explicit], writing: [explicit] });
   }
-  return createStructuredAiProvider({
-    endpointUrl: required("SCOUT_AI_ENDPOINT_URL", environment.SCOUT_AI_ENDPOINT_URL),
-    apiKey: required("SCOUT_AI_API_KEY", environment.SCOUT_AI_API_KEY),
-    model: required("SCOUT_AI_MODEL", environment.SCOUT_AI_MODEL),
-    costClass,
-    allowMeteredAi: environment.SCOUT_ALLOW_METERED_AI === "1",
-    allowLoopbackDev: environment.SCOUT_AI_ALLOW_LOOPBACK_DEV === "1",
-    jsonMode: environment.SCOUT_AI_JSON_MODE !== "0",
-  });
+
+  const nimKey = value(environment, "SCOUT_NIM_FREE_API_KEY");
+  const groqKey = value(environment, "SCOUT_GROQ_FREE_API_KEY");
+  const geminiKey = value(environment, "SCOUT_GEMINI_FREE_API_KEY");
+  const cerebrasKey = value(environment, "SCOUT_CEREBRAS_FREE_API_KEY");
+  const openrouterKey = value(environment, "SCOUT_OPENROUTER_FREE_API_KEY");
+  const ollamaEndpoint = value(environment, "SCOUT_OLLAMA_ENDPOINT_URL");
+  const ollamaKey = value(environment, "SCOUT_OLLAMA_API_KEY");
+  const ollamaModel = value(environment, "SCOUT_OLLAMA_MODEL");
+
+  const groqFast = groqKey ? candidate({
+    id: "groq:qwen3.6-27b",
+    endpointUrl: value(environment, "SCOUT_GROQ_ENDPOINT_URL") || GROQ_ENDPOINT,
+    apiKey: groqKey,
+    model: value(environment, "SCOUT_GROQ_FAST_MODEL") || DEFAULT_MODELS.groqFast,
+    jsonMode: true,
+  }) : null;
+  const groqReasoning = groqKey ? candidate({
+    id: "groq:gpt-oss-120b",
+    endpointUrl: value(environment, "SCOUT_GROQ_ENDPOINT_URL") || GROQ_ENDPOINT,
+    apiKey: groqKey,
+    model: value(environment, "SCOUT_GROQ_REASONING_MODEL") || DEFAULT_MODELS.groqReasoning,
+    jsonMode: true,
+  }) : null;
+
+  const nimLightning = nimKey ? candidate({
+    id: "nim:nemotron-3.5-lightning",
+    endpointUrl: value(environment, "SCOUT_NIM_ENDPOINT_URL") || NIM_ENDPOINT,
+    apiKey: nimKey,
+    model: value(environment, "SCOUT_NIM_LIGHTNING_MODEL") || DEFAULT_MODELS.nimLightning,
+    jsonMode: false,
+  }) : null;
+  const nimReasoning = nimKey ? candidate({
+    id: "nim:deepseek-v4-flash-0731",
+    endpointUrl: value(environment, "SCOUT_NIM_ENDPOINT_URL") || NIM_ENDPOINT,
+    apiKey: nimKey,
+    model: value(environment, "SCOUT_NIM_REASONING_MODEL") || DEFAULT_MODELS.nimReasoning,
+    jsonMode: false,
+  }) : null;
+  const nimUltra = nimKey ? candidate({
+    id: "nim:nemotron-3-ultra",
+    endpointUrl: value(environment, "SCOUT_NIM_ENDPOINT_URL") || NIM_ENDPOINT,
+    apiKey: nimKey,
+    model: value(environment, "SCOUT_NIM_ULTRA_MODEL") || DEFAULT_MODELS.nimUltra,
+    jsonMode: false,
+  }) : null;
+
+  const gemini = geminiKey ? candidate({
+    id: "gemini:3.7-flash",
+    endpointUrl: value(environment, "SCOUT_GEMINI_ENDPOINT_URL") || GEMINI_ENDPOINT,
+    apiKey: geminiKey,
+    model: value(environment, "SCOUT_GEMINI_MODEL") || DEFAULT_MODELS.gemini,
+    jsonMode: false,
+  }) : null;
+  const cerebras = cerebrasKey ? candidate({
+    id: "cerebras:gpt-oss-120b",
+    endpointUrl: value(environment, "SCOUT_CEREBRAS_ENDPOINT_URL") || CEREBRAS_ENDPOINT,
+    apiKey: cerebrasKey,
+    model: value(environment, "SCOUT_CEREBRAS_MODEL") || DEFAULT_MODELS.cerebras,
+    jsonMode: false,
+  }) : null;
+  const openrouter = openrouterKey ? candidate({
+    id: "openrouter:free",
+    endpointUrl: value(environment, "SCOUT_OPENROUTER_ENDPOINT_URL") || OPENROUTER_ENDPOINT,
+    apiKey: openrouterKey,
+    model: value(environment, "SCOUT_OPENROUTER_MODEL") || DEFAULT_MODELS.openrouter,
+    jsonMode: false,
+  }) : null;
+  const ollama = ollamaEndpoint && ollamaKey && ollamaModel ? candidate({
+    id: `ollama:${ollamaModel}`,
+    endpointUrl: ollamaEndpoint,
+    apiKey: ollamaKey,
+    model: ollamaModel,
+    jsonMode: value(environment, "SCOUT_OLLAMA_JSON_MODE") === "1",
+    allowLoopbackDev: true,
+  }) : null;
+
+  const classification: RoutedAiCandidate[] = [];
+  for (const item of [groqFast, nimLightning, groqReasoning, gemini, nimReasoning, nimUltra, cerebras, openrouter, ollama]) {
+    pushUnique(classification, item);
+  }
+
+  const writing: RoutedAiCandidate[] = [];
+  for (const item of [nimReasoning, nimUltra, groqReasoning, gemini, nimLightning, cerebras, groqFast, openrouter, ollama]) {
+    pushUnique(writing, item);
+  }
+
+  if (!classification.length || !writing.length) {
+    throw new Error("No Scout AI provider is configured; add a free/included provider key or keep a local Ollama fallback available");
+  }
+
+  return createQualityAiRouter({ classification, writing });
 }
