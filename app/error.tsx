@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 export default function ErrorBoundary({
@@ -26,7 +27,7 @@ export default function ErrorBoundary({
     <div className="actions">
       <button onClick={reset}>Try again</button>
       <a href="/api/health">Open readiness check</a>
-      <a href="/">Return to dashboard</a>
+      <Link href="/">Return to dashboard</Link>
     </div>
   </main>;
 }
