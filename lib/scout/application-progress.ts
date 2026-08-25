@@ -138,7 +138,7 @@ export function buildApplicationProgress(input: {
     summary,
     nextAction,
     stages,
-    deadlineSignal: explicitDeadlineSignal(job.description),
+    deadlineSignal: hasSnapshot ? explicitDeadlineSignal(job.description) : null,
     externallySubmitted,
     confirmationUrl: application?.confirmationUrl ?? null,
     applicationId: application?.id ?? null,
