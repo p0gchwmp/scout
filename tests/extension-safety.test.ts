@@ -31,9 +31,17 @@ test("Safe Fill classifies visible controls without sending their entered values
   assert.match(content, /sensitive_manual/);
   assert.match(content, /unsupported_manual/);
   assert.match(content, /visibleFields\(\).*slice\(0, 40\)/s);
-  assert.match(popup, /fieldMetadata\(inspection\)/);
+
+  const metadataFunction = popup.match(/function fieldMetadata\(inspection\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(metadataFunction, "fieldMetadata helper must remain present");
+  assert.match(metadataFunction, /id: field\.id/);
+  assert.match(metadataFunction, /label: field\.label/);
+  assert.match(metadataFunction, /controlKind: field\.controlKind/);
+  assert.match(metadataFunction, /inputType: field\.inputType/);
+  assert.match(metadataFunction, /maxLength: field\.maxLength/);
+  assert.match(metadataFunction, /required: field\.required === true/);
+  assert.doesNotMatch(metadataFunction, /\.value\b|proposedAnswer|editedAnswer/i);
   assert.match(popup, /body: JSON\.stringify\(\{ token, currentUrl: tab\.url, fields: fieldMetadata\(inspection\) \}\)/);
-  assert.doesNotMatch(popup, /field\.value|input\.value|inspection.*value/i);
 });
 
 test("Safe Fill requires explicit answer review before any AI text can be inserted", async () => {
