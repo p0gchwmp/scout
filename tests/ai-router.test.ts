@@ -78,3 +78,14 @@ test("router does not silently consume generic provider keys", () => {
     GEMINI_API_KEY: "m".repeat(32),
   }), /No Scout AI provider is configured/);
 });
+
+test("router can reuse existing standard free-provider keys only after explicit opt-in", () => {
+  const router = createAgentAiProvider({
+    SCOUT_USE_STANDARD_FREE_PROVIDER_KEYS: "1",
+    NVIDIA_API_KEY: "n".repeat(32),
+    GROQ_API_KEY: "g".repeat(32),
+    GEMINI_API_KEY: "m".repeat(32),
+  });
+  assert.equal(router.routePlan.classification[0], "groq:qwen3.6-27b");
+  assert.equal(router.routePlan.writing[0], "nim:deepseek-v4-flash-0731");
+});
