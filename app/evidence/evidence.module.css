@@ -1,0 +1,71 @@
+.shell { max-width: 1180px; margin: 0 auto; padding: 52px 28px 80px; color: #18221c; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; gap: 36px; padding-bottom: 28px; border-bottom: 1px solid #d8d5ca; }
+.header h1 { margin: 7px 0 12px; max-width: 760px; font: 400 clamp(38px, 6vw, 68px)/.98 Georgia, serif; }
+.header p:not(.kicker) { margin: 0; max-width: 790px; color: #69726b; line-height: 1.6; }
+.kicker { margin: 0; color: #496452; font-size: 10px; font-weight: 750; letter-spacing: .14em; }
+.headerLinks { display: flex; gap: 15px; flex-wrap: wrap; justify-content: flex-end; }
+.headerLinks a, .actionsPanel a { color: #234d36; text-decoration: none; font-weight: 750; white-space: nowrap; }
+.error { margin-top: 18px; padding: 12px 14px; border: 1px solid #d4aaa4; background: #fbefed; color: #7c332d; }
+.summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 24px 0 18px; }
+.summary div { display: grid; gap: 4px; padding: 17px; border: 1px solid #d8d5ca; background: #fffdf7; }
+.summary strong { font: 400 28px Georgia, serif; }
+.summary span { color: #69726b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.actionsPanel { display: grid; grid-template-columns: minmax(220px, .8fr) 1.4fr auto; align-items: center; gap: 24px; margin: 18px 0 30px; padding: 20px; border: 1px solid #b9c9bd; background: #f2f6f2; }
+.actionsPanel h2 { margin: 5px 0 0; font: 400 24px Georgia, serif; }
+.actionsPanel ul { margin: 0; padding-left: 18px; color: #526058; font-size: 12px; line-height: 1.6; }
+.section { margin-top: 32px; }
+.sectionHead { display: flex; justify-content: space-between; gap: 30px; align-items: end; margin-bottom: 14px; }
+.sectionHead h2 { margin: 5px 0 0; font: 400 28px Georgia, serif; }
+.sectionHead > p { margin: 0; max-width: 560px; color: #69726b; font-size: 11px; line-height: 1.55; }
+.coverageGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.coverageCard { min-height: 150px; display: grid; align-content: start; gap: 12px; padding: 16px; border: 1px solid #d8d5ca; background: #fffdf7; }
+.coverageCard.covered { border-top: 3px solid #2c6b44; }
+.coverageCard.gap { border-top: 3px solid #b49362; background: #fbf8ef; }
+.coverageTop { display: grid; gap: 4px; }
+.coverageTop strong { font: 400 19px Georgia, serif; }
+.coverageTop span { color: #7a817c; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.coverageCard p { margin: 0; color: #5f6962; font-size: 11px; line-height: 1.55; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips span, .chips code { padding: 5px 7px; background: #eef1ec; color: #365441; border-radius: 3px; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.profileGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
+.profileCard { padding: 14px; border: 1px solid #d8d5ca; background: #fffdf7; }
+.profileCard > div { display: flex; justify-content: space-between; gap: 12px; }
+.profileCard strong { font-size: 11px; }
+.profileCard span { color: #7a817c; font-size: 9px; text-transform: uppercase; }
+.profileCard p { margin: 9px 0 0; font-size: 10px; }
+.good { color: #2c6b44; }
+.warn { color: #8a5f27; }
+.duplicateList { display: grid; gap: 8px; }
+.duplicateList > div { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid #decfac; background: #fbf8ef; }
+.duplicateList code { color: #234d36; overflow-wrap: anywhere; }
+.duplicateList strong { color: #7b5a13; font-size: 10px; }
+.controls { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 14px; }
+.filters { display: flex; gap: 7px; flex-wrap: wrap; }
+.filters button { border: 1px solid #cbc8bd; background: #fffdf7; padding: 8px 12px; border-radius: 999px; font-size: 11px; cursor: pointer; }
+.filters button.active { background: #234d36; color: white; border-color: #234d36; }
+.controls input { min-width: 310px; min-height: 38px; padding: 8px 11px; border: 1px solid #cbc8bd; background: #fffdf7; color: #18221c; }
+.claimList { display: grid; gap: 12px; }
+.claimCard { display: grid; gap: 14px; padding: 20px; border: 1px solid #d8d5ca; background: #fffdf7; }
+.claimTop { display: flex; justify-content: space-between; gap: 30px; align-items: flex-start; }
+.claimId { margin: 0 0 5px; color: #496452; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.claimTop h3 { margin: 0; max-width: 850px; font: 400 21px Georgia, serif; line-height: 1.25; }
+.statusStack { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; color: #69726b; font-size: 9px; }
+.status, .quality { padding: 5px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; font-weight: 750; }
+.approved, .clear { background: #e8f2ea; color: #26603b; }
+.draft, .review { background: #f5edda; color: #7b5a13; }
+.rejected, .thin { background: #f8e9e6; color: #8d443c; }
+.evidenceBox { padding: 11px 12px; border-left: 3px solid #b8c9bd; background: #f7f8f4; }
+.evidenceBox strong { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.evidenceBox p { margin: 5px 0 0; color: #526058; font-size: 12px; line-height: 1.55; }
+.claimColumns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.claimColumns > div { border-top: 1px solid #e2dfd6; padding-top: 11px; }
+.claimColumns strong { font-size: 10px; }
+.claimColumns p { margin: 6px 0 0; color: #69726b; font-size: 10px; line-height: 1.5; }
+.claimColumns p.roleUse { color: #365441; }
+.claimColumns p.issue { color: #8c4c31; }
+.claimColumns p.caution { color: #7b5a13; }
+.claimColumns code { font-size: 9px; }
+.empty { padding: 34px; border: 1px dashed #b8bab3; background: #faf8f1; text-align: center; color: #69726b; }
+.boundary { margin-top: 30px; padding-top: 18px; border-top: 1px solid #d8d5ca; color: #69726b; font-size: 11px; }
+@media (max-width: 960px) { .summary { grid-template-columns: repeat(2, 1fr); } .coverageGrid, .profileGrid { grid-template-columns: repeat(2, 1fr); } .actionsPanel { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .shell { padding: 28px 16px 56px; } .header, .sectionHead, .controls, .claimTop { flex-direction: column; align-items: stretch; } .headerLinks { justify-content: flex-start; } .controls input { min-width: 0; width: 100%; } .claimColumns, .coverageGrid, .profileGrid { grid-template-columns: 1fr; } .duplicateList > div { grid-template-columns: 1fr; } .duplicateList > div span { display: none; } .statusStack { justify-content: flex-start; } }
