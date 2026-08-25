@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { applications } from "../../../../db/schema";
 import { createBrowserHandoffToken } from "../../../../lib/scout/browser-handoff";
@@ -35,8 +35,9 @@ export async function POST(request: Request) {
     const [application] = await db.select().from(applications).where(and(
       eq(applications.id, id),
       eq(applications.status, "ready_for_review"),
+      isNull(applications.submittedAt),
     )).limit(1);
-    if (!application) return Response.json({ error: "Application packet must be ready for review before browser assistance" }, { status: 409 });
+    if (!application) return Response.json({ error: "Application packet must be ready, current, and not already recorded as submitted before browser assistance" }, { status: 409 });
 
     const task = buildBrowserAssistTask({
       applicationId: application.id,
