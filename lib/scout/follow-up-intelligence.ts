@@ -1,4 +1,4 @@
-import { explicitDeadlineSignal } from "./application-progress";
+import { explicitDeadlineSignal } from "./application-progress.ts";
 
 export const FOLLOW_UP_CAPABILITIES = Object.freeze({
   explicitDeadlineParsing: true,
