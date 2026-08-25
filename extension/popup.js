@@ -6,6 +6,8 @@ const scoutUrlInput = document.querySelector("#scout-url");
 const handoffInput = document.querySelector("#handoff");
 const intelligence = document.querySelector("#intelligence");
 const counts = document.querySelector("#counts");
+const answerReview = document.querySelector("#answer-review");
+const reviewList = document.querySelector("#review-list");
 
 function normalizeScoutBaseUrl(raw) {
   const url = new URL(raw.trim());
@@ -70,6 +72,164 @@ function fieldMetadata(inspection) {
   }));
 }
 
+function reviewMatchesTask(review, task) {
+  return Boolean(
+    review && task
+    && review.schemaVersion === 1
+    && review.applicationId === task.applicationId
+    && review.artifactVersion === task.artifactVersion
+    && review.expiresAt === task.expiresAt
+    && review.expiresAt > Date.now()
+    && Array.isArray(review.drafts)
+  );
+}
+
+function answerSource(questionId) {
+  return `ai:${questionId}`;
+}
+
+function withoutReviewedAnswer(task, questionId) {
+  return {
+    ...task,
+    answers: (task.answers ?? []).filter((item) => item?.sourceField !== answerSource(questionId)),
+  };
+}
+
+async function approveDraft(questionId, value) {
+  const { approvedTask, pendingAnswerReview } = await chrome.storage.local.get(["approvedTask", "pendingAnswerReview"]);
+  if (!reviewMatchesTask(pendingAnswerReview, approvedTask)) throw new Error("This answer review expired. Load a fresh Scout handoff.");
+  const draft = pendingAnswerReview.drafts.find((item) => item.questionId === questionId);
+  if (!draft) throw new Error("Application answer draft is no longer available");
+  const clean = `${value || ""}`.trim();
+  if (!clean) throw new Error("Answer cannot be empty");
+  if (Number.isInteger(draft.maxLength) && clean.length > draft.maxLength) throw new Error(`Answer exceeds the ${draft.maxLength}-character form limit`);
+
+  const nextTask = withoutReviewedAnswer(approvedTask, questionId);
+  nextTask.answers.push({
+    key: draft.label.toLowerCase(),
+    value: clean,
+    verified: false,
+    aiDraft: true,
+    reviewed: true,
+    reviewedAt: Date.now(),
+    userEdited: clean !== draft.proposedAnswer,
+    sourceField: answerSource(questionId),
+    usedClaimIds: [...draft.usedClaimIds],
+  });
+  const nextReview = {
+    ...pendingAnswerReview,
+    drafts: pendingAnswerReview.drafts.map((item) => item.questionId === questionId
+      ? { ...item, decision: "approved", editedAnswer: clean }
+      : item),
+  };
+  await chrome.storage.local.set({ approvedTask: nextTask, pendingAnswerReview: nextReview });
+  renderAnswerReview(nextReview, nextTask);
+  status.classList.remove("blocked");
+  status.textContent = "Answer approved for this exact application task. It is now eligible for Safe Fill; final submission is still manual.";
+}
+
+async function leaveDraftManual(questionId, value) {
+  const { approvedTask, pendingAnswerReview } = await chrome.storage.local.get(["approvedTask", "pendingAnswerReview"]);
+  if (!reviewMatchesTask(pendingAnswerReview, approvedTask)) throw new Error("This answer review expired. Load a fresh Scout handoff.");
+  const nextTask = withoutReviewedAnswer(approvedTask, questionId);
+  const nextReview = {
+    ...pendingAnswerReview,
+    drafts: pendingAnswerReview.drafts.map((item) => item.questionId === questionId
+      ? { ...item, decision: "manual", editedAnswer: `${value || item.proposedAnswer}` }
+      : item),
+  };
+  await chrome.storage.local.set({ approvedTask: nextTask, pendingAnswerReview: nextReview });
+  renderAnswerReview(nextReview, nextTask);
+  status.classList.remove("blocked");
+  status.textContent = "That question will stay manual. Scout will not insert an answer for it.";
+}
+
+async function revokeEditedApproval(questionId, value) {
+  const { approvedTask, pendingAnswerReview } = await chrome.storage.local.get(["approvedTask", "pendingAnswerReview"]);
+  if (!reviewMatchesTask(pendingAnswerReview, approvedTask)) return;
+  const current = pendingAnswerReview.drafts.find((item) => item.questionId === questionId);
+  if (!current || current.decision !== "approved") return;
+  const nextTask = withoutReviewedAnswer(approvedTask, questionId);
+  const nextReview = {
+    ...pendingAnswerReview,
+    drafts: pendingAnswerReview.drafts.map((item) => item.questionId === questionId
+      ? { ...item, decision: "pending", editedAnswer: value }
+      : item),
+  };
+  await chrome.storage.local.set({ approvedTask: nextTask, pendingAnswerReview: nextReview });
+}
+
+function renderAnswerReview(review, task) {
+  if (!reviewMatchesTask(review, task) || !review.drafts.length) {
+    answerReview.hidden = true;
+    reviewList.textContent = "";
+    return;
+  }
+
+  const cards = review.drafts.map((draft) => {
+    const card = document.createElement("article");
+    card.className = "review-card";
+
+    const heading = document.createElement("h3");
+    heading.textContent = draft.label;
+
+    const badge = document.createElement("span");
+    badge.className = `review-state ${draft.decision === "approved" ? "approved" : draft.decision === "manual" ? "manual" : ""}`;
+    badge.textContent = draft.decision === "approved" ? "Approved for fill" : draft.decision === "manual" ? "Manual" : "Pending review";
+
+    const textarea = document.createElement("textarea");
+    textarea.value = typeof draft.editedAnswer === "string" ? draft.editedAnswer : draft.proposedAnswer;
+    if (Number.isInteger(draft.maxLength)) textarea.maxLength = draft.maxLength;
+    textarea.setAttribute("aria-label", `Review answer for ${draft.label}`);
+
+    const meta = document.createElement("p");
+    meta.className = "review-meta";
+    const prefix = document.createTextNode("Supporting claim IDs: ");
+    const code = document.createElement("code");
+    code.textContent = draft.usedClaimIds.join(", ") || "none";
+    meta.append(prefix, code);
+
+    const actions = document.createElement("div");
+    actions.className = "review-actions";
+    const approve = document.createElement("button");
+    approve.textContent = draft.decision === "approved" ? "Approved" : "Approve for fill";
+    approve.disabled = draft.decision === "approved";
+    approve.addEventListener("click", () => {
+      void approveDraft(draft.questionId, textarea.value).catch((error) => {
+        status.classList.add("blocked");
+        status.textContent = error instanceof Error ? error.message : "Unable to approve answer";
+      });
+    });
+    const manual = document.createElement("button");
+    manual.className = "secondary";
+    manual.textContent = draft.decision === "manual" ? "Stays manual" : "Leave manual";
+    manual.disabled = draft.decision === "manual";
+    manual.addEventListener("click", () => {
+      void leaveDraftManual(draft.questionId, textarea.value).catch((error) => {
+        status.classList.add("blocked");
+        status.textContent = error instanceof Error ? error.message : "Unable to keep answer manual";
+      });
+    });
+    actions.append(approve, manual);
+
+    textarea.addEventListener("input", () => {
+      if (draft.decision !== "approved") return;
+      draft.decision = "pending";
+      badge.className = "review-state";
+      badge.textContent = "Pending review";
+      approve.disabled = false;
+      approve.textContent = "Approve for fill";
+      void revokeEditedApproval(draft.questionId, textarea.value);
+    });
+
+    card.append(heading, badge, textarea, meta, actions);
+    return card;
+  });
+
+  reviewList.replaceChildren(...cards);
+  answerReview.hidden = false;
+}
+
 async function refreshInspection() {
   const result = await send("SCOUT_INSPECT");
   renderIntelligence(result?.formIntelligence?.summary);
@@ -81,7 +241,7 @@ async function refreshInspection() {
   status.classList.remove("blocked");
   const total = result.formIntelligence?.summary?.total ?? result.fields ?? 0;
   status.textContent = result.taskReady
-    ? `${total} visible field(s) found on ${result.platform}. Scout has an exact-page task ready; uncertain and sensitive fields stay manual.`
+    ? `${total} visible field(s) found on ${result.platform}. Scout has an exact-page task ready; only verified profile values and explicitly reviewed text can be filled.`
     : `${total} visible field(s) found on ${result.platform}. Generate a browser handoff in Scout, then load it here.`;
   fillButton.disabled = !result.taskReady;
   return result;
@@ -113,19 +273,32 @@ async function loadApprovedTask() {
   });
   const payload = await response.json();
   if (!response.ok || !payload?.task) throw new Error(payload?.error || "Scout rejected the browser handoff.");
-  await chrome.storage.local.set({ approvedTask: payload.task, scoutBaseUrl: baseUrl });
+
+  const pendingAnswerReview = {
+    schemaVersion: 1,
+    applicationId: payload.task.applicationId,
+    artifactVersion: payload.task.artifactVersion,
+    expiresAt: payload.task.expiresAt,
+    drafts: Array.isArray(payload.answerReview?.drafts)
+      ? payload.answerReview.drafts.map((draft) => ({ ...draft, decision: "pending", editedAnswer: draft.proposedAnswer }))
+      : [],
+  };
+  await chrome.storage.local.set({ approvedTask: payload.task, pendingAnswerReview, scoutBaseUrl: baseUrl });
   handoffInput.value = "";
   renderIntelligence(payload.formIntelligence?.summary);
-  const aiCount = payload.ai?.drafted ?? 0;
+  renderAnswerReview(pendingAnswerReview, payload.task);
+  const aiCount = pendingAnswerReview.drafts.length;
   const manualCount = payload.manualQuestions?.length ?? 0;
   const safeCount = payload.formIntelligence?.summary?.safeAutofill ?? 0;
   const aiNote = payload.ai?.error ? ` ${payload.ai.error}.` : "";
-  status.textContent = `Task loaded. ${safeCount} profile-backed field(s) classified safe, ${aiCount} claim-backed text draft(s) prepared, and ${manualCount} field(s) stay with you.${aiNote} Review everything before submitting.`;
+  status.textContent = `Task loaded. ${safeCount} verified profile field(s) are fillable, ${aiCount} claim-backed draft(s) await your approval, and ${manualCount} field(s) stay manual.${aiNote}`;
   fillButton.disabled = false;
 }
 
-chrome.storage.local.get(["scoutBaseUrl"]).then(({ scoutBaseUrl }) => {
+chrome.storage.local.get(["scoutBaseUrl", "approvedTask", "pendingAnswerReview"]).then(({ scoutBaseUrl, approvedTask, pendingAnswerReview }) => {
   scoutUrlInput.value = scoutBaseUrl || "http://localhost:3000";
+  if (reviewMatchesTask(pendingAnswerReview, approvedTask)) renderAnswerReview(pendingAnswerReview, approvedTask);
+  else if (pendingAnswerReview) void chrome.storage.local.remove("pendingAnswerReview");
 });
 
 refreshInspection().catch(() => {
@@ -146,13 +319,13 @@ loadButton.addEventListener("click", async () => {
 fillButton.addEventListener("click", async () => {
   const result = await send("SCOUT_FILL");
   const filled = result?.filled ?? 0;
-  const aiDrafts = result?.aiDraftsFilled ?? 0;
+  const reviewed = result?.reviewedDraftsFilled ?? 0;
   renderIntelligence(result?.formIntelligence);
   if (result?.blockers?.length) {
     status.classList.add("blocked");
-    status.textContent = `${filled} safe field(s) filled${aiDrafts ? `, including ${aiDrafts} AI draft answer(s)` : ""}. Still needs you: ${result.blockers.join(" · ")}. Review the form before submit.`;
+    status.textContent = `${filled} allowed field(s) filled${reviewed ? `, including ${reviewed} reviewed text answer(s)` : ""}. Still needs you: ${result.blockers.join(" · ")}. Review the form before submit.`;
   } else {
     status.classList.remove("blocked");
-    status.textContent = `${filled} Scout-prepared field(s) filled${aiDrafts ? `, including ${aiDrafts} AI draft answer(s)` : ""}. Review the whole form and submit manually.`;
+    status.textContent = `${filled} allowed field(s) filled${reviewed ? `, including ${reviewed} reviewed text answer(s)` : ""}. Review the whole form and submit manually.`;
   }
 });
