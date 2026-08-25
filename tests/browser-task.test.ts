@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { BROWSER_TASK_CAPABILITIES, buildBrowserAssistTask } from "../lib/scout/browser-task.ts";
 
-test("browser task expands verified profile keys into visible form-label aliases", () => {
+test("browser task expands verified profile keys into conservative visible form-label aliases", () => {
   const now = 1_800_000_000_000;
   const task = buildBrowserAssistTask({
     applicationId: "application-1",
@@ -15,6 +15,7 @@ test("browser task expands verified profile keys into visible form-label aliases
         full_name: "Ryan Mahajan",
         email: "ryan@example.com",
         university: "IIM Sambalpur",
+        program: "Management & Public Policy",
         resume_reference: "resume-v3.pdf",
       },
     },
@@ -25,6 +26,8 @@ test("browser task expands verified profile keys into visible form-label aliases
   assert.equal(task.expiresAt, now + 10 * 60_000);
   assert.ok(task.answers.some((answer) => answer.key === "full name" && answer.value === "Ryan Mahajan"));
   assert.ok(task.answers.some((answer) => answer.key === "university" && answer.value === "IIM Sambalpur"));
+  assert.ok(task.answers.some((answer) => answer.key === "degree program" && answer.value === "Management & Public Policy"));
+  assert.equal(task.answers.some((answer) => answer.key === "degree"), false);
   assert.equal(task.answers.some((answer) => answer.sourceField === "resume_reference"), false);
   assert.equal(task.constraints.submitAvailable, false);
   assert.equal(task.constraints.captchaManualOnly, true);
