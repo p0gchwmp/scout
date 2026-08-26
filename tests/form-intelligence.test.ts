@@ -38,12 +38,16 @@ test("form intelligence classifies every visible field into an explicit action b
   assert.deepEqual(result.summary, { total: 5, safeAutofill: 1, claimDrafts: 1, needsUser: 1, sensitiveManual: 1, unsupportedManual: 1 });
 });
 
-test("profile autofill aliases are conservative and do not treat ambiguous degree or referral name as verified fields", () => {
+test("profile aliases recognize graduation-year questions but keep the conditional degree path manual", () => {
   assert.equal(profileFieldForLabel("Your full name *"), "full_name");
   assert.equal(profileFieldForLabel("Expected graduation year"), "graduation_year");
   assert.equal(profileFieldForLabel("Degree program"), "program");
   assert.equal(profileFieldForLabel("Do you have a degree?"), null);
   assert.equal(profileFieldForLabel("Referrer name"), null);
+  const graduation = classifyFormField(field({ label: "Expected graduation year", inputType: "text" }));
+  assert.equal(graduation.category, "needs_user_answer");
+  assert.equal(graduation.sourceField, null);
+  assert.match(graduation.reason, /confirmed for each application/i);
 });
 
 test("sensitive questions and choice controls never become claim drafts", () => {

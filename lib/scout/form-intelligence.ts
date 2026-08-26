@@ -113,6 +113,9 @@ export function classifyFormField(field: ObservedFormField): ClassifiedFormField
   if (field.inputType === "checkbox" || field.inputType === "radio") {
     return { ...field, category: "needs_user_answer", sourceField: null, reason: "Choice controls require an explicit user decision" };
   }
+  if (sourceField === "graduation_year") {
+    return { ...field, category: "needs_user_answer", sourceField: null, reason: "Graduation year / degree path must be confirmed for each application" };
+  }
   if (sourceField) {
     return { ...field, category: "safe_autofill", sourceField, reason: `Fill only from verified profile field ${sourceField}` };
   }

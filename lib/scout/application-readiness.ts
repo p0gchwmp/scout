@@ -23,6 +23,7 @@ export type ReadinessJob = {
 export type ReadinessClaim = PrepClaim & Pick<ResumeClaimText, "evidence">;
 
 const confirmationLabels: Record<(typeof ALWAYS_CONFIRM_APPLICATION_FIELDS)[number], string> = {
+  graduation_year: "Graduation year / degree path",
   work_authorization: "Work authorization",
   visa_or_sponsorship: "Visa / sponsorship",
   salary_or_compensation: "Salary / compensation",

@@ -3,6 +3,7 @@ import {
   REQUIRED_APPLICATION_PROFILE_KEYS,
   type ApplicationProfileField,
 } from "./application-prep.ts";
+import { hasUnanchoredStatementNumbers, isSyntheticDemoClaim, selectUsableApprovedClaims } from "./claims.ts";
 import { evaluateResumeAlignment, type ResumeClaimText } from "./resume-alignment.ts";
 import { ROLE_FAMILIES, type RoleFamilyId } from "./role-taxonomy.ts";
 
@@ -65,7 +66,7 @@ const FAMILY_PATTERNS: Readonly<Record<Exclude<RoleFamilyId, "generalist">, RegE
   business_strategy: /\b(?:strategy|business|market research|competitive research|pricing|price|commercial|growth|stakeholder|partnership|go[- ]?to[- ]?market|gtm)\b/i,
   finance_economics: /\b(?:finance|financial|economics?|economic|pricing|price|cost|budget|forecast|valuation|investment|credit|markets?)\b/i,
   operations: /\b(?:operations?|workflow|process|clinic|appointments?|billing|program|project|logistics|coordination|service operations?)\b/i,
-  research: /\b(?:research|desk research|literature review|data review|review|synthesis|pharmacovigilance|policy report|evidence)\b/i,
+  research: /\b(?:research|desk research|literature review|data review|review|synthesis|pharmacovigilance|policy|governance|stewardship|pilot|questionnaire|exploratory|study|evidence)\b/i,
   technical_systems: /\b(?:node(?:\.js)?|express|sqlite|database|api|prototype|automation|systems?|implementation|testing|tests?|qa|cms|git|deployment|workflow mapping)\b/i,
   software_development: /\b(?:software|coding|code|javascript|python|node(?:\.js)?|express|django|wagtail|git|deployment|backend|frontend|full[- ]?stack)\b/i,
 });
@@ -90,9 +91,9 @@ function normalizeTokens(value: string) {
     .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
 }
 
-function roleSupport(text: string) {
+function roleSupport(statement: string) {
   const matched = (Object.entries(FAMILY_PATTERNS) as Array<[Exclude<RoleFamilyId, "generalist">, RegExp]>)
-    .filter(([, pattern]) => pattern.test(text))
+    .filter(([, pattern]) => pattern.test(statement))
     .map(([id]) => id);
   return matched.length ? matched : ["generalist" as const];
 }
@@ -119,6 +120,9 @@ function claimFormDiagnostics(claim: EvidenceClaim, familyIds: RoleFamilyId[]) {
   const evidenceNumbers = new Set(claim.evidence.match(NUMBER_TOKEN) ?? []);
   if ([...statementNumbers].some((number) => !evidenceNumbers.has(number))) {
     cautions.push("Statement contains a number or metric not repeated in the evidence text; verify it before external use.");
+  }
+  if (isSyntheticDemoClaim(claim)) {
+    cautions.push("Synthetic local-demo evidence is diagnostic only and is ignored when real approved evidence is available.");
   }
   if (claim.status !== "approved") {
     cautions.push(`${claim.status === "draft" ? "Draft" : "Rejected"} claim is ignored by ranking, application packets, and outreach grounding.`);
@@ -169,7 +173,12 @@ export function buildEvidenceIntelligence(input: {
   profileFields: ApplicationProfileField[];
   jobs: EvidenceJob[];
 }) {
-  const approvedClaims = input.claims.filter((claim) => claim.status === "approved");
+  const rawApprovedClaims = input.claims.filter((claim) => claim.status === "approved");
+  const demoOnlyWorkspace = input.jobs.length > 0 && input.jobs.every((job) => job.id.startsWith("demo_job_"));
+  const approvedClaims = selectUsableApprovedClaims(input.claims, { allowSyntheticDemo: demoOnlyWorkspace });
+  const approvedClaimIds = new Set(approvedClaims.map((claim) => claim.id));
+  const ignoredSyntheticApprovedClaims = rawApprovedClaims.filter((claim) => !approvedClaimIds.has(claim.id) && isSyntheticDemoClaim(claim));
+  const ignoredUnanchoredNumericApprovedClaims = rawApprovedClaims.filter((claim) => !approvedClaimIds.has(claim.id) && !isSyntheticDemoClaim(claim) && hasUnanchoredStatementNumbers(claim));
   const duplicatePairs = findPossibleDuplicateClaims(input.claims);
   const duplicatesByClaim = new Map<string, string[]>();
   for (const pair of duplicatePairs) {
@@ -190,8 +199,7 @@ export function buildEvidenceIntelligence(input: {
   }
 
   const claimAssessments: ClaimEvidenceAssessment[] = input.claims.map((claim) => {
-    const text = `${claim.statement} ${claim.evidence}`;
-    const familyIds = roleSupport(text);
+    const familyIds = roleSupport(claim.statement);
     const diagnostics = claimFormDiagnostics(claim, familyIds);
     const familyLabels = familyIds.map((id) => ROLE_FAMILIES.find((family) => family.id === id)?.label ?? id);
     const activeOpportunities = usageByClaim.get(claim.id) ?? [];
@@ -210,7 +218,7 @@ export function buildEvidenceIntelligence(input: {
   });
 
   const approvedAssessmentById = new Map(claimAssessments
-    .filter((assessment) => approvedClaims.some((claim) => claim.id === assessment.claimId))
+    .filter((assessment) => approvedClaimIds.has(assessment.claimId))
     .map((assessment) => [assessment.claimId, assessment]));
 
   const familyCoverage: EvidenceFamilyCoverage[] = ROLE_FAMILIES
@@ -261,10 +269,14 @@ export function buildEvidenceIntelligence(input: {
     profileCoverage,
     missingRequiredProfileKeys,
     summary: {
-      approvedClaims: approvedClaims.length,
+      approvedClaims: rawApprovedClaims.length,
+      usableApprovedClaims: approvedClaims.length,
+      rawApprovedClaims: rawApprovedClaims.length,
+      ignoredSyntheticApprovedClaims: ignoredSyntheticApprovedClaims.length,
+      ignoredUnanchoredNumericApprovedClaims: ignoredUnanchoredNumericApprovedClaims.length,
       draftClaims: input.claims.filter((claim) => claim.status === "draft").length,
       rejectedClaims: input.claims.filter((claim) => claim.status === "rejected").length,
-      clearApprovedClaims: claimAssessments.filter((assessment) => assessment.formQuality === "clear" && approvedClaims.some((claim) => claim.id === assessment.claimId)).length,
+      clearApprovedClaims: claimAssessments.filter((assessment) => assessment.formQuality === "clear" && approvedClaimIds.has(assessment.claimId)).length,
       supportedBroadFamilies,
       broadFamilyCount: broadCoverage.length,
       verifiedRequiredProfileCount,
@@ -275,8 +287,10 @@ export function buildEvidenceIntelligence(input: {
     nextEvidenceActions: [
       ...(input.claims.some((claim) => claim.status === "draft") ? ["Review draft claims before expecting them to influence ranking or applications."] : []),
       ...(missingRequiredProfileKeys.length ? [`Verify ${missingRequiredProfileKeys.length} required application profile field${missingRequiredProfileKeys.length === 1 ? "" : "s"}.`] : []),
+      ...(ignoredSyntheticApprovedClaims.length ? [`${ignoredSyntheticApprovedClaims.length} synthetic local-demo approved claim${ignoredSyntheticApprovedClaims.length === 1 ? " is" : "s are"} ignored because real approved evidence is available.`] : []),
+      ...(ignoredUnanchoredNumericApprovedClaims.length ? [`${ignoredUnanchoredNumericApprovedClaims.length} approved claim${ignoredUnanchoredNumericApprovedClaims.length === 1 ? " has" : "s have"} numbers or metrics not anchored in the evidence text and are ignored until re-evidenced.`] : []),
       ...(duplicatePairs.length ? ["Review possible overlapping claims; Scout will not merge them automatically."] : []),
-      ...(claimAssessments.some((assessment) => assessment.issues.length && approvedClaims.some((claim) => claim.id === assessment.claimId)) ? ["If an approved claim needs improvement, create a new draft revision rather than editing the immutable approved claim."] : []),
+      ...(claimAssessments.some((assessment) => assessment.issues.length && approvedClaimIds.has(assessment.claimId)) ? ["If an approved claim needs improvement, create a new draft revision rather than editing the immutable approved claim."] : []),
     ],
   };
 }

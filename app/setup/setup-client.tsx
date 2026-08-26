@@ -17,9 +17,9 @@ const requiredProfileKinds = [
   "current_location",
   "university",
   "program",
-  "graduation_year",
   "resume_reference",
 ] as const;
+const profileDisplayKinds = [...requiredProfileKinds, "graduation_year"] as const;
 
 const starterProfile = [
   {
@@ -39,20 +39,20 @@ const starterProfile = [
   },
   {
     kind: "program",
-    claim: "Management and Public Policy undergraduate program",
-    evidence: "Ryan-provided Scout profile. Verify the exact official degree/program wording before application use.",
+    claim: "Bachelor of Science (B.S.) in Management and Public Policy",
+    evidence: "Ryan-confirmed official degree wording for Scout application use.",
   },
   {
     kind: "graduation_year",
-    claim: "2029",
-    evidence: "Ryan-provided Scout profile. Verify the expected graduation year before application use.",
+    claim: "2028 (B.S. exit) / 2029 (B.S. Honours with Research)",
+    evidence: "Ryan-confirmed degree path. Graduation year must be confirmed per application and is never a universal Safe Fill fact.",
   },
 ] as const;
 
 const starterClaims = [
   {
-    statement: "I am an undergraduate in IIM Sambalpur's 2025–2029 inaugural Management and Public Policy cohort.",
-    evidence: "Ryan-provided resume boundary. Review the exact program/cohort wording and supporting education evidence before approval.",
+    statement: "I am pursuing the Bachelor of Science (B.S.) in Management and Public Policy at IIM Sambalpur; the B.S. exit award is available in 2028, with B.S. (Honours with Research) in 2029.",
+    evidence: "Ryan-confirmed degree path: B.S. exit award in 2028 and B.S. (Honours with Research) in 2029. Verify against official academic documentation before approval.",
   },
   {
     statement: "At GMC Jammu, I worked on adverse-drug-reaction data review, technical documentation, and antibiotic price desk research.",
@@ -167,7 +167,7 @@ export function SetupWorkspace() {
         created += 1;
       }
       setNotice(created
-        ? `${created} profile field${created === 1 ? "" : "s"} saved as unverified. Verify each exact value before Scout reuses it.`
+        ? `${created} profile field${created === 1 ? "" : "s"} saved as unverified. Verify each exact reusable value before Scout reuses it.`
         : "No missing starter profile fields were changed. Existing evidence was left untouched.");
       await load();
     } catch (caught) {
@@ -251,7 +251,7 @@ export function SetupWorkspace() {
     {notice && <div className={styles.notice}>{notice}</div>}
 
     <section className={styles.metrics}>
-      <article><strong>{verifiedRequired.length}/7</strong><span>Required profile facts verified</span></article>
+      <article><strong>{verifiedRequired.length}/{requiredProfileKinds.length}</strong><span>Required profile facts verified</span></article>
       <article><strong>{approvedClaims.length}</strong><span>Approved resume claims</span></article>
       <article><strong>{activeJobs.length}</strong><span>Active discovered roles</span></article>
       <article><strong>{applicationsReady}</strong><span>Applications ready for review</span></article>
@@ -264,19 +264,20 @@ export function SetupWorkspace() {
         <div><p className={styles.kicker}>1 · REUSABLE APPLICATION FACTS</p><h2>Verify only facts you want Safe Fill to reuse</h2></div>
         <span>{missingRequired.length ? `${missingRequired.length} still missing/unverified` : "Required profile complete"}</span>
       </div>
-      <p className={styles.muted}>Starter values are saved unverified. Scout will not reuse them until you click Verify. Email and the approved resume reference are intentionally not guessed.</p>
+      <p className={styles.muted}>Starter values are saved unverified. Scout will not reuse them until you click Verify. Email and the approved resume reference are intentionally not guessed. Graduation year stays manual because the B.S. exit award is available in 2028 while B.S. (Honours with Research) is in 2029.</p>
       <div className={styles.inputs}>
         <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Your application email" /></label>
         <label>Approved resume reference<input value={resumeReference} onChange={(event) => setResumeReference(event.target.value)} placeholder="e.g. Ryan_Mahajan_Resume_Aug_2026.pdf" /></label>
         <button disabled={busy === "profile"} onClick={() => void saveStarterProfile()}>Save missing profile basics</button>
       </div>
       <div className={styles.profileGrid}>
-        {requiredProfileKinds.map((kind) => {
+        {profileDisplayKinds.map((kind) => {
           const field = profileByKind.get(kind);
+          const manualOnly = kind === "graduation_year";
           return <article key={kind} className={styles.profileCard}>
-            <div><strong>{humanize(kind)}</strong><span className={field?.verified ? styles.good : styles.warn}>{field?.verified ? "Verified" : field ? "Unverified" : "Missing"}</span></div>
+            <div><strong>{humanize(kind)}</strong><span className={manualOnly || !field?.verified ? styles.warn : styles.good}>{manualOnly ? "Manual per application" : field?.verified ? "Verified" : field ? "Unverified" : "Missing"}</span></div>
             <p>{field?.claim || "No reusable value saved yet."}</p>
-            {field && <button disabled={busy === `profile:${field.id}`} onClick={() => void verifyField(field)}>{field.verified ? "Mark unverified" : "Verify exact value"}</button>}
+            {field && (!manualOnly || field.verified) && <button disabled={busy === `profile:${field.id}`} onClick={() => void verifyField(field)}>{manualOnly ? "Mark unverified" : field.verified ? "Mark unverified" : "Verify exact value"}</button>}
           </article>;
         })}
       </div>

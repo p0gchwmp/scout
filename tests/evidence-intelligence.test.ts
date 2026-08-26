@@ -43,8 +43,7 @@ const profileFields = [
   { id: "p2", kind: "email", claim: "ryan@example.com", evidence: "Owner supplied", verified: true },
   { id: "p3", kind: "current_location", claim: "India", evidence: "Owner supplied", verified: true },
   { id: "p4", kind: "university", claim: "IIM Sambalpur", evidence: "Owner supplied", verified: true },
-  { id: "p5", kind: "program", claim: "Management & Public Policy", evidence: "Owner supplied", verified: true },
-  { id: "p6", kind: "graduation_year", claim: "2029", evidence: "Owner supplied", verified: true },
+  { id: "p5", kind: "program", claim: "Bachelor of Science (B.S.) in Management and Public Policy", evidence: "Owner supplied", verified: true },
 ];
 
 const jobs = [
@@ -107,11 +106,13 @@ test("claim usage counts only exact approved claim ids used by active role align
   assert.equal(draft.activeOpportunityCount, 0);
 });
 
-test("profile intelligence distinguishes missing verification from missing real-world information", () => {
+test("profile intelligence keeps conditional graduation year outside required reusable fields", () => {
   const result = buildEvidenceIntelligence({ claims, profileFields, jobs: [] });
-  assert.equal(result.summary.verifiedRequiredProfileCount, 6);
-  assert.equal(result.summary.requiredProfileCount, 7);
+  assert.equal(result.summary.verifiedRequiredProfileCount, 5);
+  assert.equal(result.summary.requiredProfileCount, 6);
   assert.deepEqual(result.missingRequiredProfileKeys, ["resume_reference"]);
+  const graduation = result.profileCoverage.find((field) => field.kind === "graduation_year")!;
+  assert.equal(graduation.required, false);
 });
 
 test("possible duplicate claims are review-only and never auto-merged", () => {
@@ -152,4 +153,64 @@ test("credential-like and unmatched numeric language is surfaced as caution rath
   assert.ok(assessment.cautions.some((item) => /credential or eligibility/i.test(item)));
   assert.ok(assessment.cautions.some((item) => /number or metric/i.test(item)));
   assert.ok(assessment.cautions.some((item) => /Draft claim is ignored/i.test(item)));
+});
+
+test("real approved claims suppress synthetic demo copies from coverage and usage", () => {
+  const demo: EvidenceClaim = {
+    id: "demo_claim_gmc",
+    status: "approved",
+    version: 1,
+    statement: "Supported adverse-drug-reaction data review and technical documentation, and conducted desk research on antibiotic price disparities in India.",
+    evidence: "LOCAL DEMO ONLY — derived from Scout's approved resume-boundary handoff; replace/review against source documents before any external use.",
+  };
+  const real: EvidenceClaim = {
+    id: "resume-gmc",
+    status: "approved",
+    version: 1,
+    statement: demo.statement,
+    evidence: "Ryan_Vivek_Mahajan_Master_Resume.docx and README_Resume_Notes.md",
+  };
+  const result = buildEvidenceIntelligence({ claims: [demo, real], profileFields: [], jobs });
+  assert.equal(result.summary.rawApprovedClaims, 2);
+  assert.equal(result.summary.approvedClaims, 2);
+  assert.equal(result.summary.usableApprovedClaims, 1);
+  assert.equal(result.summary.ignoredSyntheticApprovedClaims, 1);
+  assert.equal(result.claimAssessments.find((item) => item.claimId === demo.id)?.activeOpportunityCount, 0);
+  assert.ok(result.familyCoverage.every((family) => !family.claimIds.includes(demo.id)));
+});
+
+test("provenance boilerplate cannot create research coverage by itself", () => {
+  const claim: EvidenceClaim = {
+    id: "resume-cms",
+    status: "approved",
+    version: 1,
+    statement: "Directed product and design and AI-assisted delivery of a clinic website and CMS.",
+    evidence: "Review source documents before external use.",
+  };
+  const result = buildEvidenceIntelligence({ claims: [claim], profileFields: [], jobs: [] });
+  const assessment = result.claimAssessments[0];
+  assert.ok(!assessment.roleFamilyIds.includes("research"));
+});
+
+test("approved claims with unanchored numbers are excluded from usable evidence", () => {
+  const risky: EvidenceClaim = {
+    id: "resume-education",
+    status: "approved",
+    version: 1,
+    statement: "Bachelor of Science student, expected 2029; Semester I CGPA 8.25.",
+    evidence: "Resume file reference pending exact documentary verification.",
+  };
+  const safe: EvidenceClaim = {
+    id: "resume-policy",
+    status: "approved",
+    version: 1,
+    statement: "Prepared public-policy coursework analysing antimicrobial-resistance governance.",
+    evidence: "Coursework source artifact.",
+  };
+  const result = buildEvidenceIntelligence({ claims: [risky, safe], profileFields: [], jobs: [] });
+  assert.equal(result.summary.rawApprovedClaims, 2);
+  assert.equal(result.summary.approvedClaims, 2);
+  assert.equal(result.summary.usableApprovedClaims, 1);
+  assert.equal(result.summary.ignoredUnanchoredNumericApprovedClaims, 1);
+  assert.ok(result.familyCoverage.every((family) => !family.claimIds.includes(risky.id)));
 });

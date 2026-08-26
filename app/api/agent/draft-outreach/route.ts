@@ -5,6 +5,7 @@ import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreac
 import { buildAiOutreachEnvelope } from "../../../../lib/scout/ai-agent";
 import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-runtime";
 import { parseOutreachCreatePayload, PayloadValidationError } from "../../../../lib/scout/api-validation";
+import { selectUsableApprovedClaims } from "../../../../lib/scout/claims";
 import { hashDraftBody } from "../../../../lib/scout/outreach";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
@@ -39,8 +40,9 @@ export async function POST(request: Request) {
       db.select().from(candidateClaims).where(inArray(candidateClaims.id, payload.claimIds)),
       db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
     ]);
-    if (claims.length !== payload.claimIds.length || claims.some((claim) => claim.status !== "approved")) {
-      return Response.json({ error: "Every candidate claim supplied to AI must be approved" }, { status: 409 });
+    const usableClaims = selectUsableApprovedClaims(claims, { allowSyntheticDemo: job.id.startsWith("demo_job_") });
+    if (claims.length !== payload.claimIds.length || usableClaims.length !== payload.claimIds.length) {
+      return Response.json({ error: "Every candidate claim supplied to AI must be approved, non-synthetic for live roles, and have any numbers anchored in its evidence" }, { status: 409 });
     }
     const writingSample = voiceRows.find((field) => field.kind === "writing_sample")?.claim ?? null;
     const writingStyleNote = voiceRows.find((field) => field.kind === "writing_style_note")?.claim ?? null;
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
         excerpt: contact.excerpt,
         reviewState: "accepted",
       },
-      claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement, status: "approved" as const })),
+      claims: usableClaims.map((claim) => ({ id: claim.id, statement: claim.statement, status: "approved" as const })),
       voice: { sample: writingSample, styleNote: writingStyleNote },
     });
     const client = createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>);

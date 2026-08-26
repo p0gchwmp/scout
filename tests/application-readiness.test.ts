@@ -38,15 +38,31 @@ test("readiness becomes ready only with official evidence, required profile fiel
   assert.ok(result.claimIds.includes("claim-product"));
   assert.equal(result.score, 100);
   assert.ok(result.manualConfirmations.includes("Work authorization"));
+  assert.ok(result.manualConfirmations.includes("Graduation year / degree path"));
+});
+
+test("conditional graduation year does not block readiness and is never a Safe Fill field", () => {
+  const profile = [...verifiedProfile(), {
+    id: "profile-graduation_year",
+    kind: "graduation_year",
+    claim: "2028 (B.S. exit) / 2029 (B.S. Honours with Research)",
+    evidence: "Owner supplied conditional degree path",
+    verified: true,
+  }];
+  const result = assessApplicationReadiness({ job, profileFields: profile, claims });
+  assert.equal(result.status, "ready");
+  assert.ok(result.optionalVerifiedKeys.includes("graduation_year"));
+  assert.ok(result.manualConfirmations.includes("Graduation year / degree path"));
+  assert.equal(result.missingRequiredKeys.includes("graduation_year" as never), false);
 });
 
 test("missing verified profile evidence is visible and keeps Safe Fill locked", () => {
-  const profile = verifiedProfile().filter((field) => field.kind !== "resume_reference" && field.kind !== "graduation_year");
+  const profile = verifiedProfile().filter((field) => field.kind !== "resume_reference");
   const result = assessApplicationReadiness({ job, profileFields: profile, claims });
   assert.equal(result.status, "almost_ready");
   assert.equal(result.preparationStatus, "needs_input");
-  assert.deepEqual(result.missingRequiredKeys.sort(), ["graduation_year", "resume_reference"]);
-  assert.match(result.profileSummary, /^5\/7 required/);
+  assert.deepEqual(result.missingRequiredKeys, ["resume_reference"]);
+  assert.match(result.profileSummary, /^5\/6 required/);
 });
 
 test("draft or rejected claims cannot make an application ready", () => {
@@ -64,12 +80,7 @@ test("approved but unrelated claims do not satisfy role-specific readiness", () 
   const result = assessApplicationReadiness({
     job,
     profileFields: verifiedProfile(),
-    claims: [{
-      id: "claim-unrelated",
-      statement: "Completed introductory macroeconomics coursework.",
-      evidence: "Verified course record",
-      status: "approved",
-    }],
+    claims: [{ id: "claim-unrelated", statement: "Completed introductory macroeconomics coursework.", evidence: "Verified course record", status: "approved" }],
   });
   assert.equal(result.status, "almost_ready");
   assert.equal(result.preparationStatus, "needs_input");
@@ -78,11 +89,7 @@ test("approved but unrelated claims do not satisfy role-specific readiness", () 
 });
 
 test("missing official snapshot is a critical blocker even with a complete profile", () => {
-  const result = assessApplicationReadiness({
-    job: { ...job, currentSnapshotId: null },
-    profileFields: verifiedProfile(),
-    claims,
-  });
+  const result = assessApplicationReadiness({ job: { ...job, currentSnapshotId: null }, profileFields: verifiedProfile(), claims });
   assert.equal(result.status, "blocked");
   assert.ok(result.score <= 49);
   assert.ok(result.criticalBlockers.some((blocker) => blocker.includes("immutable job snapshot")));

@@ -56,13 +56,14 @@ test("one broad prototype claim cannot inflate several matching themes into a st
   }]);
   assert.ok(result.matches.length >= 4);
   assert.equal(result.band, "partial");
-  assert.match(result.basis, /1 distinct supporting claim/);
+  const distinctClaimIds = new Set(result.supportingClaims.flatMap((support) => support.claimIds));
+  assert.deepEqual([...distinctClaimIds], ["claim-prototype"]);
 });
 
 test("pure software-development internships stay visible as stretch even with relevant technical evidence", () => {
   const result = evaluateResumeAlignment({
     title: "Software Engineer Intern",
-    description: "Build backend services, APIs and production software with automated tests and database integrations.",
+    description: "Build backend services, APIs and production software with automated tests, database integrations, product requirements, workflow automation and operational process improvement.",
     location: "Remote",
   }, [
     {
@@ -79,5 +80,32 @@ test("pure software-development internships stay visible as stretch even with re
     },
   ]);
   assert.equal(result.band, "stretch");
-  assert.match(result.basis, /software-development roles remain a stretch lane/);
+  assert.ok(result.matches.length >= 4);
+  assert.equal(result.gaps.length, 0);
+});
+
+test("real approved evidence suppresses synthetic demo claim ids", () => {
+  const result = evaluateResumeAlignment({
+    id: "job-real",
+    title: "Product Operations Intern",
+    description: "Support product workflows and technical systems.",
+    location: "Remote",
+  }, [
+    {
+      id: "demo_claim_ops",
+      status: "approved",
+      statement: "Mapped product workflows and operations.",
+      evidence: "LOCAL DEMO ONLY — review source documents.",
+    },
+    {
+      id: "resume-ops",
+      status: "approved",
+      statement: "Mapped product workflows and operations.",
+      evidence: "Approved resume artifact.",
+    },
+  ]);
+  const ids = new Set(result.supportingClaims.flatMap((support) => support.claimIds));
+  assert.ok(ids.has("resume-ops"));
+  assert.ok(!ids.has("demo_claim_ops"));
+  assert.equal(result.basis, "1 approved resume claim");
 });

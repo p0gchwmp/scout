@@ -1,3 +1,4 @@
+import { selectUsableApprovedClaims } from "./claims.ts";
 import { classifyRoleTaxonomy } from "./role-taxonomy.ts";
 
 export type ResumeClaimText = {
@@ -28,6 +29,7 @@ export type ResumeAlignment = {
 };
 
 type JobText = {
+  id?: string;
   title: string;
   description: string;
   location: string;
@@ -114,9 +116,10 @@ const NOT_CHECKED = [
 ] as const;
 
 export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[]): ResumeAlignment {
-  const approvedClaims = claims.filter((claim) => (
-    claim.status === "approved"
-    && claim.id.trim()
+  const approvedClaims = selectUsableApprovedClaims(claims, {
+    allowSyntheticDemo: job.id?.startsWith("demo_job_") === true,
+  }).filter((claim) => (
+    claim.id.trim()
     && claim.statement.trim()
     && claim.evidence.trim()
   ));

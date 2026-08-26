@@ -6,6 +6,7 @@ import {
   parseOutreachMutationPayload,
   PayloadValidationError,
 } from "../../../lib/scout/api-validation";
+import { selectUsableApprovedClaims } from "../../../lib/scout/claims";
 import {
   OUTREACH_TEMPLATE_VERSION,
   approveDraft,
@@ -100,8 +101,9 @@ export async function POST(request: Request) {
     )).limit(1);
     if (!contact) return Response.json({ error: "An accepted contact pinned to the current job snapshot is required" }, { status: 409 });
     const claims = await db.select().from(candidateClaims).where(inArray(candidateClaims.id, payload.claimIds));
-    if (claims.length !== payload.claimIds.length || claims.some((claim) => claim.status !== "approved")) {
-      return Response.json({ error: "Every pinned claim must exist and be approved" }, { status: 409 });
+    const usableClaims = selectUsableApprovedClaims(claims, { allowSyntheticDemo: job.id.startsWith("demo_job_") });
+    if (claims.length !== payload.claimIds.length || usableClaims.length !== payload.claimIds.length) {
+      return Response.json({ error: "Every pinned claim must exist, be approved, non-synthetic for live roles, and have any numbers anchored in its evidence" }, { status: 409 });
     }
 
     const rendered = renderOutreachDraft({
@@ -111,7 +113,7 @@ export async function POST(request: Request) {
       contactEmail: contact.email,
       jobSnapshotId: job.currentSnapshotId,
       contactId: contact.id,
-      claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement })),
+      claims: usableClaims.map((claim) => ({ id: claim.id, statement: claim.statement })),
     });
     const now = new Date().toISOString();
     const draftId = crypto.randomUUID();
