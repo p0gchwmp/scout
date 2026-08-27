@@ -113,10 +113,15 @@ test("SmartRecruiters filters the public list before fetching posting details", 
 
 test("expanded catalog contains the verified non-Greenhouse/Lever activation set", async () => {
   const catalog = JSON.parse(await readFile(new URL("../config/discovery-sources.json", import.meta.url), "utf8")) as Array<{ provider: string; slug: string; company: string }>;
-  assert.equal(catalog.length, 26);
+  assert.equal(catalog.length, 31);
   assert.ok(catalog.some((item) => item.provider === "ashby" && item.slug === "flagright.com" && item.company === "Flagright"));
   assert.ok(catalog.some((item) => item.provider === "workable" && item.slug === "2070health" && item.company === "2070Health"));
   assert.ok(catalog.some((item) => item.provider === "smartrecruiters" && item.slug === "BoschGroup" && item.company === "Bosch Group"));
+  assert.ok(catalog.some((item) => item.provider === "lever" && item.slug === "dnb" && item.company === "Dun & Bradstreet"));
+  assert.ok(catalog.some((item) => item.provider === "lever" && item.slug === "fampay" && item.company === "Fam"));
+  assert.ok(catalog.some((item) => item.provider === "ashby" && item.slug === "composio" && item.company === "Composio"));
+  assert.ok(catalog.some((item) => item.provider === "ashby" && item.slug === "outmarket" && item.company === "Outmarket AI"));
+  assert.ok(catalog.some((item) => item.provider === "ashby" && item.slug === "certifyos" && item.company === "CertifyOS"));
 });
 
 test("local provider failure mapping stays diagnostic and bounded", () => {
