@@ -1,0 +1,235 @@
+name: Scout Stage 2 Cloudflare Candidate
+
+on:
+  push:
+    branches:
+      - scout-deps-stage2-cloudflare
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Generate isolated dependency candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      candidate_sha: ${{ steps.publish.outputs.candidate_sha }}
+    steps:
+      - name: Checkout helper branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Confirm Stage 1 base is an ancestor
+        shell: bash
+        run: git merge-base --is-ancestor 93c62138380a05544f9f6ab192e6c0f2cbba8482 HEAD
+
+      - name: Capture Stage 1 audit baseline
+        shell: bash
+        run: |
+          npm ci
+          npm audit --json > "$RUNNER_TEMP/audit-before.json" || true
+          node - "$RUNNER_TEMP/audit-before.json" <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const v = report.metadata?.vulnerabilities ?? {};
+          console.log(`Stage 1 audit: total=${v.total ?? 'n/a'} critical=${v.critical ?? 'n/a'} high=${v.high ?? 'n/a'} moderate=${v.moderate ?? 'n/a'} low=${v.low ?? 'n/a'}`);
+          NODE
+
+      - name: Install approved Cloudflare pair
+        shell: bash
+        run: npm install --save-dev --save-exact @cloudflare/vite-plugin@1.54.0 wrangler@4.126.0
+
+      - name: Enforce exact top-level scope
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const base = JSON.parse(execFileSync('git', ['show', '93c62138380a05544f9f6ab192e6c0f2cbba8482:package.json'], { encoding: 'utf8' }));
+          const candidate = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          base.devDependencies['@cloudflare/vite-plugin'] = '1.54.0';
+          base.devDependencies.wrangler = '4.126.0';
+          assert.deepEqual(candidate, base, 'package.json changed outside the two approved dependency pins');
+          console.log('package.json scope is exactly the approved Cloudflare pair.');
+          NODE
+          changed="$(git diff --name-only)"
+          printf 'Dirty paths after install:\n%s\n' "$changed"
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            case "$path" in
+              package.json|package-lock.json) ;;
+              *) echo "Unexpected changed path: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+          git diff --check
+
+      - name: Compare advisory counts
+        shell: bash
+        run: |
+          npm audit --json > "$RUNNER_TEMP/audit-after.json" || true
+          node - "$RUNNER_TEMP/audit-before.json" "$RUNNER_TEMP/audit-after.json" <<'NODE'
+          const fs = require('node:fs');
+          const before = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).metadata?.vulnerabilities ?? {};
+          const after = JSON.parse(fs.readFileSync(process.argv[3], 'utf8')).metadata?.vulnerabilities ?? {};
+          console.log(`Candidate audit: total=${after.total ?? 'n/a'} critical=${after.critical ?? 'n/a'} high=${after.high ?? 'n/a'} moderate=${after.moderate ?? 'n/a'} low=${after.low ?? 'n/a'}`);
+          if ((after.critical ?? 0) > (before.critical ?? 0)) throw new Error('critical advisory count increased');
+          if ((after.high ?? 0) >= (before.high ?? 0)) throw new Error('high advisory count did not improve');
+          if ((after.total ?? 0) > (before.total ?? 0)) throw new Error('total advisory count increased');
+          NODE
+
+      - name: Commit candidate dependency files
+        id: publish
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git commit -m "fix(deps): update Cloudflare Vite toolchain"
+            git push origin HEAD:scout-deps-stage2-cloudflare
+          fi
+          echo "candidate_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  linux-release:
+    name: Linux release + local-dev smoke
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout generated candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full Scout release gate
+        run: npm run verify:release
+
+      - name: Smoke local development health endpoint
+        shell: bash
+        run: |
+          npm run dev > "$RUNNER_TEMP/scout-dev.log" 2>&1 &
+          DEV_PID=$!
+          cleanup() {
+            kill "$DEV_PID" 2>/dev/null || true
+            pkill -P "$DEV_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          ok=""
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/api/health > "$RUNNER_TEMP/health.json"; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "Scout local dev failed to become healthy" >&2
+            cat "$RUNNER_TEMP/scout-dev.log" >&2 || true
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/health.json"
+          node - "$RUNNER_TEMP/health.json" <<'NODE'
+          const fs = require('node:fs');
+          const health = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (health.status !== 'ok') throw new Error(`unexpected health status: ${health.status}`);
+          if (health.database !== 'ok') throw new Error(`unexpected database status: ${health.database}`);
+          if (health.ownerOnly !== true) throw new Error('ownerOnly invariant is not true');
+          if (health.externalSideEffects?.applicationSubmission !== false) throw new Error('application submission invariant changed');
+          if (health.externalSideEffects?.emailSending !== false) throw new Error('email sending invariant changed');
+          NODE
+
+  windows-release:
+    name: Windows release + local-dev smoke
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout generated candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full Scout release gate
+        run: npm run verify:release
+
+      - name: Smoke local development health endpoint
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "scout-dev.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "scout-dev.stderr.log"
+          $proc = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev") -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            $health = $null
+            for ($i = 0; $i -lt 60; $i++) {
+              try {
+                $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:3000/api/health" -TimeoutSec 5
+                if ($response.StatusCode -eq 200) {
+                  $health = $response.Content | ConvertFrom-Json
+                  break
+                }
+              } catch {
+                Start-Sleep -Seconds 2
+              }
+            }
+            if ($null -eq $health) {
+              Write-Host "--- Scout stdout ---"
+              if (Test-Path $stdout) { Get-Content $stdout }
+              Write-Host "--- Scout stderr ---"
+              if (Test-Path $stderr) { Get-Content $stderr }
+              throw "Scout local dev failed to become healthy"
+            }
+            $health | ConvertTo-Json -Depth 6
+            if ($health.status -ne "ok") { throw "Unexpected health status: $($health.status)" }
+            if ($health.database -ne "ok") { throw "Unexpected database status: $($health.database)" }
+            if ($health.ownerOnly -ne $true) { throw "ownerOnly invariant is not true" }
+            if ($health.externalSideEffects.applicationSubmission -ne $false) { throw "application submission invariant changed" }
+            if ($health.externalSideEffects.emailSending -ne $false) { throw "email sending invariant changed" }
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+            }
+          }
