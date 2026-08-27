@@ -125,10 +125,11 @@ export async function POST(request: Request) {
       leads: discovery.leads.map((lead) => ({
         canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title, provider: lead.provider,
         sourceUrl: lead.sourceUrl, focus: lead.focus, location: lead.location, postedAt: lead.postedAt,
+        description: lead.description, workplaceType: lead.workplaceType,
       })),
     });
   } catch (error) {
-    if (error instanceof SyntaxError || error instanceof Error && /Discovery|discovery|Canonical|Greenhouse|Lever|stale|signature|controlled/i.test(error.message)) {
+    if (error instanceof SyntaxError || error instanceof Error && /Discovery|discovery|Canonical|Greenhouse|Lever|Ashby|Workable|SmartRecruiters|stale|signature|controlled/i.test(error.message)) {
       return Response.json({ error: error instanceof Error ? error.message : "Invalid local discovery import" }, { status: 400 });
     }
     return scoutServerError("lead-discovery.import", error, "Unable to import discovered internships");

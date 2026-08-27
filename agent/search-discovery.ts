@@ -24,6 +24,16 @@ export const SEARCH_DISCOVERY_QUERIES = Object.freeze([
     query: "internship analyst product operations strategy finance research implementation remote startup site:wellfound.com/jobs OR site:linkedin.com/jobs/view OR site:glassdoor.com",
   },
   {
+    id: "now_remote_student",
+    focus: "Remote internships that may be possible alongside college; schedule, timezone and student compatibility still require posting evidence",
+    query: "remote internship student part-time flexible product operations strategy finance research health-tech startup India",
+  },
+  {
+    id: "summer_2027",
+    focus: "Summer 2027 corporate internship leads for the 21 May to 31 July target window; exact dates and duration require official confirmation",
+    query: "Summer 2027 internship product operations strategy finance analytics research health-tech India remote",
+  },
+  {
     id: "india_policy_public",
     focus: "India public policy, governance, research and public-sector internship opportunities",
     query: "internship analyst research public policy India site:prsindia.org OR site:niti.gov.in OR site:mygov.in",
