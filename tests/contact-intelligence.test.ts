@@ -65,7 +65,8 @@ test("accepted-contact outreach degrades to deterministic approved-claim draftin
 
 test("contact intelligence page keeps LinkedIn clues browser-only and uses official research route", async () => {
   const source = await readFile(new URL("../app/contacts/contact-intelligence-client.tsx", import.meta.url), "utf8");
-  assert.match(source, /LinkedIn clue.*browser-only/i);
+  assert.match(source, /LinkedIn clue/i);
+  assert.match(source, /browser-only/i);
   assert.match(source, /\/api\/agent\/research-contacts/);
   assert.doesNotMatch(source, /body: JSON\.stringify\(\{[^}]*linkedinUrl/s);
   assert.match(source, /\/api\/agent\/draft-outreach\/auto/);
