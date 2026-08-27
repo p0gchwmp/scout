@@ -54,7 +54,7 @@ export async function POST(request: Request) {
           excerpt: candidate.excerpt,
           sourceType: candidate.sourceType,
           extractedAt: research.researchedAt,
-          suitability: intelligence.signal === "recruiting" ? "high" : "review",
+          suitability: "review",
           suitabilityReason: `Deterministic contact intelligence ${intelligence.score}/100: ${intelligence.reasons.join("; ")}. Human review is still required.`,
           reviewState: "needs_review",
         }).onConflictDoNothing();
@@ -73,7 +73,6 @@ export async function POST(request: Request) {
       failures: research.failures,
       candidatesFound: research.candidates.length,
       contacts,
-      safety: { linkedinScrape: false, guessedEmails: false, autoAcceptContact: false, sendEmail: false },
     });
   } catch (error) {
     return scoutServerError("agent.research-contacts", error, "Cloud agent contact research failed");
