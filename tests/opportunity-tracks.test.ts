@@ -6,6 +6,7 @@ import {
   CULTURE_RELEVANT_BRAND_WATCHLIST,
   matchesOpportunityRegion,
   OPPORTUNITY_TRACK_LABELS,
+  PRESTIGE_BRAND_WATCHLIST,
   SUMMER_2027_WINDOW,
 } from "../lib/scout/opportunity-tracks.ts";
 
@@ -97,11 +98,20 @@ test("research internships remain internships rather than being diverted to prof
 
 test("culture watch is a soft signal and is broader than the three example brands", () => {
   const watchlist = new Set<string>(CULTURE_RELEVANT_BRAND_WATCHLIST);
-  for (const expected of ["Roblox", "Nike", "Monster Energy", "Discord", "Spotify", "CRED", "Zepto"]) {
-    assert.ok(watchlist.has(expected));
-  }
+  for (const expected of ["Roblox", "Nike", "Monster Energy", "Discord", "Spotify", "CRED", "Zepto"]) assert.ok(watchlist.has(expected));
   assert.equal(assessOpportunityTrack({ company: "Roblox", title: "Product Intern", location: "Remote" }).cultureSignal, "watchlist");
   assert.equal(assessOpportunityTrack({ company: "Indie Studio", title: "Product Intern", location: "Remote", focus: "gaming creator economy" }).cultureSignal, "culture_adjacent");
+});
+
+test("prestige and culture are independent soft brand signals", () => {
+  const prestige = new Set<string>(PRESTIGE_BRAND_WATCHLIST);
+  for (const expected of ["Google", "Mastercard", "McKinsey", "Goldman Sachs", "Nike"]) assert.ok(prestige.has(expected));
+  const mastercard = assessOpportunityTrack({ company: "Mastercard", title: "Product Intern", location: "Pune, India" });
+  assert.equal(mastercard.prestigeSignal, "watchlist");
+  assert.equal(mastercard.cultureSignal, "neutral");
+  const nike = assessOpportunityTrack({ company: "Nike", title: "Strategy Intern", location: "Remote" });
+  assert.equal(nike.prestigeSignal, "watchlist");
+  assert.equal(nike.cultureSignal, "watchlist");
 });
 
 test("search-lane focus cannot manufacture remote or Summer 2027 fit", () => {

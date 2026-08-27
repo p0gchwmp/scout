@@ -3,6 +3,7 @@ export type OpportunityTrack = "now_remote" | "summer_2027" | "other_internship"
 export type CollegeCompatibility = "promising" | "likely_conflict" | "unknown" | "not_remote";
 export type SummerWindowFit = "strong" | "compatible" | "mismatch" | "unknown" | "not_applicable";
 export type CultureSignal = "watchlist" | "culture_adjacent" | "neutral";
+export type PrestigeSignal = "watchlist" | "neutral";
 
 export type OpportunityTrackInput = {
   company: string;
@@ -24,6 +25,8 @@ export type OpportunityTrackAssessment = {
   summerWindowReason: string;
   cultureSignal: CultureSignal;
   cultureReason: string | null;
+  prestigeSignal: PrestigeSignal;
+  prestigeReason: string | null;
   eligibilityFlags: string[];
 };
 
@@ -50,14 +53,21 @@ export const OPPORTUNITY_TYPE_LABELS: Readonly<Record<OpportunityType, string>> 
   unknown: "Unclassified job",
 });
 
-// This is a soft discovery/watch signal only. It never overrides eligibility,
-// evidence quality, role fit, date fit, work authorization, or user review.
+// Soft brand signals never override evidence quality, eligibility, role fit,
+// date/schedule fit, work authorization, or human review.
 export const CULTURE_RELEVANT_BRAND_WATCHLIST = Object.freeze([
   "Roblox", "Discord", "Reddit", "Twitch", "Spotify", "YouTube", "TikTok", "Snap",
   "Riot Games", "Epic Games", "Supercell", "Duolingo", "Canva", "Figma", "Notion",
   "Nike", "Adidas", "Puma", "Monster Energy", "Red Bull", "Netflix", "Apple",
   "Nothing", "OnePlus", "CRED", "Zepto", "Blinkit", "Swiggy", "Zomato", "Myntra",
   "Nykaa", "boAt", "Meesho", "Razorpay", "PhonePe",
+] as const);
+
+export const PRESTIGE_BRAND_WATCHLIST = Object.freeze([
+  "Google", "Microsoft", "Apple", "Amazon", "Meta", "Netflix", "Nvidia", "Adobe", "Salesforce",
+  "Mastercard", "Visa", "American Express", "Goldman Sachs", "JPMorgan Chase", "Morgan Stanley",
+  "McKinsey", "Boston Consulting Group", "BCG", "Bain", "Deloitte", "EY", "KPMG", "PwC",
+  "Uber", "Airbnb", "Atlassian", "Stripe", "Databricks", "OpenAI", "Adobe", "Nike",
 ] as const);
 
 const INDIA_CONTEXT_PATTERN = /\b(india|bengaluru|bangalore|chennai|hyderabad|noida|gurugram|gurgaon|mumbai|delhi|new delhi|pune|kolkata|jammu|ahmedabad|jaipur|chandigarh|kochi|cochin|coimbatore|indore|bhubaneswar|goa|lucknow|surat|vadodara)\b/i;
@@ -81,14 +91,18 @@ function combinedText(input: OpportunityTrackInput) {
   return [input.company, input.title, input.location, input.focus ?? "", input.description ?? "", input.workplaceType ?? ""].join("\n");
 }
 
-// Track/eligibility decisions use posting/result evidence only. Search-lane focus text
-// is deliberately excluded so a broad query cannot manufacture remote/date eligibility.
 function evidenceText(input: OpportunityTrackInput) {
   return [input.title, input.location, input.description ?? "", input.workplaceType ?? ""].join("\n");
 }
 
 function normalizeCompany(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function matchesBrand(company: string, brand: string) {
+  const left = normalizeCompany(company);
+  const right = normalizeCompany(brand);
+  return Boolean(left && right && (left === right || left.includes(right) || right.includes(left)));
 }
 
 export function classifyOpportunityType(input: OpportunityTrackInput): OpportunityType {
@@ -109,10 +123,7 @@ export function isIndiaOpportunity(input: OpportunityTrackInput) {
 }
 
 function assessCollegeCompatibility(input: OpportunityTrackInput, isRemote: boolean) {
-  if (!isRemote) return {
-    collegeCompatibility: "not_remote" as const,
-    collegeCompatibilityReason: "Not presented as a remote opportunity.",
-  };
+  if (!isRemote) return { collegeCompatibility: "not_remote" as const, collegeCompatibilityReason: "Not presented as a remote opportunity." };
   const text = evidenceText(input);
   if (COLLEGE_CONFLICT_PATTERN.test(text)) return {
     collegeCompatibility: "likely_conflict" as const,
@@ -129,52 +140,27 @@ function assessCollegeCompatibility(input: OpportunityTrackInput, isRemote: bool
 }
 
 function assessSummerWindow(input: OpportunityTrackInput, opportunityType: OpportunityType) {
-  if (opportunityType !== "internship") return {
-    summerWindowFit: "not_applicable" as const,
-    summerWindowReason: "The Summer 2027 corporate window applies to internships.",
-  };
+  if (opportunityType !== "internship") return { summerWindowFit: "not_applicable" as const, summerWindowReason: "The Summer 2027 corporate window applies to internships." };
   const text = evidenceText(input);
-  if (OTHER_YEAR_PATTERN.test(text)) return {
-    summerWindowFit: "mismatch" as const,
-    summerWindowReason: `Posting text points to a different internship season than ${SUMMER_2027_WINDOW.label}.`,
-  };
-  if (LONG_DURATION_PATTERN.test(text)) return {
-    summerWindowFit: "mismatch" as const,
-    summerWindowReason: `Posting text suggests a duration substantially longer than the ${SUMMER_2027_WINDOW.label} window.`,
-  };
-  if (EXACT_WINDOW_PATTERN.test(text)) return {
-    summerWindowFit: "strong" as const,
-    summerWindowReason: `Posting text explicitly aligns with the ${SUMMER_2027_WINDOW.label} window.`,
-  };
-  if (SUMMER_2027_PATTERN.test(text)) return {
-    summerWindowFit: "compatible" as const,
-    summerWindowReason: `Posting text names Summer 2027, but exact ${SUMMER_2027_WINDOW.label} dates still need confirmation.`,
-  };
-  if (COMPATIBLE_DURATION_PATTERN.test(text)) return {
-    summerWindowFit: "compatible" as const,
-    summerWindowReason: `Duration looks compatible with the ${SUMMER_2027_WINDOW.label} window, but the posting does not establish the 2027 season/dates.`,
-  };
-  return {
-    summerWindowFit: "unknown" as const,
-    summerWindowReason: `Dates/duration are not explicit enough to confirm the ${SUMMER_2027_WINDOW.label} window.`,
-  };
+  if (OTHER_YEAR_PATTERN.test(text)) return { summerWindowFit: "mismatch" as const, summerWindowReason: `Posting text points to a different internship season than ${SUMMER_2027_WINDOW.label}.` };
+  if (LONG_DURATION_PATTERN.test(text)) return { summerWindowFit: "mismatch" as const, summerWindowReason: `Posting text suggests a duration substantially longer than the ${SUMMER_2027_WINDOW.label} window.` };
+  if (EXACT_WINDOW_PATTERN.test(text)) return { summerWindowFit: "strong" as const, summerWindowReason: `Posting text explicitly aligns with the ${SUMMER_2027_WINDOW.label} window.` };
+  if (SUMMER_2027_PATTERN.test(text)) return { summerWindowFit: "compatible" as const, summerWindowReason: `Posting text names Summer 2027, but exact ${SUMMER_2027_WINDOW.label} dates still need confirmation.` };
+  if (COMPATIBLE_DURATION_PATTERN.test(text)) return { summerWindowFit: "compatible" as const, summerWindowReason: `Duration looks compatible with the ${SUMMER_2027_WINDOW.label} window, but the posting does not establish the 2027 season/dates.` };
+  return { summerWindowFit: "unknown" as const, summerWindowReason: `Dates/duration are not explicit enough to confirm the ${SUMMER_2027_WINDOW.label} window.` };
 }
 
 function assessCulture(input: OpportunityTrackInput) {
-  const company = normalizeCompany(input.company);
-  const exact = CULTURE_RELEVANT_BRAND_WATCHLIST.find((brand) => {
-    const normalized = normalizeCompany(brand);
-    return company === normalized || company.includes(normalized) || normalized.includes(company);
-  });
-  if (exact) return {
-    cultureSignal: "watchlist" as const,
-    cultureReason: `${exact} is on the youth/culture/internet-relevance watchlist. This is only a soft discovery preference.`,
-  };
-  if (CULTURE_CATEGORY_PATTERN.test(combinedText(input))) return {
-    cultureSignal: "culture_adjacent" as const,
-    cultureReason: "The company/role sits in a youth-facing or internet-culture-adjacent category. This is only a soft discovery preference.",
-  };
+  const exact = CULTURE_RELEVANT_BRAND_WATCHLIST.find((brand) => matchesBrand(input.company, brand));
+  if (exact) return { cultureSignal: "watchlist" as const, cultureReason: `${exact} is on the youth/culture/internet-relevance watchlist. This is only a soft discovery preference.` };
+  if (CULTURE_CATEGORY_PATTERN.test(combinedText(input))) return { cultureSignal: "culture_adjacent" as const, cultureReason: "The company/role sits in a youth-facing or internet-culture-adjacent category. This is only a soft discovery preference." };
   return { cultureSignal: "neutral" as const, cultureReason: null };
+}
+
+function assessPrestige(input: OpportunityTrackInput) {
+  const exact = PRESTIGE_BRAND_WATCHLIST.find((brand) => matchesBrand(input.company, brand));
+  if (exact) return { prestigeSignal: "watchlist" as const, prestigeReason: `${exact} is on the prestige/career-brand watchlist. This is only a soft preference.` };
+  return { prestigeSignal: "neutral" as const, prestigeReason: null };
 }
 
 function eligibilityFlags(input: OpportunityTrackInput) {
@@ -192,6 +178,7 @@ export function assessOpportunityTrack(input: OpportunityTrackInput): Opportunit
   const college = assessCollegeCompatibility(input, isRemote);
   const summer = assessSummerWindow(input, opportunityType);
   const culture = assessCulture(input);
+  const prestige = assessPrestige(input);
   const evidence = evidenceText(input);
 
   let track: OpportunityTrack;
@@ -210,6 +197,7 @@ export function assessOpportunityTrack(input: OpportunityTrackInput): Opportunit
     ...college,
     ...summer,
     ...culture,
+    ...prestige,
     eligibilityFlags: eligibilityFlags(input),
   };
 }

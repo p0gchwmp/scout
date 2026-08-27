@@ -14,6 +14,7 @@ const workspaceLinks = [
   ["Shortlist", "/shortlist"],
   ["Applications", "/applications"],
   ["Readiness", "/readiness"],
+  ["Contacts", "/contacts"],
   ["Review", "/review"],
   ["Safe Fill", "/assist"],
   ["Voice", "/voice"],

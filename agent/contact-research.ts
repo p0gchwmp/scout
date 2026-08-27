@@ -1,6 +1,8 @@
+import { rankPublishedContacts } from "../lib/scout/contact-intelligence.ts";
+
 const DOMAIN_PATTERN = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}/gi;
-const RELEVANT_LINK_PATTERN = /(?:career|job|join|contact|recruit|talent|people|team|about)/i;
+const RELEVANT_LINK_PATTERN = /(?:career|job|join|contact|recruit|talent|people|team|about|campus|university|early[- ]?career|intern)/i;
 const MAX_PAGES = 8;
 const MAX_PAGE_BYTES = 750_000;
 const FETCH_TIMEOUT_MS = 8_000;
@@ -10,7 +12,9 @@ export const CONTACT_RESEARCH_CAPABILITIES = Object.freeze({
   companyDomainBound: true,
   verifiedCareersSeedSupported: true,
   deterministicExtraction: true,
+  deterministicRecruitingRanking: true,
   aiClassificationInputReady: true,
+  linkedinLeadClueOnly: true,
   guessEmail: false,
   linkedinScrape: false,
   personalDataHarvest: false,
@@ -62,7 +66,7 @@ function decodeText(html: string) {
 
 function sourceType(url: URL): PublishedContactResearchCandidate["sourceType"] {
   const hostAndPath = `${url.hostname}${url.pathname}`;
-  if (/career|job|join|recruit|talent/i.test(hostAndPath)) return "official_careers";
+  if (/career|job|join|recruit|talent|campus|early[- ]?career|intern/i.test(hostAndPath)) return "official_careers";
   if (/contact/i.test(hostAndPath)) return "official_contact";
   return "official_company";
 }
@@ -131,7 +135,7 @@ export async function researchPublishedCompanyContacts(input: {
   const fetcher = input.fetcher ?? fetch;
   const queue: URL[] = [];
   if (input.careersUrl) queue.push(safeOfficialUrl(input.careersUrl, domain));
-  queue.push(...["/", "/careers", "/jobs", "/contact", "/contact-us"].map((path) => new URL(path, `https://${domain}`)));
+  queue.push(...["/careers", "/jobs", "/contact", "/contact-us", "/team", "/people", "/about", "/"].map((path) => new URL(path, `https://${domain}`)));
   const visited = new Set<string>();
   const failures: Array<{ sourceUrl: string; reason: string }> = [];
   const candidates = new Map<string, PublishedContactResearchCandidate>();
@@ -175,7 +179,7 @@ export async function researchPublishedCompanyContacts(input: {
     companyDomain: domain,
     researchedAt: new Date().toISOString(),
     pagesAttempted: visited.size,
-    candidates: [...candidates.values()].slice(0, 50),
+    candidates: rankPublishedContacts([...candidates.values()]).slice(0, 50),
     failures: failures.slice(0, MAX_PAGES),
   };
 }
