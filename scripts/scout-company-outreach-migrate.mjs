@@ -28,7 +28,11 @@ const sql = readFileSync(resolve(root, "drizzle/0011_company_outreach_targets.sq
 try {
   db.exec(`PRAGMA foreign_keys=ON;\nBEGIN IMMEDIATE;\n${sql}\nCOMMIT;`);
 } catch (error) {
-  try { db.exec("ROLLBACK;"); } catch {}
+  try {
+    db.exec("ROLLBACK;");
+  } catch {
+    // Rollback can fail when the migration error happened before a transaction began.
+  }
   throw error;
 }
 const foreignKeys = db.prepare("PRAGMA foreign_key_check").all();
