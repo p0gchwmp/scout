@@ -86,10 +86,12 @@ test("AI contact classification changes recommendation fields but never human re
   assert.doesNotMatch(route, /reviewState:\s*"rejected"/);
 });
 
-test("AI outreach is rebuilt from DB-pinned accepted evidence and approved claims", async () => {
+test("AI outreach is rebuilt from DB-pinned accepted evidence and usable approved claims", async () => {
   const route = await readFile(new URL("../app/api/agent/draft-outreach/route.ts", import.meta.url), "utf8");
   assert.match(route, /eq\(contactEvidence\.reviewState, "accepted"\)/);
-  assert.match(route, /claims\.some\(\(claim\) => claim\.status !== "approved"\)/);
+  assert.match(route, /selectUsableApprovedClaims\(claims/);
+  assert.match(route, /usableClaims\.length !== payload\.claimIds\.length/);
+  assert.match(route, /claims: usableClaims\.map/);
   assert.match(route, /buildAiOutreachEnvelope/);
   assert.match(route, /client\.draftOutreach\(envelope\)/);
   assert.match(route, /claimIds: ai\.usedClaimIds/);

@@ -62,7 +62,11 @@ test("live reusable evidence excludes synthetic demo claims and unanchored metri
   assert.deepEqual(selectUsableApprovedClaims(claims).map((claim) => claim.id), ["resume-clean"]);
   assert.deepEqual(
     selectUsableApprovedClaims(claims, { allowSyntheticDemo: true }).map((claim) => claim.id),
-    ["resume-clean", "demo_claim_duplicate"],
+    ["resume-clean"],
+  );
+  assert.deepEqual(
+    selectUsableApprovedClaims([claims[1]], { allowSyntheticDemo: true }).map((claim) => claim.id),
+    ["demo_claim_duplicate"],
   );
 });
 
