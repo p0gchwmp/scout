@@ -15,13 +15,14 @@
     "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && npm run db:generate && git diff --exit-code && npm run build && git diff --check && git status --short --branch && git diff --stat",
+    "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && python tests/company-outreach-migration-smoke.py && npm run db:generate && git diff --exit-code && npm run build && git diff --check && git status --short --branch && git diff --stat",
     "scout:ai:status": "node --experimental-strip-types scripts/scout-ai-status.mjs",
     "scout:gmail:oauth": "node scripts/scout-gmail-oauth.mjs",
     "scout:profile:repair": "node scripts/scout-profile-repair.mjs",
     "scout:demo:status": "node scripts/scout-demo-db.mjs status",
     "scout:demo:seed": "node scripts/scout-demo-db.mjs seed",
-    "scout:demo:reset": "node scripts/scout-demo-db.mjs reset"
+    "scout:demo:reset": "node scripts/scout-demo-db.mjs reset",
+    "scout:company-outreach:migrate:local": "node scripts/scout-company-outreach-migrate.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
