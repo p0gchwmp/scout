@@ -9,17 +9,17 @@ permissions:
   contents: read
 
 env:
-  TARGET_SHA: 93c62138380a05544f9f6ab192e6c0f2cbba8482
+  TARGET_SHA: 519b7e907ea8aafa3680354525c2d157ca01f2da
 
 jobs:
   linux:
-    name: Linux release + localhost dev smoke
+    name: Linux release + migrated D1 dev smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       CI: "true"
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout exact clean candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_SHA }}
@@ -35,13 +35,72 @@ jobs:
         run: npm ci
       - name: Run full Scout release gate
         run: npm run verify:release
-      - name: Smoke localhost health endpoint
+      - name: Create local D1 state
         shell: bash
         run: |
-          npm run dev > "$RUNNER_TEMP/scout-dev.log" 2>&1 &
+          setsid npm run dev > "$RUNNER_TEMP/scout-init.log" 2>&1 &
           DEV_PID=$!
           cleanup() {
-            kill "$DEV_PID" 2>/dev/null || true
+            kill -TERM -- "-$DEV_PID" 2>/dev/null || true
+            pkill -P "$DEV_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          code="000"
+          for _ in $(seq 1 40); do
+            code=$(curl --silent --show-error --output "$RUNNER_TEMP/init-health.json" --write-out "%{http_code}" http://localhost:3000/api/health || true)
+            if [ "$code" != "000" ]; then break; fi
+            sleep 1
+          done
+          echo "Initial health HTTP status: $code"
+          if [ "$code" = "000" ]; then
+            cat "$RUNNER_TEMP/scout-init.log" >&2 || true
+            exit 1
+          fi
+          cleanup
+          trap - EXIT
+          sleep 2
+      - name: Apply every checked-in migration to local D1
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib
+          import sqlite3
+
+          state = pathlib.Path('.wrangler')
+          candidates = [
+              p for p in state.rglob('*.sqlite')
+              if p.name != 'metadata.sqlite' and 'd1' in str(p).lower()
+          ]
+          print('Local D1 candidates:', [str(p) for p in candidates])
+          if len(candidates) != 1:
+              raise SystemExit(f'Expected exactly one local D1 SQLite file; found {len(candidates)}')
+
+          migrations = sorted(pathlib.Path('drizzle').glob('[0-9][0-9][0-9][0-9]_*.sql'))
+          if not migrations:
+              raise SystemExit('No checked-in Scout migrations found')
+
+          db = sqlite3.connect(candidates[0])
+          try:
+              db.execute('PRAGMA foreign_keys=ON')
+              for migration in migrations:
+                  print('Applying', migration.name)
+                  sql = migration.read_text(encoding='utf-8').replace('--> statement-breakpoint', '')
+                  db.executescript(sql)
+              db.commit()
+              row = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+              if row != ('jobs',):
+                  raise SystemExit('jobs table missing after migrations')
+              print(f'Applied {len(migrations)} migrations; jobs table present.')
+          finally:
+              db.close()
+          PY
+      - name: Require healthy migrated local runtime
+        shell: bash
+        run: |
+          setsid npm run dev > "$RUNNER_TEMP/scout-final.log" 2>&1 &
+          DEV_PID=$!
+          cleanup() {
+            kill -TERM -- "-$DEV_PID" 2>/dev/null || true
             pkill -P "$DEV_PID" 2>/dev/null || true
           }
           trap cleanup EXIT
@@ -54,12 +113,8 @@ jobs:
             sleep 2
           done
           if [ -z "$ok" ]; then
-            echo "Scout localhost health probe failed" >&2
-            echo "IPv4 diagnostic:" >&2
-            curl --verbose --max-time 3 http://127.0.0.1:3000/api/health >&2 || true
-            echo "IPv6 diagnostic:" >&2
-            curl --verbose --max-time 3 http://[::1]:3000/api/health >&2 || true
-            cat "$RUNNER_TEMP/scout-dev.log" >&2 || true
+            echo "Scout migrated local runtime failed health check" >&2
+            cat "$RUNNER_TEMP/scout-final.log" >&2 || true
             exit 1
           fi
           cat "$RUNNER_TEMP/health.json"
@@ -74,13 +129,13 @@ jobs:
           NODE
 
   windows:
-    name: Windows release + localhost dev smoke
+    name: Windows release + migrated D1 dev smoke
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       CI: "true"
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout exact clean candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_SHA }}
@@ -96,11 +151,75 @@ jobs:
         run: npm ci
       - name: Run full Scout release gate
         run: npm run verify:release
-      - name: Smoke localhost health endpoint
+      - name: Create local D1 state
         shell: pwsh
         run: |
-          $stdout = Join-Path $env:RUNNER_TEMP "scout-dev.stdout.log"
-          $stderr = Join-Path $env:RUNNER_TEMP "scout-dev.stderr.log"
+          $stdout = Join-Path $env:RUNNER_TEMP "scout-init.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "scout-init.stderr.log"
+          $proc = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev") -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            $status = $null
+            for ($i = 0; $i -lt 40; $i++) {
+              try {
+                $response = Invoke-WebRequest -UseBasicParsing -SkipHttpErrorCheck -Uri "http://localhost:3000/api/health" -TimeoutSec 5
+                $status = $response.StatusCode
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            Write-Host "Initial health HTTP status: $status"
+            if ($null -eq $status) {
+              if (Test-Path $stdout) { Get-Content $stdout }
+              if (Test-Path $stderr) { Get-Content $stderr }
+              throw "Scout never created a reachable local runtime"
+            }
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+            }
+          }
+          Start-Sleep -Seconds 2
+      - name: Apply every checked-in migration to local D1
+        shell: pwsh
+        run: |
+          @'
+          import pathlib
+          import sqlite3
+
+          state = pathlib.Path('.wrangler')
+          candidates = [
+              p for p in state.rglob('*.sqlite')
+              if p.name != 'metadata.sqlite' and 'd1' in str(p).lower()
+          ]
+          print('Local D1 candidates:', [str(p) for p in candidates])
+          if len(candidates) != 1:
+              raise SystemExit(f'Expected exactly one local D1 SQLite file; found {len(candidates)}')
+
+          migrations = sorted(pathlib.Path('drizzle').glob('[0-9][0-9][0-9][0-9]_*.sql'))
+          if not migrations:
+              raise SystemExit('No checked-in Scout migrations found')
+
+          db = sqlite3.connect(candidates[0])
+          try:
+              db.execute('PRAGMA foreign_keys=ON')
+              for migration in migrations:
+                  print('Applying', migration.name)
+                  sql = migration.read_text(encoding='utf-8').replace('--> statement-breakpoint', '')
+                  db.executescript(sql)
+              db.commit()
+              row = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+              if row != ('jobs',):
+                  raise SystemExit('jobs table missing after migrations')
+              print(f'Applied {len(migrations)} migrations; jobs table present.')
+          finally:
+              db.close()
+          '@ | python -
+      - name: Require healthy migrated local runtime
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "scout-final.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "scout-final.stderr.log"
           $proc = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev") -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           try {
             $health = $null
@@ -120,9 +239,7 @@ jobs:
               if (Test-Path $stdout) { Get-Content $stdout }
               Write-Host "--- Scout stderr ---"
               if (Test-Path $stderr) { Get-Content $stderr }
-              Write-Host "--- IPv4 diagnostic ---"
-              try { Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:3000/api/health" -TimeoutSec 3 | Out-Host } catch { Write-Host $_ }
-              throw "Scout localhost health probe failed"
+              throw "Scout migrated local runtime failed health check"
             }
             $health | ConvertTo-Json -Depth 6
             if ($health.status -ne "ok") { throw "Unexpected health status: $($health.status)" }
