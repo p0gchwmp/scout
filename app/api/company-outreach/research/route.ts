@@ -1,5 +1,7 @@
+import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { researchPublishedCompanyContacts } from "../../../../agent/contact-research";
+import { createAgentSearchProvider } from "../../../../agent/search-runtime";
 import { getDb } from "../../../../db";
 import { companyOutreachContacts, companyOutreachTargets } from "../../../../db/company-outreach-schema";
 import { assessPublishedContact, rankPublishedContacts } from "../../../../lib/scout/contact-intelligence";
@@ -21,10 +23,13 @@ export async function POST(request: Request) {
     const [target] = await db.select().from(companyOutreachTargets).where(eq(companyOutreachTargets.id, targetId)).limit(1);
     if (!target || target.state !== "active") return Response.json({ error: "Active company outreach target not found" }, { status: 404 });
 
+    const searchProvider = createAgentSearchProvider(env as unknown as NodeJS.ProcessEnv);
     const research = await researchPublishedCompanyContacts({
+      companyName: target.companyName,
       companyDomain: target.companyDomain,
       jobSnapshotId: `company-target:${target.id}`,
       careersUrl: target.officialUrl,
+      searchProvider,
     });
 
     if (research.candidates.length) {
@@ -37,6 +42,7 @@ export async function POST(request: Request) {
           sourceUrl: candidate.sourceUrl,
           excerpt: candidate.excerpt,
           sourceType: candidate.sourceType,
+          sourceContext: candidate.sourceContext ?? "first_party",
           extractedAt: research.researchedAt,
           suitability: "review",
           suitabilityReason: `Deterministic recruiting relevance ${intelligence.score}/100: ${intelligence.reasons.join("; ")}. Human review is required.`,
@@ -49,6 +55,10 @@ export async function POST(request: Request) {
     return Response.json({
       target,
       pagesAttempted: research.pagesAttempted,
+      firstPartyPagesAttempted: research.firstPartyPagesAttempted,
+      publicPagesAttempted: research.publicPagesAttempted,
+      searchQueriesAttempted: research.searchQueriesAttempted,
+      searchProvider: searchProvider?.provider ?? null,
       candidatesFound: research.candidates.length,
       failures: research.failures,
       contacts: rankPublishedContacts(stored),
