@@ -15,7 +15,7 @@ function fakeFetch(pages: Record<string, string>) {
   return { calls, fetcher };
 }
 
-test("contact research stays on official company pages and preserves exact published evidence", async () => {
+test("contact research preserves exact evidence on the bounded first-party crawl", async () => {
   const { calls, fetcher } = fakeFetch({
     "https://acme.example/": '<a href="/careers">Careers</a><a href="https://evil.example/contact">Elsewhere</a> support@acme.example',
     "https://acme.example/careers": '<p>Internship questions: careers@acme.example</p><a href="/team">Our team</a>',
@@ -62,15 +62,19 @@ test("contact research rejects an off-domain careers seed instead of following i
   }), /escaped the registered company domain/);
 });
 
-test("contact research never guesses addresses and rejects private or malformed company domains", async () => {
+test("contact research never guesses addresses and keeps scraping boundaries explicit", async () => {
   const { fetcher } = fakeFetch({ "https://acme.example/": "Talk to our recruiting team. No email is published." });
   const result = await researchPublishedCompanyContacts({ companyDomain: "acme.example", jobSnapshotId: "snapshot-1", fetcher });
   assert.deepEqual(result.candidates, []);
   await assert.rejects(() => researchPublishedCompanyContacts({ companyDomain: "localhost", jobSnapshotId: "snapshot-1", fetcher }), /domain is invalid/);
   await assert.rejects(() => researchPublishedCompanyContacts({ companyDomain: "10.0.0.1", jobSnapshotId: "snapshot-1", fetcher }), /domain is invalid/);
+  assert.equal(CONTACT_RESEARCH_CAPABILITIES.officialCompanyPagesFirst, true);
+  assert.equal(CONTACT_RESEARCH_CAPABILITIES.broaderPublicRecruitingEvidence, true);
+  assert.equal(CONTACT_RESEARCH_CAPABILITIES.companyDomainBoundFirstParty, true);
   assert.equal(CONTACT_RESEARCH_CAPABILITIES.verifiedCareersSeedSupported, true);
   assert.equal(CONTACT_RESEARCH_CAPABILITIES.guessEmail, false);
   assert.equal(CONTACT_RESEARCH_CAPABILITIES.linkedinScrape, false);
+  assert.equal(CONTACT_RESEARCH_CAPABILITIES.dataBrokerLookup, false);
   assert.equal(CONTACT_RESEARCH_CAPABILITIES.personalDataHarvest, false);
-  assert.equal(CONTACT_RESEARCH_CAPABILITIES.sendEmail, false);
+  assert.equal((CONTACT_RESEARCH_CAPABILITIES as Record<string, unknown>).sendEmail, undefined);
 });
