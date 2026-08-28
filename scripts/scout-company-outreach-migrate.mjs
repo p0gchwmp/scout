@@ -13,8 +13,19 @@ if (candidates.length !== 1) throw new Error(`Expected exactly one local Scout D
 const dbPath = candidates[0];
 const db = new DatabaseSync(dbPath);
 const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='company_outreach_targets'").get();
-if (table) {
-  console.log("Company-first outreach schema already present.");
+function hasColumn(tableName, columnName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all().some((column) => column.name === columnName);
+}
+
+const needsBase = !table;
+const needsAutopilot = needsBase
+  || !hasColumn("company_outreach_targets", "origin")
+  || !hasColumn("company_outreach_targets", "research_focus")
+  || !hasColumn("company_outreach_targets", "priority_score")
+  || !hasColumn("company_outreach_contacts", "source_context");
+
+if (!needsBase && !needsAutopilot) {
+  console.log("Company-first outreach schema is current.");
   db.close();
   process.exit(0);
 }
@@ -24,7 +35,10 @@ if (!integrity || Object.values(integrity)[0] !== "ok") throw new Error("Local S
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const backup = `${dbPath}.backup-company-outreach-${stamp}`;
 db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);
-const sql = readFileSync(resolve(root, "drizzle/0011_company_outreach_targets.sql"), "utf8").replaceAll("--> statement-breakpoint", "");
+const statements = [];
+if (needsBase) statements.push(readFileSync(resolve(root, "drizzle/0011_company_outreach_targets.sql"), "utf8"));
+if (needsAutopilot) statements.push(readFileSync(resolve(root, "drizzle/0012_company_outreach_autopilot.sql"), "utf8"));
+const sql = statements.join("\n").replaceAll("--> statement-breakpoint", "");
 try {
   db.exec(`PRAGMA foreign_keys=ON;\nBEGIN IMMEDIATE;\n${sql}\nCOMMIT;`);
 } catch (error) {
