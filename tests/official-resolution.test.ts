@@ -229,12 +229,56 @@ test("search lead resolution promotes an exact BambooHR careers posting after de
   assert.match(result.contentHash, /^[a-f0-9]{64}$/);
 });
 
-test("search lead resolution fails closed before using search evidence when persistence is disabled", async () => {
+test("search lead resolution may use search ephemerally when persistence is disabled but persists only refetched ATS evidence", async () => {
   let searches = 0;
-  await assert.rejects(() => resolveSearchLeadToOfficialAts({ leadUrl: "https://www.linkedin.com/jobs/view/123", company: "Acme Labs", title: "Product Intern" }, {
-    searchProvider: { allowResultPersistence: false, async searchFixedQuery() { searches += 1; return []; } },
-  }), /cannot be persisted until search result persistence is explicitly allowed/);
-  assert.equal(searches, 0);
+  let domainLookups = 0;
+  const result = await resolveSearchLeadToOfficialAts({
+    leadUrl: "https://weworkremotely.com/remote-jobs/acme-product-intern",
+    company: "Acme Labs",
+    title: "Product Intern",
+  }, {
+    searchProvider: {
+      allowResultPersistence: false,
+      async searchFixedQuery(query) {
+        searches += 1;
+        if (!query.includes("greenhouse")) return [];
+        return [{
+          url: "https://job-boards.greenhouse.io/acmelabs/jobs/987",
+          title: "Product Intern at Acme Labs",
+          description: "UNTRUSTED SEARCH SNIPPET THAT MUST NOT BECOME THE JOB SNAPSHOT",
+          age: null,
+        }];
+      },
+    },
+    async discover(provider, slug, externalId) {
+      assert.equal(provider, "greenhouse");
+      assert.equal(slug, "acmelabs");
+      assert.equal(externalId, "987");
+      return [{
+        source: "greenhouse",
+        externalId: "987",
+        canonicalUrl: "https://job-boards.greenhouse.io/acmelabs/jobs/987",
+        company: "Acme Labs",
+        title: "Product Intern",
+        description: "Official ATS description from the refetched posting.",
+        location: "India",
+        workplaceType: "remote",
+      }];
+    },
+    async resolveCompanyDomain() {
+      domainLookups += 1;
+      throw new Error("Company-domain search evidence must remain persistence-gated");
+    },
+  });
+
+  assert.equal(searches, 7);
+  assert.equal(domainLookups, 0);
+  assert.equal(result.source.provider, "greenhouse");
+  assert.equal(result.source.companyDomain, "unresolved.invalid");
+  assert.equal(result.snapshot.canonicalUrl, "https://job-boards.greenhouse.io/acmelabs/jobs/987");
+  assert.equal(result.snapshot.description, "Official ATS description from the refetched posting.");
+  assert.doesNotMatch(result.snapshot.description, /UNTRUSTED SEARCH SNIPPET/);
+  assert.equal(result.resolutionEvidence.companyDomainResolved, false);
 });
 
 test("search lead resolution carries a verified company domain into the registered source", async () => {
@@ -289,7 +333,9 @@ test("official search resolution cannot fetch arbitrary result pages or submit",
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.bamboohrEmployerApiCredentials, false);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.refetchOfficialAts, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.resolveCompanyDomainFromConvergingEvidence, true);
-  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.searchPersistenceGateRequired, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.searchPersistenceGateRequired, false);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.ephemeralSearchAllowedWhenPersistenceDisabled, true);
+  assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.officialSnapshotRequiredBeforePersistence, true);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.arbitraryResultPageFetch, false);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.linkedinScrape, false);
   assert.equal(OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES.companyDomainGuessing, false);
