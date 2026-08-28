@@ -146,7 +146,7 @@ export function OpportunityQualityWorkspace() {
       <div>
         <p className={styles.kicker}>SCOUT / OPPORTUNITY INTELLIGENCE</p>
         <h1>Evidence first. Then timing, eligibility and priority.</h1>
-        <p>Scout classifies only persisted posting evidence. Missing dates, hours or eligibility stay unknown rather than becoming a rejection. Remote alone never proves alongside-college compatibility.</p>
+        <p>Scout classifies only persisted posting evidence without certifying a company as legitimate, inventing compensation, or changing your resume-fit score. Missing dates, hours or eligibility stay unknown rather than becoming a rejection. Remote alone never proves alongside-college compatibility.</p>
       </div>
       <div className={styles.headerLinks}><Link href="/shortlist">Shortlist</Link><Link href="/review">Review queue</Link><Link href="/sources">Source health</Link><Link href="/">Dashboard</Link></div>
     </header>
@@ -211,6 +211,6 @@ export function OpportunityQualityWorkspace() {
       </article>)}
     </section>
 
-    <footer className={styles.boundary}>Priority is a review queue, not an autonomous decision. Parked opportunities remain visible; Scout does not auto-reject, send outreach, or submit applications.</footer>
+    <footer className={styles.boundary}>Priority is a review queue, not an autonomous decision. No role is auto-rejected. Parked opportunities remain visible; Scout does not send outreach or submit applications.</footer>
   </main>;
 }
