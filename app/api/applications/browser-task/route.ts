@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { applications } from "../../../../db/schema";
+import { applications, jobs } from "../../../../db/schema";
+import { applicationPacketMatchesCurrentSnapshot } from "../../../../lib/scout/application-review-packet";
 import { createBrowserHandoffToken } from "../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../lib/scout/browser-task";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
@@ -38,6 +39,10 @@ export async function POST(request: Request) {
       isNull(applications.submittedAt),
     )).limit(1);
     if (!application) return Response.json({ error: "Application packet must be ready, current, and not already recorded as submitted before browser assistance" }, { status: 409 });
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1);
+    if (!job?.currentSnapshotId || !applicationPacketMatchesCurrentSnapshot(application.submittedFields, job.currentSnapshotId)) {
+      return Response.json({ error: "Application packet is stale because the job snapshot changed; refresh the packet before browser assistance" }, { status: 409 });
+    }
 
     const task = buildBrowserAssistTask({
       applicationId: application.id,
