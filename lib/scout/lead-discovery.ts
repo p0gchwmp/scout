@@ -57,7 +57,7 @@ async function discoverSource(source: DiscoverySource): Promise<NormalizedJob[]>
     case "lever": return new LeverAdapter().discover(source.slug);
     case "ashby": return new AshbyAdapter().discover(source.slug);
     case "workable": return new WorkablePublicAdapter().discover(source.slug);
-    case "smartrecruiters": return new SmartRecruitersAdapter().discover(source.slug);
+    case "smartrecruiters": return new SmartRecruitersAdapter().discoverInternships(source.slug);
     case "workday": return new WorkdayPublicCxsAdapter().discover(source.slug);
     case "bamboohr": return new BambooHrPublicCareersAdapter().discover(source.slug);
     case "recruitee": return new RecruiteePublicCareersAdapter().discover(source.slug);

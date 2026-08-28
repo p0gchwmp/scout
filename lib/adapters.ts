@@ -137,6 +137,7 @@ export class WorkablePublicAdapter implements SourceAdapter {
 const SMARTRECRUITERS_PAGE_SIZE = 100;
 const SMARTRECRUITERS_MAX_POSTINGS = 500;
 const SMARTRECRUITERS_DETAIL_CONCURRENCY = 8;
+const SMARTRECRUITERS_INTERNSHIP_PATTERN = /\b(intern|internship|trainee|apprentice|co-?op)\b/i;
 
 type SmartRecruitersPostingList = {
   totalFound?: unknown;
@@ -193,7 +194,7 @@ export class SmartRecruitersAdapter implements SourceAdapter {
     };
   }
 
-  async discover(companyIdentifier: string): Promise<NormalizedJob[]> {
+  private async discoverPostingIds(companyIdentifier: string, internshipOnly: boolean) {
     const postingIds: string[] = [];
     let offset = 0;
     let expectedTotal: number | null = null;
@@ -219,20 +220,33 @@ export class SmartRecruitersAdapter implements SourceAdapter {
       }
       for (const item of payload.content) {
         if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-        const id = String((item as Record<string, unknown>).id ?? "").trim();
-        if (id) postingIds.push(id);
+        const posting = item as Record<string, unknown>;
+        const id = String(posting.id ?? "").trim();
+        const title = String(posting.name ?? "");
+        if (id && (!internshipOnly || SMARTRECRUITERS_INTERNSHIP_PATTERN.test(title))) postingIds.push(id);
       }
       if (payload.content.length === 0) break;
       offset += payload.content.length;
     }
 
-    const uniqueIds = [...new Set(postingIds)];
+    return [...new Set(postingIds)];
+  }
+
+  private async discoverDetails(companyIdentifier: string, postingIds: string[]) {
     const jobs: NormalizedJob[] = [];
-    for (let index = 0; index < uniqueIds.length; index += SMARTRECRUITERS_DETAIL_CONCURRENCY) {
-      const batch = uniqueIds.slice(index, index + SMARTRECRUITERS_DETAIL_CONCURRENCY);
+    for (let index = 0; index < postingIds.length; index += SMARTRECRUITERS_DETAIL_CONCURRENCY) {
+      const batch = postingIds.slice(index, index + SMARTRECRUITERS_DETAIL_CONCURRENCY);
       const details = await Promise.all(batch.map((postingId) => this.discoverPosting(companyIdentifier, postingId)));
       for (const job of details) if (job) jobs.push(job);
     }
     return jobs;
+  }
+
+  async discover(companyIdentifier: string): Promise<NormalizedJob[]> {
+    return this.discoverDetails(companyIdentifier, await this.discoverPostingIds(companyIdentifier, false));
+  }
+
+  async discoverInternships(companyIdentifier: string): Promise<NormalizedJob[]> {
+    return this.discoverDetails(companyIdentifier, await this.discoverPostingIds(companyIdentifier, true));
   }
 }
