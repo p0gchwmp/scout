@@ -17,11 +17,12 @@ import {
   parseCompanyDraftCreatePayload,
   parseCompanyDraftReviewPayload,
   renderCompanyFirstOutreach,
+  selectCompanyOutreachClaimIds,
 } from "../../../../lib/scout/company-outreach";
 import { hashDraftBody } from "../../../../lib/scout/outreach";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
-const COMPANY_OUTREACH_TEMPLATE_VERSION = 1;
+const COMPANY_OUTREACH_TEMPLATE_VERSION = 2;
 
 async function listDrafts() {
   const db = getDb();
@@ -64,12 +65,23 @@ export async function POST(request: Request) {
     )).limit(1);
     if (!target) return Response.json({ error: "Active company outreach target is required" }, { status: 409 });
 
-    const [claims, verifiedProfile] = await Promise.all([
-      db.select().from(candidateClaims).where(inArray(candidateClaims.id, payload.claimIds)),
+    const [allClaims, verifiedProfile] = await Promise.all([
+      db.select().from(candidateClaims),
       db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
     ]);
-    const usableClaims = selectUsableApprovedClaims(claims);
-    if (claims.length !== payload.claimIds.length || usableClaims.length !== payload.claimIds.length) {
+    const allUsableClaims = selectUsableApprovedClaims(allClaims);
+    const selectedClaimIds = payload.claimIds ?? selectCompanyOutreachClaimIds({
+      claims: allUsableClaims.map((claim) => ({ id: claim.id, statement: claim.statement })),
+      companyName: target.companyName,
+      researchFocus: target.researchFocus,
+      track: target.track,
+      limit: 3,
+    });
+    if (!selectedClaimIds.length) {
+      return Response.json({ error: "Scout could not find a defensible approved-claim match for this company. Use the advanced claim override rather than inventing relevance." }, { status: 409 });
+    }
+    const usableClaims = allUsableClaims.filter((claim) => selectedClaimIds.includes(claim.id));
+    if (usableClaims.length !== selectedClaimIds.length) {
       return Response.json({ error: "Every selected claim must be approved, live-safe, and evidence-anchored" }, { status: 409 });
     }
     const candidateName = verifiedProfile.find((field) => field.kind === "full_name")?.claim?.trim();
@@ -112,7 +124,7 @@ export async function POST(request: Request) {
       model = ai.model ?? "cloud-ai";
       deterministicFallback = false;
     } catch {
-      // Company-first outreach must remain usable when cloud AI is absent or produces copy that implies a formal opening.
+      // Company-first outreach remains usable when cloud AI is absent or returns unsupported/speculative-invalid copy.
     }
 
     const now = new Date().toISOString();
@@ -135,7 +147,16 @@ export async function POST(request: Request) {
     ]);
 
     return Response.json({
-      draft: { id: draftId, targetId: target.id, revisionId, body: rendered.body, claimIds: rendered.claimIds, model, deterministicFallback },
+      draft: {
+        id: draftId,
+        targetId: target.id,
+        revisionId,
+        body: rendered.body,
+        claimIds: rendered.claimIds,
+        model,
+        deterministicFallback,
+        claimSelection: payload.claimIds ? "manual_override" : "automatic",
+      },
     }, { status: 201 });
   } catch (error) {
     return scoutServerError("company-outreach.drafts.create", error, "Unable to create company-first outreach draft");
