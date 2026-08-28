@@ -21,14 +21,21 @@ CREATE TABLE candidate_claims (
   status text NOT NULL CHECK (status IN ('draft','approved','rejected'))
 )
 """)
-migration = (root / "0011_company_outreach_targets.sql").read_text(encoding="utf-8").replace("--> statement-breakpoint", "")
-connection.executescript(f"BEGIN;\n{migration}\nCOMMIT;")
+migrations = []
+for name in ["0011_company_outreach_targets.sql", "0012_company_outreach_autopilot.sql"]:
+    migrations.append((root / name).read_text(encoding="utf-8").replace("--> statement-breakpoint", ""))
+connection.executescript(f"BEGIN;\n{' '.join(migrations)}\nCOMMIT;")
+
+columns = {row[1] for row in connection.execute("PRAGMA table_info(company_outreach_targets)")}
+assert {"origin", "research_focus", "priority_score"}.issubset(columns)
+contact_columns = {row[1] for row in connection.execute("PRAGMA table_info(company_outreach_contacts)")}
+assert "source_context" in contact_columns
 
 connection.execute("INSERT INTO candidate_claims(id, statement, evidence, status) VALUES ('claim-ok','Approved claim','evidence','approved')")
 connection.execute("INSERT INTO candidate_claims(id, statement, evidence, status) VALUES ('claim-draft','Draft claim','evidence','draft')")
 connection.execute("""
-INSERT INTO company_outreach_targets(id, company_name, company_domain, official_url, track)
-VALUES ('target-a','Example Co','example.com','https://example.com/','now_remote')
+INSERT INTO company_outreach_targets(id, company_name, company_domain, official_url, track, origin, research_focus, priority_score)
+VALUES ('target-a','Example Co','example.com','https://example.com/','now_remote','controlled_source','product operations',80)
 """)
 expect_integrity_error(
     lambda: connection.execute("UPDATE company_outreach_targets SET company_domain='evil.example' WHERE id='target-a'"),
@@ -36,10 +43,10 @@ expect_integrity_error(
 )
 connection.execute("""
 INSERT INTO company_outreach_contacts(
-  id,target_id,email,source_url,excerpt,source_type,extracted_at,suitability,suitability_reason
+  id,target_id,email,source_url,excerpt,source_type,source_context,extracted_at,suitability,suitability_reason
 ) VALUES (
   'contact-a','target-a','careers@example.com','https://example.com/careers',
-  'Internship enquiries: careers@example.com','official_careers','2026-08-28T00:00:00Z','review','published'
+  'Internship enquiries: careers@example.com','official_careers','first_party','2026-08-28T00:00:00Z','review','published'
 )
 """)
 connection.execute("INSERT INTO company_outreach_drafts(id,target_id) VALUES ('draft-a','target-a')")
