@@ -297,7 +297,7 @@ export async function researchPublishedCompanyContacts(input: {
   }
 
   return {
-    schemaVersion: 2 as const,
+    schemaVersion: 1 as const,
     jobSnapshotId,
     companyDomain: domain,
     researchedAt: new Date().toISOString(),
