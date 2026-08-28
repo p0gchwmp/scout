@@ -53,9 +53,9 @@ test("contact research is bounded across first-party and public-web evidence whi
   assert.match(source, /linkedinScrape: false/);
   assert.match(source, /dataBrokerLookup: false/);
   assert.match(source, /guessEmail: false/);
-  assert.match(source, /linkedin\.com/);
-  assert.match(source, /apollo\.io/);
-  assert.match(source, /hunter\.io/);
+  assert.match(source, /linkedin\\\.com/);
+  assert.match(source, /apollo\\\.io/);
+  assert.match(source, /hunter\\\.io/);
   assert.doesNotMatch(source, /fetch\([^\n]*linkedin\.com/i);
 });
 
