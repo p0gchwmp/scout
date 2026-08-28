@@ -4,6 +4,7 @@ export type PublishedContactLike = {
   email: string;
   excerpt: string;
   sourceType?: string | null;
+  sourceContext?: string | null;
   sourceUrl?: string | null;
 };
 
@@ -18,7 +19,7 @@ export type ContactIntelligenceAssessment = {
   reasons: string[];
 };
 
-const RECRUITING_PATTERN = /\b(recruit(?:er|ing|ment)?|talent|hiring|careers?|jobs?|people ops|people team|human resources?|\bhr\b|campus|university recruiting|early careers?|internships?)\b/i;
+const RECRUITING_PATTERN = /\b(recruit(?:er|ing|ment)?|talent|hiring|careers?|jobs?|people ops|people team|human resources?|\bhr\b|campus|university recruiting|early careers?|internships?|career fair)\b/i;
 const GENERAL_BUSINESS_PATTERN = /\b(info|hello|contact|team|office|general|enquir(?:y|ies)|inquir(?:y|ies))\b/i;
 const LOW_RELEVANCE_PATTERN = /\b(privacy|legal|security|abuse|press|media|pr@|sales|billing|support|investor|procurement|vendor)\b/i;
 
@@ -48,7 +49,7 @@ export function validateLinkedInRecruiterClueUrl(raw: string) {
 export function assessPublishedContact(contact: PublishedContactLike, clue?: RecruiterClue): ContactIntelligenceAssessment {
   const email = contact.email.trim().toLowerCase();
   const localPart = email.split("@")[0] ?? "";
-  const text = `${localPart}\n${contact.excerpt ?? ""}\n${contact.sourceType ?? ""}\n${contact.sourceUrl ?? ""}`;
+  const text = `${localPart}\n${contact.excerpt ?? ""}\n${contact.sourceType ?? ""}\n${contact.sourceContext ?? ""}\n${contact.sourceUrl ?? ""}`;
   const reasons: string[] = [];
   let score = 20;
 
@@ -58,6 +59,9 @@ export function assessPublishedContact(contact: PublishedContactLike, clue?: Rec
   } else if ((contact.sourceType ?? "").includes("contact")) {
     score += 6;
     reasons.push("Published on an official contact page");
+  } else if (contact.sourceContext && contact.sourceContext !== "first_party") {
+    score += 5;
+    reasons.push(`Published public recruiting evidence (${contact.sourceContext.replaceAll("_", " ")})`);
   } else {
     reasons.push("Published on an official company page");
   }
