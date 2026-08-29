@@ -151,9 +151,9 @@ export async function POST(request: Request) {
     if (draftableQuestions.length) {
       try {
         const packet = application.submittedFields as unknown as { claimIds?: unknown };
-        const claimIds = [...new Set(Array.isArray(packet.claimIds)
-          ? packet.claimIds.filter((id): id is string => typeof id === "string" && id.trim()).map((id) => id.trim()).slice(0, 8)
-          : [])];
+        const claimIds = Array.isArray(packet.claimIds)
+          ? [...new Set(packet.claimIds.filter((id): id is string => typeof id === "string" && id.trim()).map((id) => id.trim()).slice(0, 8))]
+          : [];
         const claims = claimIds.length
           ? await db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds))
           : [];
