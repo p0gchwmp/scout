@@ -4,6 +4,10 @@ import { buildApplicationProfileBindings } from "./application-profile-bindings.
 
 export const APPLICATION_PREP_CAPABILITIES = Object.freeze({ prepare: true, submit: false, browserMutation: false } as const);
 
+export const APPLICATION_PREP_PROFILE_BINDING_POLICY = Object.freeze({
+  pinVerifiedProfileEvidence: true,
+} as const);
+
 export const APPLICATION_PROFILE_KEYS = [
   "full_name", "email", "phone", "current_location", "university", "program", "graduation_year",
   "linkedin_url", "github_url", "portfolio_url", "resume_reference",
