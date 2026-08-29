@@ -1,9 +1,21 @@
 import { env } from "cloudflare:workers";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { companyOutreachDraftRevisions, companyOutreachDrafts, companyOutreachTargets } from "../../../../db/company-outreach-schema";
+import { candidateClaims } from "../../../../db/schema";
+import {
+  companyOutreachContacts,
+  companyOutreachDraftRevisions,
+  companyOutreachDrafts,
+  companyOutreachTargets,
+} from "../../../../db/company-outreach-schema";
+import { selectUsableApprovedClaims } from "../../../../lib/scout/claims";
 import { createGmailDraftThroughAgent } from "../../../../lib/scout/gmail-agent-client";
 import { parseOutreachDraftForEmail } from "../../../../lib/scout/gmail-compose";
+import {
+  companyOutreachExecutionIssues,
+  parsePinnedOutreachClaimIds,
+} from "../../../../lib/scout/outreach-execution";
+import { hashDraftBody } from "../../../../lib/scout/outreach";
 import { parseCompanyGmailDraftPayload } from "../../../../lib/scout/company-outreach";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
@@ -24,11 +36,8 @@ export async function POST(request: Request) {
       eq(companyOutreachDrafts.state, "approved"),
     )).limit(1);
     if (!draft?.approvedRevisionId) return Response.json({ error: "Only an approved company outreach draft can create a Gmail draft" }, { status: 409 });
-    const [target] = await db.select().from(companyOutreachTargets).where(and(
-      eq(companyOutreachTargets.id, draft.targetId),
-      eq(companyOutreachTargets.state, "active"),
-    )).limit(1);
-    if (!target) return Response.json({ error: "Company outreach target is no longer active" }, { status: 409 });
+    const [target] = await db.select().from(companyOutreachTargets).where(eq(companyOutreachTargets.id, draft.targetId)).limit(1);
+    if (!target) return Response.json({ error: "Company outreach target is missing" }, { status: 409 });
     const [revision] = await db.select().from(companyOutreachDraftRevisions).where(and(
       eq(companyOutreachDraftRevisions.id, draft.approvedRevisionId),
       eq(companyOutreachDraftRevisions.draftId, draft.id),
@@ -36,7 +45,38 @@ export async function POST(request: Request) {
     )).limit(1);
     if (!revision) return Response.json({ error: "Approved company outreach revision is missing" }, { status: 409 });
 
-    const email = parseOutreachDraftForEmail(revision.body);
+    const claimIds = parsePinnedOutreachClaimIds(revision.claimIds);
+    if (!claimIds) return Response.json({ error: "Approved company outreach revision has invalid pinned claim bindings" }, { status: 409 });
+
+    const [contact, claims] = await Promise.all([
+      db.select().from(companyOutreachContacts).where(eq(companyOutreachContacts.id, revision.contactId)).limit(1).then((rows) => rows[0]),
+      db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)),
+    ]);
+    const usableClaims = selectUsableApprovedClaims(claims);
+
+    let email: ReturnType<typeof parseOutreachDraftForEmail>;
+    try { email = parseOutreachDraftForEmail(revision.body); }
+    catch { return Response.json({ error: "Approved company outreach revision is malformed and must be regenerated" }, { status: 409 }); }
+
+    const bindingIssues = companyOutreachExecutionIssues({
+      targetId: target.id,
+      targetState: target.state,
+      revisionTargetId: revision.targetId,
+      revisionContactId: revision.contactId,
+      revisionClaimIds: claimIds,
+      currentUsableClaimIds: usableClaims.map((claim) => claim.id),
+      contact,
+      parsedRecipient: email.to,
+      expectedBodyHash: revision.bodyHash,
+      actualBodyHash: await hashDraftBody(revision.body),
+    });
+    if (bindingIssues.length) {
+      return Response.json({
+        error: "Approved company outreach evidence changed; refresh and re-approve the draft before creating a Gmail draft",
+        bindingIssues,
+      }, { status: 409 });
+    }
+
     const result = await createGmailDraftThroughAgent(env as unknown as Record<string, unknown>, {
       revisionId: `company-outreach-${revision.id}`,
       to: email.to,

@@ -1,9 +1,15 @@
 import { env } from "cloudflare:workers";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { outreachDraftRevisions, outreachDrafts } from "../../../../db/schema";
+import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreachDrafts } from "../../../../db/schema";
+import { selectUsableApprovedClaims } from "../../../../lib/scout/claims";
 import { createGmailDraftThroughAgent } from "../../../../lib/scout/gmail-agent-client";
 import { parseOutreachDraftForEmail } from "../../../../lib/scout/gmail-compose";
+import {
+  jobOutreachExecutionIssues,
+  parsePinnedOutreachClaimIds,
+} from "../../../../lib/scout/outreach-execution";
+import { hashDraftBody } from "../../../../lib/scout/outreach";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
 function draftId(value: unknown) {
@@ -39,7 +45,39 @@ export async function POST(request: Request) {
     )).limit(1);
     if (!revision) return Response.json({ error: "Approved outreach revision is missing" }, { status: 409 });
 
-    const email = parseOutreachDraftForEmail(revision.body);
+    const claimIds = parsePinnedOutreachClaimIds(revision.claimIds);
+    if (!claimIds) return Response.json({ error: "Approved outreach revision has invalid pinned claim bindings" }, { status: 409 });
+
+    const [job, contact, claims] = await Promise.all([
+      db.select().from(jobs).where(eq(jobs.id, draft.jobId)).limit(1).then((rows) => rows[0]),
+      db.select().from(contactEvidence).where(eq(contactEvidence.id, revision.contactId)).limit(1).then((rows) => rows[0]),
+      db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)),
+    ]);
+    const usableClaims = selectUsableApprovedClaims(claims, { allowSyntheticDemo: draft.jobId.startsWith("demo_job_") });
+
+    let email: ReturnType<typeof parseOutreachDraftForEmail>;
+    try { email = parseOutreachDraftForEmail(revision.body); }
+    catch { return Response.json({ error: "Approved outreach revision is malformed and must be regenerated" }, { status: 409 }); }
+
+    const bindingIssues = jobOutreachExecutionIssues({
+      jobId: draft.jobId,
+      currentJobSnapshotId: job?.currentSnapshotId,
+      revisionJobSnapshotId: revision.jobSnapshotId,
+      revisionContactId: revision.contactId,
+      revisionClaimIds: claimIds,
+      currentUsableClaimIds: usableClaims.map((claim) => claim.id),
+      contact,
+      parsedRecipient: email.to,
+      expectedBodyHash: revision.bodyHash,
+      actualBodyHash: await hashDraftBody(revision.body),
+    });
+    if (bindingIssues.length) {
+      return Response.json({
+        error: "Approved outreach evidence changed; refresh and re-approve the outreach draft before creating a Gmail draft",
+        bindingIssues,
+      }, { status: 409 });
+    }
+
     const result = await createGmailDraftThroughAgent(env as unknown as Record<string, unknown>, {
       revisionId: revision.id,
       to: email.to,
