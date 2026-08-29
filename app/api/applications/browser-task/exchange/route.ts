@@ -5,6 +5,7 @@ import { applications, candidateClaims, jobSnapshots, jobs, profileEvidence } fr
 import { buildAiApplicationAnswerEnvelope, type AiApplicationAnswer, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
 import { buildApplicationAnswerReview } from "../../../../../lib/scout/application-answer-review";
 import { draftApplicationAnswersViaAgent } from "../../../../../lib/scout/application-answer-runtime";
+import { applicationPacketProfileBindingIssues } from "../../../../../lib/scout/application-profile-bindings";
 import { applicationPacketMatchesCurrentSnapshot, applicationPacketSnapshotId } from "../../../../../lib/scout/application-review-packet";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
@@ -100,14 +101,19 @@ export async function POST(request: Request) {
     if (!application) return json({ error: "The application packet changed, was recorded as submitted, or is no longer ready for review" }, 409);
 
     const packetSnapshotId = applicationPacketSnapshotId(application.submittedFields);
-    const [job, snapshot] = await Promise.all([
+    const [job, snapshot, currentProfileFields] = await Promise.all([
       db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1).then((rows) => rows[0]),
       packetSnapshotId
         ? db.select().from(jobSnapshots).where(and(eq(jobSnapshots.id, packetSnapshotId), eq(jobSnapshots.jobId, application.jobId))).limit(1).then((rows) => rows[0])
         : Promise.resolve(undefined),
+      db.select().from(profileEvidence),
     ]);
     if (!job?.currentSnapshotId || !packetSnapshotId || !snapshot || !applicationPacketMatchesCurrentSnapshot(application.submittedFields, job.currentSnapshotId)) {
       return json({ error: "The job snapshot changed after the browser handoff was minted; refresh the application packet and create a new handoff" }, 409);
+    }
+    const profileIssues = applicationPacketProfileBindingIssues(application.submittedFields, currentProfileFields);
+    if (profileIssues.length) {
+      return json({ error: "Verified profile evidence changed after the browser handoff was minted; refresh the application packet and create a new handoff", profileIssues }, 409);
     }
 
     const task = buildBrowserAssistTask({
@@ -148,10 +154,10 @@ export async function POST(request: Request) {
         const claimIds = [...new Set(Array.isArray(packet.claimIds)
           ? packet.claimIds.filter((id): id is string => typeof id === "string" && id.trim()).map((id) => id.trim()).slice(0, 8)
           : [])];
-        const [claims, voiceRows] = await Promise.all([
-          claimIds.length ? db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)) : Promise.resolve([]),
-          db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
-        ]);
+        const claims = claimIds.length
+          ? await db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds))
+          : [];
+        const voiceRows = currentProfileFields.filter((field) => field.verified);
         const claimBindingsCurrent = claimIds.length > 0
           && claims.length === claimIds.length
           && claims.every((claim) => claim.status === "approved");

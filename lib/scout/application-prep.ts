@@ -1,7 +1,13 @@
 import { classifyApplicationUrl } from "./application-sites.ts";
 import { selectUsableApprovedClaims } from "./claims.ts";
+import { buildApplicationProfileBindings } from "./application-profile-bindings.ts";
 
-export const APPLICATION_PREP_CAPABILITIES = Object.freeze({ prepare: true, submit: false, browserMutation: false } as const);
+export const APPLICATION_PREP_CAPABILITIES = Object.freeze({
+  prepare: true,
+  pinVerifiedProfileEvidence: true,
+  submit: false,
+  browserMutation: false,
+} as const);
 
 export const APPLICATION_PROFILE_KEYS = [
   "full_name", "email", "phone", "current_location", "university", "program", "graduation_year",
@@ -50,7 +56,8 @@ export function buildApplicationPreparation(input: {
   const safeFields = Object.fromEntries(APPLICATION_PROFILE_KEYS.flatMap((key) => {
     const value = verified.get(key);
     return value ? [[key, value]] : [];
-  }));
+  })) as Record<string, string>;
+  const profileBindings = buildApplicationProfileBindings(input.profileFields, safeFields);
 
   return {
     status: blockers.length ? "needs_input" as const : "ready_for_review" as const,
@@ -61,6 +68,7 @@ export function buildApplicationPreparation(input: {
       applicationUrl: input.job.canonicalUrl,
       channel,
       safeFields,
+      profileBindings,
       requiredProfileKeys: [...REQUIRED_APPLICATION_PROFILE_KEYS],
       verifiedProfileKeys,
       missingProfileKeys,
