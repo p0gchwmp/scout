@@ -5,6 +5,8 @@ import { requireScoutPageOwner } from "./scout-api";
 
 const workspaceLinks = [
   ["Start Here", "/setup"],
+  ["Command Center", "/command-center"],
+  ["Ecosystem", "/ecosystem"],
   ["Inbox", "/inbox"],
   ["Sources", "/sources"],
   ["Evidence", "/evidence"],
