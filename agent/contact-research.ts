@@ -6,21 +6,23 @@ const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}/gi;
 const OBFUSCATED_EMAIL_PATTERN = /\b([A-Z0-9._%+-]{2,80})\s*(?:\[at\]|\(at\)|\sat\s)\s*([A-Z0-9.-]{2,180})\s*(?:\[dot\]|\(dot\)|\sdot\s)\s*([A-Z]{2,63})\b/gi;
 const RELEVANT_LINK_PATTERN = /(?:career|job|join|contact|recruit|talent|people|team|about|campus|university|early[- ]?career|intern)/i;
 const RECRUITING_CONTEXT_PATTERN = /\b(recruit(?:er|ing|ment)?|talent|hiring|careers?|campus|university recruiting|early careers?|internships?|career fair|human resources?|\bhr\b)\b/i;
+const GENERIC_RECRUITING_OR_BUSINESS_LOCAL = /^(?:careers?|jobs?|recruit(?:er|ing|ment)?|talent(?:acquisition)?|hiring|hr|people(?:ops|team)?|internships?|campus|early[-_.]?careers?|contact|hello|info|office|team|general|enquir(?:y|ies)|inquir(?:y|ies))(?:[._+-][a-z0-9-]+)?$/i;
+const WRONG_PURPOSE_LOCAL = /^(?:press|media|pr|sales|support|billing|privacy|security|legal|investors?|fundraising|pitch|deals?|lp|procurement|vendor)(?:[._+-]|$)/i;
 const MAX_FIRST_PARTY_PAGES = 8;
-const MAX_PUBLIC_PAGES = 12;
 const MAX_PAGE_BYTES = 750_000;
 const FETCH_TIMEOUT_MS = 8_000;
-const BLOCKED_PUBLIC_HOST = /(^|\.)(linkedin\.com|facebook\.com|instagram\.com|x\.com|twitter\.com|apollo\.io|hunter\.io|clearbit\.com|skrapp\.io|zoominfo\.com|rocketreach\.co|lusha\.com|signalhire\.com|contactout\.com)$/i;
 const CONSUMER_EMAIL_HOSTS = new Set(["gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "hotmail.com", "outlook.com", "live.com", "icloud.com", "me.com", "proton.me", "protonmail.com", "aol.com"]);
 
 export const CONTACT_RESEARCH_CAPABILITIES = Object.freeze({
   officialCompanyPagesFirst: true,
-  broaderPublicRecruitingEvidence: true,
+  broaderPublicRecruitingEvidence: false,
+  thirdPartyPublicPageFetch: false,
   companyDomainBoundFirstParty: true,
   verifiedCareersSeedSupported: true,
   deterministicExtraction: true,
   deterministicRecruitingRanking: true,
   aiClassificationInputReady: true,
+  namedBusinessMailboxRequiresRecruitingContext: true,
   linkedinLeadClueOnly: true,
   guessEmail: false,
   linkedinScrape: false,
@@ -67,19 +69,6 @@ function safeOfficialUrl(raw: string, domain: string) {
   return url;
 }
 
-function safePublicUrl(raw: string) {
-  let url: URL;
-  try { url = new URL(raw); } catch { throw new Error("Public evidence URL is invalid"); }
-  const host = url.hostname.toLowerCase().replace(/^www\./, "");
-  const looksLikeIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.includes(":");
-  if (url.protocol !== "https:" || url.username || url.password || url.port || looksLikeIp || BLOCKED_PUBLIC_HOST.test(host)) {
-    throw new Error("Public evidence URL is outside Scout's allowed public-source boundary");
-  }
-  if (/\.(?:local|internal|invalid|test|onion)$/.test(host)) throw new Error("Public evidence host is not public");
-  url.hash = "";
-  return url;
-}
-
 function decodeText(html: string) {
   return html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
@@ -97,15 +86,6 @@ function sourceType(url: URL): PublishedContactResearchCandidate["sourceType"] {
   if (/career|job|join|recruit|talent|campus|early[- ]?career|intern/i.test(hostAndPath)) return "official_careers";
   if (/contact/i.test(hostAndPath)) return "official_contact";
   return "official_company";
-}
-
-function publicSourceContext(url: URL, text: string): ContactSourceContext {
-  const hostAndPath = `${url.hostname}${url.pathname}`;
-  if (/\.edu\b|\.ac\.|university|college|career[- ]?fair|placement/i.test(hostAndPath)) return "university_career";
-  if (/press|newsroom|media|release/i.test(hostAndPath)) return "official_press";
-  if (/event|conference|summit|campus/i.test(hostAndPath)) return "official_event";
-  if (RECRUITING_CONTEXT_PATTERN.test(text)) return "public_recruiting";
-  return "public_recruiting";
 }
 
 async function candidateId(email: string, sourceUrl: string) {
@@ -130,9 +110,27 @@ function extractEmails(text: string) {
   return [...found];
 }
 
+function clauseAroundEmail(text: string, email: string) {
+  const index = text.toLowerCase().indexOf(email.toLowerCase());
+  if (index < 0) return "";
+  const before = text.slice(Math.max(0, index - 180), index);
+  const after = text.slice(index + email.length, Math.min(text.length, index + email.length + 100));
+  const leftBoundary = Math.max(before.lastIndexOf("."), before.lastIndexOf(";"), before.lastIndexOf("|"), before.lastIndexOf("•"));
+  const rightCandidates = [after.indexOf("."), after.indexOf(";"), after.indexOf("|"), after.indexOf("•")].filter((value) => value >= 0);
+  const rightBoundary = rightCandidates.length ? Math.min(...rightCandidates) : after.length;
+  return `${before.slice(leftBoundary + 1)} ${email} ${after.slice(0, rightBoundary)}`.trim();
+}
+
 function businessEmail(email: string) {
   const domain = email.split("@")[1]?.toLowerCase().replace(/^www\./, "") ?? "";
   return Boolean(domain && DOMAIN_PATTERN.test(domain) && !CONSUMER_EMAIL_HOSTS.has(domain));
+}
+
+function firstPartyMailboxAllowed(email: string, excerpt: string) {
+  const localPart = email.split("@")[0]?.toLowerCase() ?? "";
+  if (!localPart || WRONG_PURPOSE_LOCAL.test(localPart)) return false;
+  if (GENERIC_RECRUITING_OR_BUSINESS_LOCAL.test(localPart)) return true;
+  return RECRUITING_CONTEXT_PATTERN.test(`${localPart} ${excerpt}`);
 }
 
 function extractOfficialLinks(html: string, base: URL, domain: string) {
@@ -149,7 +147,7 @@ function extractOfficialLinks(html: string, base: URL, domain: string) {
   return links;
 }
 
-async function fetchTextPage(initial: URL, fetcher: FetchLike, officialDomain?: string) {
+async function fetchTextPage(initial: URL, fetcher: FetchLike, officialDomain: string) {
   let current = initial;
   for (let redirect = 0; redirect <= 3; redirect += 1) {
     const response = await fetcher(current, {
@@ -159,36 +157,18 @@ async function fetchTextPage(initial: URL, fetcher: FetchLike, officialDomain?: 
     });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
-      if (!location) throw new Error("Public page redirect was missing a location");
-      current = officialDomain
-        ? safeOfficialUrl(new URL(location, current).toString(), officialDomain)
-        : safePublicUrl(new URL(location, current).toString());
+      if (!location) throw new Error("Official page redirect was missing a location");
+      current = safeOfficialUrl(new URL(location, current).toString(), officialDomain);
       continue;
     }
-    if (!response.ok) throw new Error(`Public page returned ${response.status}`);
+    if (!response.ok) throw new Error(`Official page returned ${response.status}`);
     const type = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (type && !type.includes("text/html") && !type.includes("text/plain")) throw new Error("Public page was not text content");
+    if (type && !type.includes("text/html") && !type.includes("text/plain")) throw new Error("Official page was not text content");
     const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > MAX_PAGE_BYTES) throw new Error("Public page exceeded the research size limit");
+    if (buffer.byteLength > MAX_PAGE_BYTES) throw new Error("Official page exceeded the research size limit");
     return { url: current, html: new TextDecoder().decode(buffer) };
   }
-  throw new Error("Public page redirected too many times");
-}
-
-function companyMentioned(text: string, companyName: string, domain: string) {
-  const companyTokens = companyName.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter((token) => token.length >= 3);
-  const normalized = text.toLowerCase();
-  const domainLabel = domain.split(".")[0];
-  return normalized.includes(domain) || normalized.includes(domainLabel) || companyTokens.some((token) => normalized.includes(token));
-}
-
-function publicQueries(companyName: string, domain: string) {
-  const quoted = `"${companyName.replace(/["\r\n]/g, " ").trim()}"`;
-  return [
-    `${quoted} recruiting talent careers internship email`,
-    `${quoted} campus recruiter university recruiting career fair email`,
-    `${quoted} hiring talent acquisition internship contact ${domain}`,
-  ];
+  throw new Error("Official page redirected too many times");
 }
 
 export async function researchPublishedCompanyContacts(input: {
@@ -202,13 +182,11 @@ export async function researchPublishedCompanyContacts(input: {
   const domain = normalizeDomain(input.companyDomain);
   const jobSnapshotId = input.jobSnapshotId.trim();
   if (!/^[A-Za-z0-9._:-]{3,200}$/.test(jobSnapshotId)) throw new Error("Job snapshot id is invalid");
-  const companyName = input.companyName?.replace(/\s+/g, " ").trim().slice(0, 180) || domain;
   const fetcher = input.fetcher ?? fetch;
   const queue: URL[] = [];
   if (input.careersUrl) queue.push(safeOfficialUrl(input.careersUrl, domain));
   queue.push(...["/careers", "/jobs", "/contact", "/contact-us", "/team", "/people", "/about", "/"].map((path) => new URL(path, `https://${domain}`)));
   const visited = new Set<string>();
-  const publicVisited = new Set<string>();
   const failures: Array<{ sourceUrl: string; reason: string }> = [];
   const candidates = new Map<string, PublishedContactResearchCandidate>();
 
@@ -226,13 +204,15 @@ export async function researchPublishedCompanyContacts(input: {
       for (const email of extractEmails(text)) {
         const emailDomain = email.split("@")[1]?.replace(/^www\./, "") ?? "";
         if (!businessEmail(email) || !officialHost(emailDomain, domain)) continue;
+        const excerpt = excerptAround(text, email);
+        if (!firstPartyMailboxAllowed(email, clauseAroundEmail(text, email))) continue;
         const sourceUrl = page.url.href;
         const id = await candidateId(email, sourceUrl);
         candidates.set(`${email}|${sourceUrl}`, {
           id,
           email,
           sourceUrl,
-          excerpt: excerptAround(text, email),
+          excerpt,
           sourceType: sourceType(page.url),
           sourceContext: "first_party",
         });
@@ -245,67 +225,16 @@ export async function researchPublishedCompanyContacts(input: {
     }
   }
 
-  let searchQueriesAttempted = 0;
-  if (input.searchProvider) {
-    const resultUrls = new Map<string, BraveSearchResult>();
-    for (const query of publicQueries(companyName, domain)) {
-      searchQueriesAttempted += 1;
-      try {
-        const results = await input.searchProvider.searchFixedQuery(query);
-        for (const result of results.slice(0, 8)) {
-          try {
-            const safe = safePublicUrl(result.url);
-            if (!resultUrls.has(safe.href)) resultUrls.set(safe.href, result);
-          } catch {
-            // Social networks, data brokers, malformed targets and non-public URLs are never fetched.
-          }
-        }
-      } catch (error) {
-        failures.push({ sourceUrl: `search:${input.searchProvider.provider}`, reason: error instanceof Error ? error.message.slice(0, 180) : "Public search failed" });
-      }
-    }
-
-    for (const result of [...resultUrls.values()].slice(0, MAX_PUBLIC_PAGES)) {
-      let safe: URL;
-      try { safe = safePublicUrl(result.url); } catch { continue; }
-      if (officialHost(safe.hostname, domain) || publicVisited.has(safe.href)) continue;
-      publicVisited.add(safe.href);
-      try {
-        const page = await fetchTextPage(safe, fetcher);
-        const text = decodeText(page.html);
-        const evidenceText = `${result.title} ${result.description} ${text}`;
-        if (!companyMentioned(evidenceText, companyName, domain) || !RECRUITING_CONTEXT_PATTERN.test(evidenceText)) continue;
-        for (const email of extractEmails(text)) {
-          if (!businessEmail(email)) continue;
-          const excerpt = excerptAround(text, email);
-          if (!RECRUITING_CONTEXT_PATTERN.test(`${excerpt} ${result.title} ${result.description}`)) continue;
-          const sourceUrl = page.url.href;
-          const id = await candidateId(email, sourceUrl);
-          candidates.set(`${email}|${sourceUrl}`, {
-            id,
-            email,
-            sourceUrl,
-            excerpt,
-            sourceType: "official_company",
-            sourceContext: publicSourceContext(page.url, evidenceText),
-          });
-        }
-      } catch (error) {
-        failures.push({ sourceUrl: safe.href, reason: error instanceof Error ? error.message.slice(0, 180) : "Public recruiting page fetch failed" });
-      }
-    }
-  }
-
   return {
     schemaVersion: 1 as const,
     jobSnapshotId,
     companyDomain: domain,
     researchedAt: new Date().toISOString(),
-    pagesAttempted: visited.size + publicVisited.size,
+    pagesAttempted: visited.size,
     firstPartyPagesAttempted: visited.size,
-    publicPagesAttempted: publicVisited.size,
-    searchQueriesAttempted,
+    publicPagesAttempted: 0,
+    searchQueriesAttempted: 0,
     candidates: rankPublishedContacts([...candidates.values()]).slice(0, 50),
-    failures: failures.slice(0, MAX_FIRST_PARTY_PAGES + MAX_PUBLIC_PAGES),
+    failures: failures.slice(0, MAX_FIRST_PARTY_PAGES),
   };
 }

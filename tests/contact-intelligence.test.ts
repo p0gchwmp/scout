@@ -43,20 +43,19 @@ test("LinkedIn clue accepts only normal profile URLs and never arbitrary hosts",
   assert.equal(validateLinkedInRecruiterClueUrl("javascript:alert(1)"), null);
 });
 
-test("contact research is bounded across first-party and public-web evidence while blocking private/broker scraping", async () => {
+test("v1 contact research stays bounded to first-party evidence and blocks broad/private scraping", async () => {
   const source = await readFile(new URL("../agent/contact-research.ts", import.meta.url), "utf8");
   assert.match(source, /MAX_FIRST_PARTY_PAGES = 8/);
-  assert.match(source, /MAX_PUBLIC_PAGES = 12/);
   assert.match(source, /officialCompanyPagesFirst: true/);
-  assert.match(source, /broaderPublicRecruitingEvidence: true/);
+  assert.match(source, /broaderPublicRecruitingEvidence: false/);
+  assert.match(source, /thirdPartyPublicPageFetch: false/);
   assert.match(source, /companyDomainBoundFirstParty: true/);
+  assert.match(source, /namedBusinessMailboxRequiresRecruitingContext: true/);
   assert.match(source, /linkedinScrape: false/);
   assert.match(source, /dataBrokerLookup: false/);
   assert.match(source, /guessEmail: false/);
-  assert.match(source, /linkedin\\\.com/);
-  assert.match(source, /apollo\\\.io/);
-  assert.match(source, /hunter\\\.io/);
-  assert.doesNotMatch(source, /fetch\([^\n]*linkedin\.com/i);
+  assert.doesNotMatch(source, /safePublicUrl/);
+  assert.doesNotMatch(source, /publicQueries/);
 });
 
 test("accepted-contact outreach degrades to deterministic approved-claim drafting when cloud AI is unavailable", async () => {

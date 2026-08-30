@@ -3,6 +3,7 @@ name: Scout CI
 on:
   push:
     branches:
+      - main
       - feat/discovery-contact-mvp
   pull_request:
   workflow_dispatch:

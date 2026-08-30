@@ -85,15 +85,31 @@ test("ecosystem discovery does not convert search snippets or guessed/private co
   ]);
 });
 
-test("Scout CI runs the complete release verification command", () => {
+test("Scout CI protects both the release and development branches and runs the complete release gate", () => {
   const workflow = source(".github/workflows/scout-ci.yml");
   const pkg = JSON.parse(source("package.json")) as { scripts?: Record<string, string> };
-  assert.ok(workflow.includes("npm run verify:release"));
+  const cleanScript = source("scripts/assert-clean-worktree.mjs");
+  includesAll(workflow, ["- main", "- feat/discovery-contact-mvp", "npm run verify:release"]);
   assert.ok(pkg.scripts?.["verify:release"]?.includes("npm test"));
   assert.ok(pkg.scripts?.["verify:release"]?.includes("npm run lint"));
   assert.ok(pkg.scripts?.["verify:release"]?.includes("migration-smoke.py"));
   assert.ok(pkg.scripts?.["verify:release"]?.includes("company-outreach-migration-smoke.py"));
   assert.ok(pkg.scripts?.["verify:release"]?.includes("npm run db:generate"));
+  assert.ok(pkg.scripts?.["verify:release"]?.includes("npm run check:clean"));
   assert.ok(pkg.scripts?.["verify:release"]?.includes("npm run build"));
   assert.ok(pkg.scripts?.["verify:release"]?.includes("git diff --check"));
+  includesAll(cleanScript, ["git", "status", "--porcelain", "--untracked-files=all", "process.exit(1)"]);
+});
+
+test("v1 contact research stays first-party and rejects broad personal mailbox harvesting", () => {
+  const text = source("agent/contact-research.ts");
+  includesAll(text, [
+    "thirdPartyPublicPageFetch: false",
+    "namedBusinessMailboxRequiresRecruitingContext: true",
+    "WRONG_PURPOSE_LOCAL",
+    "GENERIC_RECRUITING_OR_BUSINESS_LOCAL",
+    "personalDataHarvest: false",
+  ]);
+  assert.ok(!text.includes("safePublicUrl("));
+  assert.ok(!text.includes("publicQueries("));
 });
