@@ -51,7 +51,10 @@ async function readJson(request: Request): Promise<unknown> {
 async function withVerifiedCandidateName(raw: unknown, db: ReturnType<typeof getDb>) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const current = raw as Record<string, unknown>;
-  const identityFields = await db.select().from(profileEvidence).where(eq(profileEvidence.kind, "full_name"));
+  const identityFields = await db.select().from(profileEvidence).where(and(
+    eq(profileEvidence.kind, "full_name"),
+    eq(profileEvidence.verified, true),
+  ));
   try {
     const candidateName = verifiedOutreachCandidateName(
       identityFields,
