@@ -15,6 +15,7 @@ const workspaceLinks = [
   ["Roles", "/roles"],
   ["Shortlist", "/shortlist"],
   ["Applications", "/applications"],
+  ["Outcomes", "/outcomes"],
   ["Readiness", "/readiness"],
   ["Contacts", "/contacts"],
   ["Company Outreach", "/company-outreach"],
