@@ -41,31 +41,25 @@ type Lead = {
   focus?: string;
 };
 
-type MetadataPayload = {
-  capabilities?: CapabilityMap;
-  sources?: Source[];
-  adjacentLanes?: string[];
-  error?: string;
-};
-
+type MetadataPayload = { capabilities?: CapabilityMap; sources?: Source[]; adjacentLanes?: string[]; error?: string };
 type DiscoverPayload = {
   enabled?: boolean;
   persistedSearchResults?: boolean;
-  curatedRegistryIsBootstrapNotAllowlist?: boolean;
   queryLanes?: string[];
   leads?: Lead[];
-  failures?: Array<{ queryId?: string; reason?: string }>;
   reason?: string;
   error?: string;
 };
-
 type ActionPayload = {
   createdTargets?: number;
   researchedTargets?: number;
-  candidatesFound?: number;
   candidatesStored?: number;
   rejectedWrongPurpose?: number;
-  contactsDefaultTo?: string;
+  error?: string;
+};
+type PromotionPayload = {
+  promotion?: { jobId: string; snapshotId: string; provider: string; company: string; title: string; created: boolean; refreshed: boolean; reused: boolean };
+  evidence?: { officialAtsRefetched?: boolean; searchSnippetPersisted?: boolean };
   error?: string;
 };
 
@@ -79,16 +73,15 @@ function routeLabel(lead: Lead) {
   return "Official institution lead · preserve role evidence first";
 }
 
-function routeHref(lead: Lead) {
-  if (lead.requiresOfficialSourceRegistration) return "/sources";
-  if (lead.requiresOfficialEmployerResolution) return "/inbox";
-  return "/quality";
+function defaultCompanyHint(lead: Lead) {
+  return lead.sourceMode === "direct_institution" ? lead.sourceName : "";
 }
 
 export function EcosystemWorkspace() {
   const [metadata, setMetadata] = useState<MetadataPayload>({});
   const [leads, setLeads] = useState<Lead[]>([]);
   const [queryLanes, setQueryLanes] = useState<string[]>([]);
+  const [companyHints, setCompanyHints] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -123,15 +116,14 @@ export function EcosystemWorkspace() {
       });
       const payload = await response.json() as DiscoverPayload & ActionPayload;
       if (!response.ok) throw new Error(payload.error ?? "Ecosystem action failed");
-
       if (action === "discover") {
-        setLeads(payload.leads ?? []);
+        const nextLeads = payload.leads ?? [];
+        setLeads(nextLeads);
+        setCompanyHints(Object.fromEntries(nextLeads.map((lead) => [lead.url, defaultCompanyHint(lead)])));
         setQueryLanes(payload.queryLanes ?? []);
-        if (payload.enabled === false) {
-          setNotice(payload.reason ?? "Search provider is disabled. Registry and existing Scout workspaces are still available.");
-        } else {
-          setNotice(`Found ${(payload.leads ?? []).length} reviewable ecosystem lead(s). Search snippets remain ephemeral and are not trusted job evidence.`);
-        }
+        setNotice(payload.enabled === false
+          ? payload.reason ?? "Search provider is disabled. Registry and existing Scout workspaces are still available."
+          : `Found ${nextLeads.length} reviewable ecosystem lead(s). Search snippets remain ephemeral and are not trusted job evidence.`);
       } else if (action === "seed_recruiting_targets") {
         setNotice(`Added ${payload.createdTargets ?? 0} official institution recruiting target(s) to Company Outreach. No email was sent.`);
       } else {
@@ -139,9 +131,35 @@ export function EcosystemWorkspace() {
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Ecosystem action failed");
-    } finally {
-      setBusy(null);
+    } finally { setBusy(null); }
+  }
+
+  async function promoteLead(lead: Lead) {
+    const companyHint = (companyHints[lead.url] ?? defaultCompanyHint(lead)).trim();
+    if (!companyHint) {
+      setError("Enter the actual employer company before Scout tries to resolve this portfolio/search lead.");
+      return;
     }
+    setBusy(`promote:${lead.url}`); setNotice(""); setError("");
+    try {
+      const response = await fetch("/api/lead-promotion", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "resolve_promote",
+          leadUrl: lead.url,
+          companyHint,
+          title: lead.title,
+          sourceMode: lead.sourceMode,
+        }),
+      });
+      const payload = await response.json() as PromotionPayload;
+      if (!response.ok || !payload.promotion) throw new Error(payload.error ?? "No independently verified official ATS posting was found");
+      const state = payload.promotion.reused ? "reused" : payload.promotion.refreshed ? "refreshed" : "saved";
+      setNotice(`${payload.promotion.company} — ${payload.promotion.title}: official ${payload.promotion.provider} evidence ${state} as an immutable Scout job. The search lead itself was not persisted.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Official role resolution failed");
+    } finally { setBusy(null); }
   }
 
   return <main className={styles.shell}>
@@ -151,12 +169,7 @@ export function EcosystemWorkspace() {
         <h1>Capital, startup and ecosystem opportunities — routed with evidence, not scraped into spam.</h1>
         <p className={styles.intro}>Search venture funds, portfolio boards, accelerators, studios, impact investors, CVC, Founder&apos;s Office and adjacent early-career lanes. Portfolio boards are leads only; unregistered sources stay review-only; public contacts stay <strong>needs_review</strong>.</p>
       </div>
-      <nav className={styles.nav}>
-        <Link href="/quality">Quality</Link>
-        <Link href="/company-outreach">Company Outreach</Link>
-        <Link href="/applications">Applications</Link>
-        <Link href="/">Dashboard</Link>
-      </nav>
+      <nav className={styles.nav}><Link href="/command-center">Command Center</Link><Link href="/company-outreach">Company Outreach</Link><Link href="/applications">Applications</Link><Link href="/">Dashboard</Link></nav>
     </header>
 
     <section className={styles.guardrail}>
@@ -175,10 +188,7 @@ export function EcosystemWorkspace() {
     </section>
 
     <section className={styles.actionsPanel}>
-      <div>
-        <p className={styles.kicker}>RUN</p>
-        <h2>Research deeply. Draft carefully. Keep execution reviewed.</h2>
-      </div>
+      <div><p className={styles.kicker}>RUN</p><h2>Research deeply. Draft carefully. Promote only official evidence.</h2></div>
       <div className={styles.actions}>
         <button disabled={busy !== null} onClick={() => void runAction("discover")}>{busy === "discover" ? "Searching…" : "Discover ecosystem leads"}</button>
         <button className={styles.secondary} disabled={busy !== null} onClick={() => void runAction("seed_recruiting_targets")}>{busy === "seed_recruiting_targets" ? "Seeding…" : "Seed official recruiting targets"}</button>
@@ -187,28 +197,20 @@ export function EcosystemWorkspace() {
     </section>
 
     <section className={styles.section}>
-      <div className={styles.sectionHead}>
-        <div><p className={styles.kicker}>DISCOVERED LEADS</p><h2>{leads.length ? `${leads.length} leads to triage` : "Run discovery to build the review queue"}</h2></div>
-        <p>Nothing here becomes trusted job evidence just because a search engine returned it.</p>
-      </div>
+      <div className={styles.sectionHead}><div><p className={styles.kicker}>DISCOVERED LEADS</p><h2>{leads.length ? `${leads.length} leads to triage` : "Run discovery to build the review queue"}</h2></div><p>Nothing here becomes trusted job evidence just because a search engine returned it.</p></div>
       {!leads.length && <div className={styles.empty}>Search results are intentionally ephemeral. When you run discovery, Scout will show direct institution leads, portfolio-board leads, and unregistered ecosystem leads with different next-step rules.</div>}
       <div className={styles.leadList}>
         {leads.map((lead) => <article className={styles.leadCard} key={`${lead.sourceMode}:${lead.url}`}>
           <div className={styles.leadTop}>
-            <div>
-              <div className={styles.tags}><span>{humanize(lead.sourceMode)}</span>{lead.lane && <span>{humanize(lead.lane)}</span>}<span>{humanize(lead.institutionType)}</span></div>
-              <h3>{lead.title}</h3>
-              <p className={styles.source}>{lead.sourceName}</p>
-            </div>
+            <div><div className={styles.tags}><span>{humanize(lead.sourceMode)}</span>{lead.lane && <span>{humanize(lead.lane)}</span>}<span>{humanize(lead.institutionType)}</span></div><h3>{lead.title}</h3><p className={styles.source}>{lead.sourceName}</p></div>
             <a href={lead.url} target="_blank" rel="noreferrer">Open source ↗</a>
           </div>
           {lead.description && <p>{lead.description}</p>}
-          <div className={styles.routeBox}>
-            <strong>{routeLabel(lead)}</strong>
-            <span>{lead.requiresOfficialSourceRegistration ? "Register/verify the official institution or employer before any contact research or application preparation." : lead.requiresOfficialEmployerResolution ? "Use the investor board only as context; resolve the startup's official careers/ATS posting before Safe Fill." : "Capture immutable official role evidence, then use the existing quality/readiness/application pipeline."}</span>
-          </div>
+          <div className={styles.routeBox}><strong>{routeLabel(lead)}</strong><span>{lead.requiresOfficialEmployerResolution ? "Use the investor board only as context; Scout can now independently resolve the startup's supported official ATS before saving anything." : "Scout will independently search/re-fetch a supported official ATS and persist only that verified role evidence."}</span></div>
+          <label>Employer company<input value={companyHints[lead.url] ?? defaultCompanyHint(lead)} onChange={(event) => setCompanyHints((current) => ({ ...current, [lead.url]: event.target.value }))} placeholder={lead.sourceMode === "direct_institution" ? lead.sourceName : "Actual startup / employer name"} /></label>
           <div className={styles.cardActions}>
-            <Link href={routeHref(lead)}>Go to next review step →</Link>
+            <button disabled={busy !== null} onClick={() => void promoteLead(lead)}>{busy === `promote:${lead.url}` ? "Resolving official ATS…" : "Resolve & save official role"}</button>
+            <Link href="/sources">Review sources →</Link>
             {lead.sourceMode === "direct_institution" && <Link href="/company-outreach">Review public contact path →</Link>}
           </div>
         </article>)}
@@ -216,25 +218,13 @@ export function EcosystemWorkspace() {
     </section>
 
     <section className={styles.section}>
-      <div className={styles.sectionHead}>
-        <div><p className={styles.kicker}>BOOTSTRAP REGISTRY</p><h2>Known official ecosystem surfaces</h2></div>
-        <p>These sources get stronger routing. New legitimate institutions can still surface as review-only leads.</p>
-      </div>
-      <div className={styles.sourceGrid}>
-        {(metadata.sources ?? []).map((source) => <article className={styles.sourceCard} key={source.id}>
-          <div><span>{humanize(source.institutionType)}</span><h3>{source.name}</h3></div>
-          <div className={styles.sourceLinks}>
-            <a href={source.officialUrl} target="_blank" rel="noreferrer">Official site</a>
-            {source.directCareersUrl && <a href={source.directCareersUrl} target="_blank" rel="noreferrer">Careers</a>}
-            {source.portfolioBoardUrl && <a href={source.portfolioBoardUrl} target="_blank" rel="noreferrer">Portfolio board</a>}
-          </div>
-        </article>)}
-      </div>
+      <div className={styles.sectionHead}><div><p className={styles.kicker}>BOOTSTRAP REGISTRY</p><h2>Known official ecosystem surfaces</h2></div><p>These sources get stronger routing. New legitimate institutions can still surface as review-only leads.</p></div>
+      <div className={styles.sourceGrid}>{(metadata.sources ?? []).map((source) => <article className={styles.sourceCard} key={source.id}><div><span>{humanize(source.institutionType)}</span><h3>{source.name}</h3></div><div className={styles.sourceLinks}><a href={source.officialUrl} target="_blank" rel="noreferrer">Official site</a>{source.directCareersUrl && <a href={source.directCareersUrl} target="_blank" rel="noreferrer">Careers</a>}{source.portfolioBoardUrl && <a href={source.portfolioBoardUrl} target="_blank" rel="noreferrer">Portfolio board</a>}</div></article>)}</div>
     </section>
 
     <section className={styles.footerGrid}>
-      <Link href="/sources"><strong>Sources</strong><span>Review/register newly discovered official institutions.</span></Link>
-      <Link href="/quality"><strong>Quality</strong><span>Rank official roles by evidence, fit, timing and eligibility.</span></Link>
+      <Link href="/sources"><strong>Sources</strong><span>Review newly discovered institutions; independently verified ATS sources can be registered by promotion.</span></Link>
+      <Link href="/quality"><strong>Quality</strong><span>Rank promoted official roles by evidence, fit, timing and eligibility.</span></Link>
       <Link href="/company-outreach"><strong>Company Outreach</strong><span>Accept/reject published recruiting evidence, generate personalized claim-backed outreach, approve the exact revision, then create a Gmail draft.</span></Link>
       <Link href="/assist"><strong>Safe Fill</strong><span>Prepare visible application fields; you still make the final submit decision.</span></Link>
     </section>
