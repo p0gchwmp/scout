@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { candidateClaims } from "../../../../db/schema";
+import { candidateClaims, profileEvidence } from "../../../../db/schema";
 import {
   companyOutreachContacts,
   companyOutreachDraftRevisions,
@@ -16,6 +16,7 @@ import {
   parsePinnedOutreachClaimIds,
 } from "../../../../lib/scout/outreach-execution";
 import { hashDraftBody } from "../../../../lib/scout/outreach";
+import { outreachIdentityExecutionIssues } from "../../../../lib/scout/outreach-profile-freshness";
 import { parseCompanyGmailDraftPayload } from "../../../../lib/scout/company-outreach";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
@@ -48,9 +49,10 @@ export async function POST(request: Request) {
     const claimIds = parsePinnedOutreachClaimIds(revision.claimIds);
     if (!claimIds) return Response.json({ error: "Approved company outreach revision has invalid pinned claim bindings" }, { status: 409 });
 
-    const [contact, claims] = await Promise.all([
+    const [contact, claims, currentIdentityFields] = await Promise.all([
       db.select().from(companyOutreachContacts).where(eq(companyOutreachContacts.id, revision.contactId)).limit(1).then((rows) => rows[0]),
       db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)),
+      db.select().from(profileEvidence).where(eq(profileEvidence.kind, "full_name")),
     ]);
     const usableClaims = selectUsableApprovedClaims(claims);
 
@@ -70,10 +72,15 @@ export async function POST(request: Request) {
       expectedBodyHash: revision.bodyHash,
       actualBodyHash: await hashDraftBody(revision.body),
     });
-    if (bindingIssues.length) {
+    const identityIssues = outreachIdentityExecutionIssues({
+      revisionCreatedAt: revision.createdAt,
+      currentProfileFields: currentIdentityFields,
+    });
+    const executionIssues = [...new Set([...bindingIssues, ...identityIssues])];
+    if (executionIssues.length) {
       return Response.json({
-        error: "Approved company outreach evidence changed; refresh and re-approve the draft before creating a Gmail draft",
-        bindingIssues,
+        error: "Approved company outreach evidence or verified identity changed; refresh and re-approve the draft before creating a Gmail draft",
+        bindingIssues: executionIssues,
       }, { status: 409 });
     }
 

@@ -15,6 +15,7 @@ import {
   renderOutreachDraft,
   type OutreachDraft,
 } from "../../../lib/scout/outreach";
+import { verifiedOutreachCandidateName } from "../../../lib/scout/outreach-profile-freshness";
 import { logScoutError, requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
 async function loadDraft(db: ReturnType<typeof getDb>, id: string): Promise<OutreachDraft | undefined> {
@@ -50,13 +51,16 @@ async function readJson(request: Request): Promise<unknown> {
 async function withVerifiedCandidateName(raw: unknown, db: ReturnType<typeof getDb>) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const current = raw as Record<string, unknown>;
-  if (typeof current.candidateName === "string" && current.candidateName.trim()) return raw;
-  const [name] = await db.select().from(profileEvidence).where(and(
-    eq(profileEvidence.kind, "full_name"),
-    eq(profileEvidence.verified, true),
-  )).limit(1);
-  if (!name) throw new PayloadValidationError("Verify full_name in the application profile before creating outreach");
-  return { ...current, candidateName: name.claim };
+  const identityFields = await db.select().from(profileEvidence).where(eq(profileEvidence.kind, "full_name"));
+  try {
+    const candidateName = verifiedOutreachCandidateName(
+      identityFields,
+      typeof current.candidateName === "string" ? current.candidateName : null,
+    );
+    return { ...current, candidateName };
+  } catch (error) {
+    throw new PayloadValidationError(error instanceof Error ? error.message : "Current verified full_name is required for outreach");
+  }
 }
 
 export async function GET() {
