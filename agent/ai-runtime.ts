@@ -6,6 +6,7 @@ const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const CEREBRAS_ENDPOINT = "https://api.cerebras.ai/v1/chat/completions";
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+const POE_ENDPOINT = "https://api.poe.com/v1/chat/completions";
 
 const DEFAULT_MODELS = Object.freeze({
   nimLightning: "nvidia/nemotron-3.5-lightning-30b-a3b",
@@ -56,7 +57,7 @@ function candidate(input: {
 }
 
 function pushUnique(target: RoutedAiCandidate[], item: RoutedAiCandidate | null) {
-  if (item && !target.some((candidate) => candidate.id === item.id)) target.push(item);
+  if (item && !target.some((entry) => entry.id === item.id)) target.push(item);
 }
 
 function freeProviderKey(environment: NodeJS.ProcessEnv, scoutKey: string, standardKeys: readonly string[]) {
@@ -68,6 +69,26 @@ function freeProviderKey(environment: NodeJS.ProcessEnv, scoutKey: string, stand
     if (found) return found;
   }
   return "";
+}
+
+function optionalIncludedGateway(environment: NodeJS.ProcessEnv, prefix: "POE" | "OMNIROUTE", refineWriting: boolean) {
+  if (value(environment, `SCOUT_${prefix}_INCLUDED_ONLY`) !== "1") return null;
+  const apiKey = value(environment, `SCOUT_${prefix}_INCLUDED_API_KEY`);
+  const model = value(environment, `SCOUT_${prefix}_MODEL`);
+  if (!apiKey || !model) return null;
+  const endpointUrl = prefix === "POE"
+    ? value(environment, "SCOUT_POE_ENDPOINT_URL") || POE_ENDPOINT
+    : value(environment, "SCOUT_OMNIROUTE_ENDPOINT_URL");
+  if (!endpointUrl) return null;
+  return candidate({
+    id: `${prefix.toLowerCase()}:${model}`,
+    endpointUrl,
+    apiKey,
+    model,
+    jsonMode: value(environment, `SCOUT_${prefix}_JSON_MODE`) !== "0",
+    allowLoopbackDev: prefix === "OMNIROUTE" && value(environment, "SCOUT_OMNIROUTE_ALLOW_LOOPBACK_DEV") === "1",
+    alwaysRefineWriting: refineWriting,
+  });
 }
 
 export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.env) {
@@ -171,6 +192,8 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
     jsonMode: false,
     alwaysRefineWriting: refineWriting,
   }) : null;
+  const poe = optionalIncludedGateway(environment, "POE", refineWriting);
+  const omniroute = optionalIncludedGateway(environment, "OMNIROUTE", refineWriting);
   const ollama = ollamaEndpoint && ollamaKey && ollamaModel ? candidate({
     id: `ollama:${ollamaModel}`,
     endpointUrl: ollamaEndpoint,
@@ -182,17 +205,17 @@ export function createAgentAiProvider(environment: NodeJS.ProcessEnv = process.e
   }) : null;
 
   const classification: RoutedAiCandidate[] = [];
-  for (const item of [nimLightning, nimReasoning, groqReasoning, groqFast, gemini, nimUltra, cerebras, openrouter, ollama]) {
+  for (const item of [nimLightning, nimReasoning, groqReasoning, gemini, groqFast, cerebras, poe, omniroute, openrouter, nimUltra, ollama]) {
     pushUnique(classification, item);
   }
 
   const writing: RoutedAiCandidate[] = [];
-  for (const item of [nimReasoning, nimUltra, groqReasoning, gemini, nimLightning, cerebras, groqFast, openrouter, ollama]) {
+  for (const item of [nimReasoning, nimUltra, gemini, groqReasoning, poe, omniroute, nimLightning, cerebras, groqFast, openrouter, ollama]) {
     pushUnique(writing, item);
   }
 
   if (!classification.length || !writing.length) {
-    throw new Error("No Scout AI provider is configured; add a free/included provider key or keep a local Ollama fallback available");
+    throw new Error("No Scout AI provider is configured; add a free/included provider key, an explicitly included subscription gateway, or keep a local Ollama fallback available");
   }
 
   return createQualityAiRouter({ classification, writing });

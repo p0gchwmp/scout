@@ -1,10 +1,12 @@
 import { env } from "cloudflare:workers";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../db";
-import { applications, candidateClaims, jobs, profileEvidence } from "../../../../../db/schema";
+import { applications, candidateClaims, jobSnapshots, jobs, profileEvidence } from "../../../../../db/schema";
 import { buildAiApplicationAnswerEnvelope, type AiApplicationAnswer, type ApplicationQuestion } from "../../../../../lib/scout/ai-agent";
 import { buildApplicationAnswerReview } from "../../../../../lib/scout/application-answer-review";
 import { draftApplicationAnswersViaAgent } from "../../../../../lib/scout/application-answer-runtime";
+import { applicationPacketProfileBindingIssues } from "../../../../../lib/scout/application-profile-bindings";
+import { applicationPacketMatchesCurrentSnapshot, applicationPacketSnapshotId } from "../../../../../lib/scout/application-review-packet";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
 import { analyzeFormFields, draftableApplicationQuestions, summarizeFormFields } from "../../../../../lib/scout/form-intelligence";
@@ -98,6 +100,22 @@ export async function POST(request: Request) {
     )).limit(1);
     if (!application) return json({ error: "The application packet changed, was recorded as submitted, or is no longer ready for review" }, 409);
 
+    const packetSnapshotId = applicationPacketSnapshotId(application.submittedFields);
+    const [job, snapshot, currentProfileFields] = await Promise.all([
+      db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1).then((rows) => rows[0]),
+      packetSnapshotId
+        ? db.select().from(jobSnapshots).where(and(eq(jobSnapshots.id, packetSnapshotId), eq(jobSnapshots.jobId, application.jobId))).limit(1).then((rows) => rows[0])
+        : Promise.resolve(undefined),
+      db.select().from(profileEvidence),
+    ]);
+    if (!job?.currentSnapshotId || !packetSnapshotId || !snapshot || !applicationPacketMatchesCurrentSnapshot(application.submittedFields, job.currentSnapshotId)) {
+      return json({ error: "The job snapshot changed after the browser handoff was minted; refresh the application packet and create a new handoff" }, 409);
+    }
+    const profileIssues = applicationPacketProfileBindingIssues(application.submittedFields, currentProfileFields);
+    if (profileIssues.length) {
+      return json({ error: "Verified profile evidence changed after the browser handoff was minted; refresh the application packet and create a new handoff", profileIssues }, 409);
+    }
+
     const task = buildBrowserAssistTask({
       applicationId: application.id,
       artifactVersion: application.artifactVersion,
@@ -133,20 +151,24 @@ export async function POST(request: Request) {
     if (draftableQuestions.length) {
       try {
         const packet = application.submittedFields as unknown as { claimIds?: unknown };
-        const claimIds = Array.isArray(packet.claimIds) ? packet.claimIds.filter((id): id is string => typeof id === "string").slice(0, 8) : [];
-        const [job, claims, voiceRows] = await Promise.all([
-          db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1).then((rows) => rows[0]),
-          claimIds.length ? db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds)) : Promise.resolve([]),
-          db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
-        ]);
-        if (job?.currentSnapshotId && claims.length && claims.every((claim) => claim.status === "approved")) {
+        const claimIds = Array.isArray(packet.claimIds)
+          ? [...new Set(packet.claimIds.filter((id): id is string => typeof id === "string" && id.trim()).map((id) => id.trim()).slice(0, 8))]
+          : [];
+        const claims = claimIds.length
+          ? await db.select().from(candidateClaims).where(inArray(candidateClaims.id, claimIds))
+          : [];
+        const voiceRows = currentProfileFields.filter((field) => field.verified);
+        const claimBindingsCurrent = claimIds.length > 0
+          && claims.length === claimIds.length
+          && claims.every((claim) => claim.status === "approved");
+        if (claimBindingsCurrent) {
           const candidateName = voiceRows.find((field) => field.kind === "full_name")?.claim;
           if (candidateName) {
             const envelope = buildAiApplicationAnswerEnvelope({
-              jobSnapshotId: job.currentSnapshotId,
-              companyName: job.company,
-              roleTitle: job.title,
-              jobDescription: job.description.slice(0, 12_000),
+              jobSnapshotId: snapshot.id,
+              companyName: snapshot.company,
+              roleTitle: snapshot.title,
+              jobDescription: snapshot.description.slice(0, 12_000),
               candidateName,
               questions: draftableQuestions,
               claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement, status: "approved" as const })),
@@ -162,7 +184,7 @@ export async function POST(request: Request) {
             aiError = "Verified full_name is required before Scout can draft free-text answers";
           }
         } else {
-          aiError = "Current snapshot and approved claim bindings are required before Scout can draft free-text answers";
+          aiError = "Current approved claim bindings are required before Scout can draft free-text answers";
         }
       } catch {
         aiError = "AI free-text drafting was unavailable; verified autofill remains usable";

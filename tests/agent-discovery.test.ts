@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AGENT_DISCOVERY_CAPABILITIES, runAgentDiscovery } from "../agent/discovery.ts";
 
+const noPublicBoards = async () => ({
+  leads: [],
+  failures: [],
+  modes: { weWorkRemotelyRss: true as const, joobleApi: false },
+});
+
 test("cloud agent discovery returns compact controlled lead metadata", async () => {
   const discovery = await runAgentDiscovery(async () => ({
     leads: [{
@@ -32,7 +38,7 @@ test("cloud agent discovery returns compact controlled lead metadata", async () 
       postedAt: "2026-08-23T00:00:00Z",
     }],
     failures: [{ company: "Other", provider: "greenhouse", reason: "temporarily unavailable" }],
-  }), () => "2026-08-24T01:00:00.000Z", async () => ({ enabled: false, leads: [], failures: [] }));
+  }), () => "2026-08-24T01:00:00.000Z", async () => ({ enabled: false, leads: [], failures: [] }), noPublicBoards);
 
   assert.equal(discovery.found, 2);
   assert.equal(discovery.leads[0].platformId, "lever");
@@ -76,7 +82,7 @@ test("cloud agent collapses a job-board copy into the controlled official ATS le
       nextStep: "Resolve employer and official job evidence before application preparation.",
     }],
     failures: [],
-  }));
+  }), noPublicBoards);
 
   assert.equal(discovery.found, 1);
   assert.equal(discovery.leads[0].provider, "lever");
@@ -87,8 +93,41 @@ test("cloud agent collapses a job-board copy into the controlled official ATS le
   assert.equal(discovery.qualitySummary.duplicatesCollapsed, 1);
 });
 
+test("public-board feeds remain lead-only and are not promoted to official ATS authority", async () => {
+  const discovery = await runAgentDiscovery(
+    async () => ({ leads: [], failures: [] }),
+    () => "2026-08-28T10:00:00.000Z",
+    async () => ({ enabled: false, leads: [], failures: [] }),
+    async () => ({
+      leads: [{
+        provider: "public_board" as const,
+        canonicalUrl: "https://weworkremotely.com/remote-jobs/acme-product-intern",
+        company: "Acme",
+        title: "Product Intern",
+        sourceUrl: "https://weworkremotely.com/remote-jobs.rss",
+        focus: "remote product internship",
+        location: "Remote",
+        postedAt: "2026-08-28T08:00:00.000Z",
+        platformId: "weworkremotely" as const,
+        nextStep: "Resolve official employer evidence first.",
+      }],
+      failures: [],
+      modes: { weWorkRemotelyRss: true as const, joobleApi: false },
+    }),
+  );
+
+  assert.equal(discovery.found, 1);
+  assert.equal(discovery.leads[0].provider, "search_index");
+  assert.equal(discovery.leads[0].platformId, "weworkremotely");
+  assert.match(discovery.leads[0].focus, /review quality/);
+  assert.match(discovery.leads[0].focus, /Job-board lead requiring official resolution/);
+});
+
 test("cloud agent discovery cannot accept arbitrary sources or perform external side effects", () => {
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.controlledCatalog, true);
+  assert.equal(AGENT_DISCOVERY_CAPABILITIES.publicBoardFeeds, true);
+  assert.equal(AGENT_DISCOVERY_CAPABILITIES.weWorkRemotelyRss, true);
+  assert.equal(AGENT_DISCOVERY_CAPABILITIES.joobleOptInOnly, true);
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.opportunityDedupe, true);
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.preferOfficialAts, true);
   assert.equal(AGENT_DISCOVERY_CAPABILITIES.callerSuppliedSources, false);

@@ -206,5 +206,45 @@
     "sourceUrl": "https://careers.smartrecruiters.com/BoschGroup",
     "focus": "global and India business analysis, product, operations, technology",
     "companyDomain": "bosch.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "dnb",
+    "company": "Dun & Bradstreet",
+    "sourceUrl": "https://jobs.lever.co/dnb",
+    "focus": "India data, analytics, finance, operations",
+    "companyDomain": "dnb.com"
+  },
+  {
+    "provider": "lever",
+    "slug": "fampay",
+    "company": "Fam",
+    "sourceUrl": "https://jobs.lever.co/fampay",
+    "focus": "India fintech, product operations, growth, startups",
+    "companyDomain": "famapp.in"
+  },
+  {
+    "provider": "ashby",
+    "slug": "composio",
+    "company": "Composio",
+    "sourceUrl": "https://jobs.ashbyhq.com/composio",
+    "focus": "India AI, product, developer tools, operations",
+    "companyDomain": "composio.dev"
+  },
+  {
+    "provider": "ashby",
+    "slug": "outmarket",
+    "company": "Outmarket AI",
+    "sourceUrl": "https://jobs.ashbyhq.com/outmarket",
+    "focus": "India remote AI, product, startups, operations",
+    "companyDomain": "outmarket.ai"
+  },
+  {
+    "provider": "ashby",
+    "slug": "certifyos",
+    "company": "CertifyOS",
+    "sourceUrl": "https://jobs.ashbyhq.com/certifyos",
+    "focus": "India health-tech, AI, technical systems, operations",
+    "companyDomain": "certifyos.com"
   }
 ]

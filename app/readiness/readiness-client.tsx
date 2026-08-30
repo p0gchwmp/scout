@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { applicationPacketMatchesCurrentSnapshot } from "../../lib/scout/application-review-packet";
 import { assessApplicationReadiness, type ApplicationReadinessStatus } from "../../lib/scout/application-readiness";
 import styles from "./readiness.module.css";
 
@@ -32,6 +33,41 @@ type ProfileField = {
   verified: boolean;
 };
 
+type ReviewPacket = {
+  jobSnapshotId: string;
+  officialEvidence: {
+    quality: {
+      label: string;
+      provider: string;
+      registeredSource: boolean;
+      companyDomain: string | null;
+      flags: Array<{ code: string; severity: string; label: string; evidence: string }>;
+    };
+  };
+  schedulingAndEligibility: {
+    priority: string;
+    priorityLabel: string;
+    timingLane: string;
+    summer2027: string;
+    collegeCompatibility: string;
+    roleFit: string;
+    eligibility: string;
+    eligibilityReasons: string[];
+    persistedEligibilityRisks: string[];
+    exactEvidence: Array<{ code: string; label: string; excerpt: string }>;
+    unknowns: string[];
+  };
+  resumeEvidence: {
+    band: string;
+    label: string;
+    gaps: string[];
+    supportingClaims: Array<{ theme: string; claimIds: string[] }>;
+    claimBindings: Array<{ id: string; statement: string; evidence: string }>;
+  };
+  applicationReview: { state: string; reasons: string[]; humanReviewRequired: true };
+  outreachReview: { state: string; reasons: string[]; humanReviewRequired: true; sendAvailable: false };
+};
+
 type Application = {
   id: string;
   jobId: string;
@@ -44,6 +80,17 @@ type Application = {
 
 type Filter = "All" | "Shortlisted" | "Ready" | "Needs input" | "Blocked";
 const filters: Filter[] = ["All", "Shortlisted", "Ready", "Needs input", "Blocked"];
+
+function packetReview(packet: unknown) {
+  if (!packet || typeof packet !== "object" || Array.isArray(packet)) return null;
+  const review = (packet as Record<string, unknown>).review;
+  if (!review || typeof review !== "object" || Array.isArray(review)) return null;
+  return review as ReviewPacket;
+}
+
+function readable(value: string) {
+  return value.replaceAll("_", " ");
+}
 
 export function ApplicationReadinessWorkspace() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -158,14 +205,57 @@ export function ApplicationReadinessWorkspace() {
     <section className={styles.list}>
       {!visible.length && <div className={styles.empty}>No applications match this readiness view.</div>}
       {visible.map(({ job, readiness, application }) => {
-        const safeFillUnlocked = readiness.status === "ready" && application?.status === "ready_for_review" && !application.submittedAt;
+        const packetCurrent = Boolean(application && applicationPacketMatchesCurrentSnapshot(application.submittedFields, job.currentSnapshotId));
+        const review = application ? packetReview(application.submittedFields) : null;
+        const safeFillUnlocked = readiness.status === "ready" && application?.status === "ready_for_review" && !application.submittedAt && packetCurrent;
         return <article className={styles.card} key={job.id}>
           <div className={styles.cardHead}>
             <div><p className={styles.company}>{job.company}</p><h2>{job.title}</h2><p className={styles.meta}>{job.location || "Location unspecified"} · {readiness.channel.label}</p></div>
             <div className={`${styles.score} ${styles[readiness.status as ApplicationReadinessStatus]}`}><strong>{readiness.score}</strong><span>{readiness.label}</span></div>
           </div>
 
-          <div className={styles.packetLine}><span>{application ? `Current packet v${application.artifactVersion} · ${application.status.replace(/_/g, " ")}${application.submittedAt ? " · submitted externally" : ""}` : "No application packet prepared yet"}</span><span>{readiness.profileSummary}</span></div>
+          <div className={styles.packetLine}><span>{application ? `Current packet v${application.artifactVersion} · ${application.status.replace(/_/g, " ")}${application.submittedAt ? " · submitted externally" : ""}${packetCurrent ? " · snapshot current" : " · snapshot stale"}` : "No application packet prepared yet"}</span><span>{readiness.profileSummary}</span></div>
+
+          {application && !packetCurrent && <div className={styles.blockers}><strong>Packet refresh required</strong><p>The job snapshot changed after this packet was prepared. Safe Fill stays locked until the packet is rebuilt from the current immutable posting.</p></div>}
+
+          {review && <details className={styles.manual} open>
+            <summary>M8 application review packet · {review.schedulingAndEligibility.priorityLabel}</summary>
+            <div className={styles.columns}>
+              <div>
+                <strong>Official job evidence</strong>
+                <p>{review.officialEvidence.quality.label} · {review.officialEvidence.quality.provider}</p>
+                <p>Snapshot: <code>{review.jobSnapshotId}</code></p>
+                <p>Company domain: {review.officialEvidence.quality.companyDomain ?? "not verified"}</p>
+                <p>Source registration: {review.officialEvidence.quality.registeredSource ? "bound" : "not bound"}</p>
+              </div>
+              <div>
+                <strong>Scheduling + eligibility</strong>
+                <p>Summer 2027: {readable(review.schedulingAndEligibility.summer2027)}</p>
+                <p>College-now: {readable(review.schedulingAndEligibility.collegeCompatibility)}</p>
+                <p>Role fit: {readable(review.schedulingAndEligibility.roleFit)}</p>
+                <p>Eligibility: {readable(review.schedulingAndEligibility.eligibility)}</p>
+              </div>
+            </div>
+            {review.schedulingAndEligibility.exactEvidence.length > 0 && <div className={styles.blockers}><strong>Exact posting excerpts</strong>{review.schedulingAndEligibility.exactEvidence.map((item, index) => <p key={`${item.code}-${index}`}><b>{item.label}:</b> {item.excerpt}</p>)}</div>}
+            {(review.schedulingAndEligibility.eligibilityReasons.length > 0 || review.schedulingAndEligibility.persistedEligibilityRisks.length > 0) && <div className={styles.blockers}><strong>Eligibility review</strong>{review.schedulingAndEligibility.eligibilityReasons.map((reason) => <p key={reason}>{reason}</p>)}{review.schedulingAndEligibility.persistedEligibilityRisks.map((risk) => <p key={risk}>{risk}</p>)}</div>}
+            <div className={styles.columns}>
+              <div>
+                <strong>Approved supporting claims</strong>
+                <p>{review.resumeEvidence.label}</p>
+                {review.resumeEvidence.claimBindings.length ? review.resumeEvidence.claimBindings.map((claim) => <p key={claim.id}><code>{claim.id}</code> · {claim.statement}</p>) : <p className={styles.warning}>No approved claim binding is stored in this review packet.</p>}
+              </div>
+              <div>
+                <strong>Human decisions</strong>
+                <p>Application: {readable(review.applicationReview.state)}</p>
+                {review.applicationReview.reasons.map((reason) => <p key={reason}>{reason}</p>)}
+                <p>Outreach: {readable(review.outreachReview.state)}</p>
+                {review.outreachReview.reasons.map((reason) => <p key={reason}>{reason}</p>)}
+              </div>
+            </div>
+            <p>No role is auto-rejected. This packet does not submit an application or send outreach.</p>
+          </details>}
+
+          {application && !review && <div className={styles.next}><strong>M8 review evidence</strong><span>Refresh this packet to add snapshot-pinned scheduling, eligibility, resume and outreach review evidence.</span></div>}
 
           <div className={styles.columns}>
             <div>
@@ -188,7 +278,8 @@ export function ApplicationReadinessWorkspace() {
 
           <div className={styles.actions}>
             <button className={styles.primary} disabled={busy === job.id || !job.currentSnapshotId} onClick={() => void prepare(job.id)}>{busy === job.id ? "Preparing…" : application ? "Refresh packet" : "Prepare packet"}</button>
-            {application?.submittedAt ? <Link href="/applications">View submission progress →</Link> : safeFillUnlocked ? <Link className={styles.safeFill} href="/assist">Open Safe Fill →</Link> : <button disabled title="Prepare a ready_for_review packet first">Safe Fill locked</button>}
+            {application?.submittedAt ? <Link href="/applications">View submission progress →</Link> : safeFillUnlocked ? <Link className={styles.safeFill} href="/assist">Open Safe Fill →</Link> : <button disabled title="Prepare a current ready_for_review packet first">Safe Fill locked</button>}
+            <Link href={`/roles/${job.id}`}>Full role cockpit →</Link>
             <a href={job.canonicalUrl} target="_blank" rel="noreferrer">Official posting ↗</a>
             <Link href="/">Profile & Claims</Link>
           </div>

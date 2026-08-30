@@ -48,7 +48,7 @@ test("quality router exposes only provider ids and reports exhaustion without le
   );
 });
 
-test("agent runtime prefers stronger structured models for classification and strongest configured models for writing", () => {
+test("agent runtime prefers direct quality providers before optional pooled fallbacks", () => {
   const router = createAgentAiProvider({
     SCOUT_NIM_FREE_API_KEY: "n".repeat(32),
     SCOUT_GROQ_FREE_API_KEY: "g".repeat(32),
@@ -59,16 +59,37 @@ test("agent runtime prefers stronger structured models for classification and st
     "nim:nemotron-3.5-lightning",
     "nim:deepseek-v4-flash-0731",
     "groq:gpt-oss-120b",
-    "groq:qwen3.6-27b",
     "gemini:3.7-flash",
+    "groq:qwen3.6-27b",
   ]);
   assert.deepEqual(router.routePlan.writing.slice(0, 5), [
     "nim:deepseek-v4-flash-0731",
     "nim:nemotron-3-ultra",
-    "groq:gpt-oss-120b",
     "gemini:3.7-flash",
+    "groq:gpt-oss-120b",
     "nim:nemotron-3.5-lightning",
   ]);
+});
+
+test("Poe and OmniRoute are ignored unless explicitly declared included capacity", () => {
+  assert.throws(() => createAgentAiProvider({
+    SCOUT_POE_INCLUDED_API_KEY: "p".repeat(32),
+    SCOUT_POE_MODEL: "Gemini-3.1-Pro",
+    SCOUT_OMNIROUTE_INCLUDED_API_KEY: "o".repeat(32),
+    SCOUT_OMNIROUTE_ENDPOINT_URL: "https://omni.example.com/v1/chat/completions",
+    SCOUT_OMNIROUTE_MODEL: "cx/gpt-5.5",
+  }), /No Scout AI provider is configured/);
+
+  const router = createAgentAiProvider({
+    SCOUT_POE_INCLUDED_ONLY: "1",
+    SCOUT_POE_INCLUDED_API_KEY: "p".repeat(32),
+    SCOUT_POE_MODEL: "Gemini-3.1-Pro",
+    SCOUT_OMNIROUTE_INCLUDED_ONLY: "1",
+    SCOUT_OMNIROUTE_INCLUDED_API_KEY: "o".repeat(32),
+    SCOUT_OMNIROUTE_ENDPOINT_URL: "https://omni.example.com/v1/chat/completions",
+    SCOUT_OMNIROUTE_MODEL: "cx/gpt-5.5",
+  });
+  assert.deepEqual(router.routePlan.writing.slice(0, 2), ["poe:Gemini-3.1-Pro", "omniroute:cx/gpt-5.5"]);
 });
 
 test("router does not silently consume generic provider keys", () => {

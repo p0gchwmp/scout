@@ -4,7 +4,7 @@ import { snapshotHash } from "./sync.ts";
 const INTERNSHIP_PATTERN = /\b(intern|internship|trainee|apprentice|co-?op)\b/i;
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
-type LocalBridgeProvider = "greenhouse" | "lever";
+type LocalBridgeProvider = "greenhouse" | "lever" | "ashby" | "workable" | "smartrecruiters";
 
 export type LocalBridgeLead = {
   provider: LocalBridgeProvider;
@@ -71,12 +71,51 @@ function string(value: unknown, field: string, max: number) {
   return trimmed;
 }
 
+function isLocalBridgeProvider(provider: unknown): provider is LocalBridgeProvider {
+  return provider === "greenhouse"
+    || provider === "lever"
+    || provider === "ashby"
+    || provider === "workable"
+    || provider === "smartrecruiters";
+}
+
 function controlledSource(provider: unknown, slugValue: unknown) {
-  if (provider !== "greenhouse" && provider !== "lever") throw new Error("Discovery provider is invalid");
+  if (!isLocalBridgeProvider(provider)) throw new Error("Discovery provider is invalid");
   const slug = string(slugValue, "Discovery source slug", 80);
   const source = discoveryCatalog.find((candidate) => candidate.provider === provider && candidate.slug === slug);
   if (!source) throw new Error("Discovery source is not controlled");
   return { provider, slug, source } as const;
+}
+
+function validateCanonicalUrl(provider: LocalBridgeProvider, slug: string, externalId: string, url: URL) {
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (provider === "greenhouse") {
+    if (!(url.hostname === "job-boards.greenhouse.io" || url.hostname === "boards.greenhouse.io") || parts.length !== 3 || parts[0] !== slug || parts[1] !== "jobs" || parts[2] !== externalId || url.search) {
+      throw new Error("Greenhouse canonical URL does not match its controlled source");
+    }
+    return;
+  }
+  if (provider === "lever") {
+    if (url.hostname !== "jobs.lever.co" || parts.length < 2 || parts[0] !== slug || parts[1] !== externalId) {
+      throw new Error("Lever canonical URL does not match its controlled source");
+    }
+    return;
+  }
+  if (provider === "ashby") {
+    if (url.hostname !== "jobs.ashbyhq.com" || parts.length !== 2 || parts[0] !== slug || parts[1] !== externalId || url.search) {
+      throw new Error("Ashby canonical URL does not match its controlled source");
+    }
+    return;
+  }
+  if (provider === "workable") {
+    if (url.hostname !== "apply.workable.com" || parts.length !== 3 || parts[0] !== slug || parts[1] !== "j" || parts[2] !== externalId || url.search) {
+      throw new Error("Workable canonical URL does not match its controlled source");
+    }
+    return;
+  }
+  if (url.hostname !== "jobs.smartrecruiters.com" || parts.length !== 2 || parts[0] !== slug || !(parts[1] === externalId || parts[1].startsWith(`${externalId}-`)) || url.search) {
+    throw new Error("SmartRecruiters canonical URL does not match its controlled source");
+  }
 }
 
 function validateLead(value: unknown): LocalBridgeLead {
@@ -98,14 +137,7 @@ function validateLead(value: unknown): LocalBridgeLead {
   let url: URL;
   try { url = new URL(canonicalUrl); } catch { throw new Error("Canonical URL is invalid"); }
   if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash) throw new Error("Canonical URL is not an exact HTTPS posting URL");
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (provider === "greenhouse") {
-    if (!(url.hostname === "job-boards.greenhouse.io" || url.hostname === "boards.greenhouse.io") || parts.length !== 3 || parts[0] !== slug || parts[1] !== "jobs" || parts[2] !== externalId || url.search) {
-      throw new Error("Greenhouse canonical URL does not match its controlled source");
-    }
-  } else if (url.hostname !== "jobs.lever.co" || parts.length < 2 || parts[0] !== slug || parts[1] !== externalId) {
-    throw new Error("Lever canonical URL does not match its controlled source");
-  }
+  validateCanonicalUrl(provider, slug, externalId, url);
 
   const title = string(raw.title, "Title", 300);
   const description = typeof raw.description === "string" ? raw.description.slice(0, 250_000) : "";

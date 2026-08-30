@@ -9,7 +9,8 @@ import type { AtsProvider } from "./types.ts";
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const MAX_RESPONSE_BYTES = 2_000_000;
-const REQUEST_TIMEOUT_MS = 20_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
+const DISCOVERY_REQUEST_TIMEOUT_MS = 60_000;
 
 export const AGENT_CLIENT_CAPABILITIES = Object.freeze({
   planJob: true,
@@ -310,12 +311,13 @@ export function createScoutAgentClient(options: AgentClientOptions) {
       body,
       secret,
     });
+    const timeoutMs = operation === "discover_internships" ? DISCOVERY_REQUEST_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
     const response = await fetcher(`${baseUrl}${pathname}`, {
       method: "POST",
       headers,
       body,
       redirect: "error",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error(`Scout agent request failed (${response.status})`);
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";

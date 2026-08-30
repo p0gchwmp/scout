@@ -20,8 +20,8 @@ export const SEARCH_DISCOVERY_QUERIES = Object.freeze([
   },
   {
     id: "global_startup_boards",
-    focus: "Global startup and remote internships across broad business and technical-adjacent functions",
-    query: "internship analyst product operations strategy finance research implementation remote startup site:wellfound.com/jobs OR site:linkedin.com/jobs/view OR site:glassdoor.com",
+    focus: "Global startup and remote student internships, including alongside-college possibilities where schedule evidence is explicit",
+    query: "remote internship student part-time flexible product operations strategy finance research implementation startup site:wellfound.com/jobs OR site:linkedin.com/jobs/view OR site:glassdoor.com",
   },
   {
     id: "india_policy_public",
@@ -55,8 +55,8 @@ export const SEARCH_DISCOVERY_QUERIES = Object.freeze([
   },
   {
     id: "company_careers_global",
-    focus: "Direct company careers pages across product, analytics, business, finance, operations, research and technical-systems work",
-    query: "internship analyst product operations strategy business finance research implementation solutions QA technical operations careers jobs company",
+    focus: "Direct company careers pages with a deliberate Summer 2027 corporate-internship lane; exact dates and duration still require official evidence",
+    query: "\"Summer 2027\" internship product operations strategy finance analytics research health-tech careers jobs company",
   },
   {
     id: "company_careers_india",

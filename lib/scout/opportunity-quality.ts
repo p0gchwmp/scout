@@ -49,7 +49,7 @@ const ATS_PLATFORM_IDS = new Set([
   "rippling", "freshteam", "zohorecruit", "oracle", "successfactors", "taleo", "adp", "eightfold",
   "phenom", "avature",
 ]);
-const JOB_BOARD_IDS = new Set(["linkedin", "internshala", "glassdoor", "indeed", "naukri", "wellfound", "unstop", "cutshort", "foundit"]);
+const JOB_BOARD_IDS = new Set(["linkedin", "internshala", "glassdoor", "indeed", "naukri", "wellfound", "unstop", "cutshort", "foundit", "weworkremotely", "jooble"]);
 const FORM_IDS = new Set(["tally", "google_forms", "typeform", "fillout", "jotform", "microsoft_forms"]);
 const EARLY_CAREER_PATTERN = /\b(?:intern|internship|trainee|apprentice|co[- ]?op|graduate|new grad|entry[- ]?level|fresher|student|associate|junior)\b/i;
 const SENIOR_PATTERN = /\b(?:senior|staff|principal|director|head of|vice president|vp|engineering manager|product manager|program manager|project manager|team lead)\b/i;
@@ -122,9 +122,6 @@ function locationsCompatible(left: OpportunityIdentityInput, right: OpportunityI
   if (a === b) return true;
   if (a !== "unknown" && b !== "unknown") return false;
 
-  // Unknown-location cross-source matches are allowed only when one side is an
-  // official/controlled source and the other is a search lead. This avoids merging
-  // two same-title openings in different known cities.
   const mixedAuthority = (left.provider === "search_index") !== (right.provider === "search_index");
   if (!mixedAuthority) return false;
   const leftPosted = postedTimestamp(left.postedAt);

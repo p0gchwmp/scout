@@ -4,6 +4,7 @@ import { getDb } from "../../../../db";
 import { companySources, contactEvidence, jobSnapshots, jobs } from "../../../../db/schema";
 import { parseContactExtractionPayload } from "../../../../lib/scout/api-validation";
 import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-runtime";
+import { assessPublishedContact, rankPublishedContacts } from "../../../../lib/scout/contact-intelligence";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
 function unresolvedDomain(value: string | null | undefined) {
@@ -42,24 +43,27 @@ export async function POST(request: Request) {
     const research = await client.researchContacts(researchInput);
 
     if (research.candidates.length) {
-      await db.batch(research.candidates.map((candidate) => db.insert(contactEvidence).values({
-        id: crypto.randomUUID(),
-        jobId: job.id,
-        jobSnapshotId: snapshot.id,
-        email: candidate.email,
-        sourceUrl: candidate.sourceUrl,
-        excerpt: candidate.excerpt,
-        sourceType: candidate.sourceType,
-        extractedAt: research.researchedAt,
-        suitability: "review",
-        suitabilityReason: `Published on ${candidate.sourceType}; AI/contact review pending`,
-        reviewState: "needs_review",
-      }).onConflictDoNothing()) as [ReturnType<typeof db.insert>, ...ReturnType<typeof db.insert>[]]);
+      await db.batch(research.candidates.map((candidate) => {
+        const intelligence = assessPublishedContact(candidate);
+        return db.insert(contactEvidence).values({
+          id: crypto.randomUUID(),
+          jobId: job.id,
+          jobSnapshotId: snapshot.id,
+          email: candidate.email,
+          sourceUrl: candidate.sourceUrl,
+          excerpt: candidate.excerpt,
+          sourceType: candidate.sourceType,
+          extractedAt: research.researchedAt,
+          suitability: "review",
+          suitabilityReason: `Deterministic contact intelligence ${intelligence.score}/100: ${intelligence.reasons.join("; ")}. Human review is still required.`,
+          reviewState: "needs_review",
+        }).onConflictDoNothing();
+      }) as [ReturnType<typeof db.insert>, ...ReturnType<typeof db.insert>[]]);
     }
 
-    const contacts = await db.select().from(contactEvidence)
-      .where(eq(contactEvidence.jobSnapshotId, snapshot.id))
-      .orderBy(contactEvidence.reviewState, contactEvidence.email);
+    const storedContacts = await db.select().from(contactEvidence)
+      .where(eq(contactEvidence.jobSnapshotId, snapshot.id));
+    const contacts = rankPublishedContacts(storedContacts);
 
     return Response.json({
       jobId: job.id,

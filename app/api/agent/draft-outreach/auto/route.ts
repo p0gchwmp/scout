@@ -4,7 +4,7 @@ import { getDb } from "../../../../../db";
 import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreachDrafts, profileEvidence } from "../../../../../db/schema";
 import { buildAiOutreachEnvelope } from "../../../../../lib/scout/ai-agent";
 import { createScoutAgentClientFromBindings } from "../../../../../lib/scout/agent-runtime";
-import { hashDraftBody } from "../../../../../lib/scout/outreach";
+import { hashDraftBody, OUTREACH_TEMPLATE_VERSION, renderOutreachDraft } from "../../../../../lib/scout/outreach";
 import { evaluateResumeAlignment } from "../../../../../lib/scout/resume-alignment";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../../scout-api";
 
@@ -83,8 +83,37 @@ export async function POST(request: Request) {
       },
     });
 
-    const ai = await createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>).draftOutreach(envelope);
-    const body = [`To: ${contact.email}`, `Subject: ${ai.subject}`, "", ai.body.trim()].join("\n");
+    let body: string;
+    let usedClaimIds: string[];
+    let model: string;
+    let templateVersion: number;
+    let voiceSampleUsed = false;
+    let deterministicFallback = false;
+
+    try {
+      const ai = await createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>).draftOutreach(envelope);
+      body = [`To: ${contact.email}`, `Subject: ${ai.subject}`, "", ai.body.trim()].join("\n");
+      usedClaimIds = ai.usedClaimIds;
+      model = ai.model;
+      templateVersion = AI_OUTREACH_TEMPLATE_VERSION;
+      voiceSampleUsed = Boolean(envelope.voice.sample);
+    } catch {
+      const rendered = renderOutreachDraft({
+        candidateName,
+        companyName: job.company,
+        roleTitle: job.title,
+        contactEmail: contact.email,
+        jobSnapshotId: job.currentSnapshotId,
+        contactId: contact.id,
+        claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement })),
+      });
+      body = rendered.body;
+      usedClaimIds = rendered.claimIds;
+      model = "deterministic-fallback";
+      templateVersion = OUTREACH_TEMPLATE_VERSION;
+      deterministicFallback = true;
+    }
+
     const now = new Date().toISOString();
     const draftId = crypto.randomUUID();
     const revisionId = crypto.randomUUID();
@@ -96,10 +125,10 @@ export async function POST(request: Request) {
         id: revisionId,
         draftId,
         version: 1,
-        templateVersion: AI_OUTREACH_TEMPLATE_VERSION,
+        templateVersion,
         jobSnapshotId: job.currentSnapshotId,
         contactId: contact.id,
-        claimIds: ai.usedClaimIds,
+        claimIds: usedClaimIds,
         body,
         bodyHash,
         createdAt: now,
@@ -113,14 +142,15 @@ export async function POST(request: Request) {
         revisionId,
         contactId: contact.id,
         jobId: job.id,
-        claimIds: ai.usedClaimIds,
+        claimIds: usedClaimIds,
         body,
-        model: ai.model,
-        voiceSampleUsed: Boolean(envelope.voice.sample),
+        model,
+        voiceSampleUsed,
+        deterministicFallback,
       },
       safety: { sendEmail: false, submitApplication: false },
     }, { status: 201 });
   } catch (error) {
-    return scoutServerError("agent.draft-outreach-auto", error, "Unable to create humanized outreach draft");
+    return scoutServerError("agent.draft-outreach-auto", error, "Unable to create outreach draft");
   }
 }

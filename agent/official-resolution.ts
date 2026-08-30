@@ -36,7 +36,9 @@ export const OFFICIAL_SEARCH_RESOLUTION_CAPABILITIES = Object.freeze({
   breezyEmployerApiCredentials: false,
   breezyCustomDomainGuessing: false,
   resolveCompanyDomainFromConvergingEvidence: true,
-  searchPersistenceGateRequired: true,
+  searchPersistenceGateRequired: false,
+  ephemeralSearchAllowedWhenPersistenceDisabled: true,
+  officialSnapshotRequiredBeforePersistence: true,
   arbitraryResultPageFetch: false,
   linkedinScrape: false,
   companyDomainGuessing: false,
@@ -234,9 +236,6 @@ export async function resolveSearchLeadToOfficialAts(input: {
 }, dependencies: ResolutionDependencies = {}) {
   const provider = dependencies.searchProvider === undefined ? createAgentSearchProvider() : dependencies.searchProvider;
   if (!provider) throw new Error("Official-source web search is not configured");
-  if (provider.allowResultPersistence === false) {
-    throw new Error("Official ATS search evidence cannot be persisted until search result persistence is explicitly allowed");
-  }
   const discover = dependencies.discover ?? defaultDiscover;
   const resolveCompanyDomain = dependencies.resolveCompanyDomain ?? resolveOfficialCompanyDomain;
   const queries = searchQueries(input.company, input.title);
@@ -269,9 +268,11 @@ export async function resolveSearchLeadToOfficialAts(input: {
     };
 
     let companyDomain: DomainResolution = null;
-    try { companyDomain = await resolveCompanyDomain(snapshot.company, provider); }
-    catch {
-      // ATS resolution is still useful when domain evidence is unavailable. Contact research remains disabled.
+    if (provider.allowResultPersistence !== false) {
+      try { companyDomain = await resolveCompanyDomain(snapshot.company, provider); }
+      catch {
+        // ATS resolution is still useful when domain evidence is unavailable. Contact research remains disabled.
+      }
     }
 
     return {

@@ -1,9 +1,12 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { applications, candidateClaims, jobs, profileEvidence } from "../../../db/schema";
+import { applications, candidateClaims, companySources, contactEvidence, jobSnapshots, jobs, profileEvidence } from "../../../db/schema";
 import { parseApplicationPreparePayload, PayloadValidationError } from "../../../lib/scout/api-validation";
 import { buildApplicationPreparation } from "../../../lib/scout/application-prep";
-import { evaluateResumeAlignment } from "../../../lib/scout/resume-alignment";
+import { buildApplicationReviewPacket } from "../../../lib/scout/application-review-packet";
+import { assessApplicationReadiness } from "../../../lib/scout/application-readiness";
+import { assessOpportunityFit } from "../../../lib/scout/opportunity-fit";
+import { assessOpportunityQuality } from "../../../lib/scout/opportunity-quality-intelligence";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
 async function readJson(request: Request) {
@@ -36,13 +39,53 @@ async function prepareJob(jobId: string, expectedApplication?: { id: string; exp
 
     const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
     if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
-    const [fields, claims] = await Promise.all([
+    const [fields, claims, snapshotRows, sourceRows, contacts] = await Promise.all([
       db.select().from(profileEvidence),
       db.select().from(candidateClaims),
+      job.currentSnapshotId ? db.select().from(jobSnapshots).where(eq(jobSnapshots.id, job.currentSnapshotId)).limit(1) : Promise.resolve([]),
+      job.sourceRegistryId ? db.select().from(companySources).where(eq(companySources.id, job.sourceRegistryId)).limit(1) : Promise.resolve([]),
+      db.select().from(contactEvidence).where(eq(contactEvidence.jobId, job.id)),
     ]);
-    const alignment = evaluateResumeAlignment(job, claims);
-    const relevantClaimIds = alignment.supportingClaims.flatMap((support) => support.claimIds);
-    const prepared = buildApplicationPreparation({ job, profileFields: fields, claims, relevantClaimIds });
+    const snapshot = snapshotRows[0] ?? null;
+    if (job.currentSnapshotId && !snapshot) {
+      return Response.json({ error: "Current immutable job snapshot could not be loaded; refresh job evidence before preparing an application packet" }, { status: 409 });
+    }
+    const evidenceJob = snapshot ? {
+      ...job,
+      company: snapshot.company,
+      title: snapshot.title,
+      description: snapshot.description,
+      location: snapshot.location,
+      workplaceType: snapshot.workplaceType,
+      canonicalUrl: snapshot.canonicalUrl,
+      postedAt: snapshot.postedAt,
+      eligibilityRisks: snapshot.eligibilityRisks,
+      currentSnapshotId: snapshot.id,
+    } : job;
+    const source = sourceRows[0] ? { ...sourceRows[0], registered: true } : null;
+    const quality = assessOpportunityQuality(evidenceJob, source);
+    const fit = assessOpportunityFit(evidenceJob, quality);
+    const readiness = assessApplicationReadiness({ job: evidenceJob, profileFields: fields, claims });
+    const prepared = buildApplicationPreparation({ job: evidenceJob, profileFields: fields, claims, relevantClaimIds: readiness.claimIds });
+    const review = snapshot ? buildApplicationReviewPacket({
+      snapshot: {
+        id: snapshot.id,
+        canonicalUrl: snapshot.canonicalUrl,
+        company: snapshot.company,
+        title: snapshot.title,
+        description: snapshot.description,
+        location: snapshot.location,
+        workplaceType: snapshot.workplaceType,
+        postedAt: snapshot.postedAt,
+        eligibilityRisks: snapshot.eligibilityRisks,
+      },
+      quality,
+      fit,
+      readiness,
+      claims,
+      contacts,
+    }) : null;
+
     const [existing] = await db.select().from(applications).where(eq(applications.jobId, job.id)).limit(1);
     if (expectedApplication && existing?.id !== expectedApplication.id) {
       return Response.json({ error: "Application packet changed; reload and retry" }, { status: 409 });
@@ -50,7 +93,7 @@ async function prepareJob(jobId: string, expectedApplication?: { id: string; exp
     const values = {
       status: prepared.status,
       blockers: prepared.blockers,
-      submittedFields: prepared.packet as unknown as Record<string, string>,
+      submittedFields: { ...prepared.packet, review } as unknown as Record<string, string>,
       artifactVersion: (existing?.artifactVersion ?? 0) + 1,
     };
     const [application] = existing

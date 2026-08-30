@@ -19,6 +19,14 @@ for (const [label, scoutKey, standardKeys] of providers) {
   console.log(`${label}: ${usable ? "configured" : "not configured"}${!scoutConfigured && standardConfigured && !allowStandard ? " (standard key exists but opt-in is off)" : ""}`);
 }
 
+for (const [label, prefix] of [["Poe included points", "POE"], ["OmniRoute included gateway", "OMNIROUTE"]]) {
+  const optedIn = process.env[`SCOUT_${prefix}_INCLUDED_ONLY`]?.trim() === "1";
+  const key = Boolean(process.env[`SCOUT_${prefix}_INCLUDED_API_KEY`]?.trim());
+  const model = Boolean(process.env[`SCOUT_${prefix}_MODEL`]?.trim());
+  const endpoint = prefix === "POE" || Boolean(process.env.SCOUT_OMNIROUTE_ENDPOINT_URL?.trim());
+  console.log(`${label}: ${optedIn && key && model && endpoint ? "configured" : "not configured"}${key && !optedIn ? " (credential exists but included-capacity opt-in is off)" : ""}`);
+}
+
 const ollamaConfigured = Boolean(
   process.env.SCOUT_OLLAMA_ENDPOINT_URL?.trim()
   && process.env.SCOUT_OLLAMA_API_KEY?.trim()

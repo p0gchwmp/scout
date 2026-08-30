@@ -32,7 +32,7 @@ test("fixed search discovery covers major internship surfaces without caller-sup
   }
 });
 
-test("search discovery uses bounded server-owned query ids", () => {
+test("search discovery keeps current-remote and Summer 2027 intent inside the bounded 12-query budget", () => {
   const ids = SEARCH_DISCOVERY_QUERIES.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual(ids, [
@@ -49,4 +49,9 @@ test("search discovery uses bounded server-owned query ids", () => {
     "company_careers_global",
     "company_careers_india",
   ]);
+  const currentRemote = SEARCH_DISCOVERY_QUERIES.find((item) => item.id === "global_startup_boards");
+  const summer = SEARCH_DISCOVERY_QUERIES.find((item) => item.id === "company_careers_global");
+  assert.match(currentRemote?.query ?? "", /remote internship student/i);
+  assert.match(currentRemote?.query ?? "", /part-time flexible/i);
+  assert.match(summer?.query ?? "", /Summer 2027/i);
 });

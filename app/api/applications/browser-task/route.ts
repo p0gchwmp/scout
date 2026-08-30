@@ -1,7 +1,9 @@
 import { env } from "cloudflare:workers";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { applications } from "../../../../db/schema";
+import { applications, jobs, profileEvidence } from "../../../../db/schema";
+import { applicationPacketProfileBindingIssues } from "../../../../lib/scout/application-profile-bindings";
+import { applicationPacketMatchesCurrentSnapshot } from "../../../../lib/scout/application-review-packet";
 import { createBrowserHandoffToken } from "../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../lib/scout/browser-task";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
@@ -38,6 +40,18 @@ export async function POST(request: Request) {
       isNull(applications.submittedAt),
     )).limit(1);
     if (!application) return Response.json({ error: "Application packet must be ready, current, and not already recorded as submitted before browser assistance" }, { status: 409 });
+    const [jobRows, currentProfileFields] = await Promise.all([
+      db.select().from(jobs).where(eq(jobs.id, application.jobId)).limit(1),
+      db.select().from(profileEvidence),
+    ]);
+    const job = jobRows[0];
+    if (!job?.currentSnapshotId || !applicationPacketMatchesCurrentSnapshot(application.submittedFields, job.currentSnapshotId)) {
+      return Response.json({ error: "Application packet is stale because the job snapshot changed; refresh the packet before browser assistance" }, { status: 409 });
+    }
+    const profileIssues = applicationPacketProfileBindingIssues(application.submittedFields, currentProfileFields);
+    if (profileIssues.length) {
+      return Response.json({ error: "Application packet is stale because verified profile evidence changed; refresh the packet before browser assistance", profileIssues }, { status: 409 });
+    }
 
     const task = buildBrowserAssistTask({
       applicationId: application.id,

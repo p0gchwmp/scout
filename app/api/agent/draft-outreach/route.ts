@@ -7,6 +7,7 @@ import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-
 import { parseOutreachCreatePayload, PayloadValidationError } from "../../../../lib/scout/api-validation";
 import { selectUsableApprovedClaims } from "../../../../lib/scout/claims";
 import { hashDraftBody } from "../../../../lib/scout/outreach";
+import { verifiedOutreachCandidateName } from "../../../../lib/scout/outreach-profile-freshness";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
 const AI_OUTREACH_TEMPLATE_VERSION = 4;
@@ -44,6 +45,11 @@ export async function POST(request: Request) {
     if (claims.length !== payload.claimIds.length || usableClaims.length !== payload.claimIds.length) {
       return Response.json({ error: "Every candidate claim supplied to AI must be approved, non-synthetic for live roles, and have any numbers anchored in its evidence" }, { status: 409 });
     }
+    let candidateName: string;
+    try { candidateName = verifiedOutreachCandidateName(voiceRows, payload.candidateName); }
+    catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : "Current verified full_name is required for outreach" }, { status: 409 });
+    }
     const writingSample = voiceRows.find((field) => field.kind === "writing_sample")?.claim ?? null;
     const writingStyleNote = voiceRows.find((field) => field.kind === "writing_style_note")?.claim ?? null;
 
@@ -51,7 +57,7 @@ export async function POST(request: Request) {
       jobSnapshotId: job.currentSnapshotId,
       companyName: job.company,
       roleTitle: job.title,
-      candidateName: payload.candidateName,
+      candidateName,
       contact: {
         id: contact.id,
         email: contact.email,
