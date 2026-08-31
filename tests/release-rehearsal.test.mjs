@@ -120,7 +120,7 @@ async function runBuiltWorkerRehearsal() {
     assert.equal(readiness.status, 200);
     assert.equal(readiness.headers.get("cache-control"), "no-store");
     const payload = await readiness.json();
-    assert.equal(payload.overall, "ready");
+    assert.equal(payload.status, "ready");
     assert.equal(payload.core.database.state, "ready");
     assert.equal(payload.core.schema.state, "ready");
     assert.equal(payload.core.immutableEvidence.state, "ready");
@@ -129,7 +129,7 @@ async function runBuiltWorkerRehearsal() {
       emailSending: false,
       captchaSolving: false,
       privateContactScraping: false,
-      searchResultPersistence: false,
+      searchResultPersistence: "disabled",
     });
 
     const setup = await worker.fetch(new Request("http://localhost/setup", {
