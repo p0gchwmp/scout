@@ -1,68 +1,77 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
-const REQUIRED_TABLES = [
-  "company_sources",
-  "sync_runs",
-  "jobs",
-  "job_snapshots",
-  "contact_evidence",
-  "candidate_claims",
-  "outreach_drafts",
-  "outreach_draft_revisions",
-  "applications",
-  "profile_evidence",
-];
-const REQUIRED_TRIGGERS = [
-  "job_snapshots_immutable_update",
-  "job_snapshots_immutable_delete",
-  "candidate_claims_approved_immutable_update",
-  "candidate_claims_approved_immutable_delete",
-  "outreach_revisions_immutable_update",
-  "outreach_revisions_immutable_delete",
-];
+async function runBuiltWorkerRehearsal() {
+  const { default: assert } = await import("node:assert/strict");
+  const { resolve } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
 
-function fakeD1() {
-  return {
-    prepare(query) {
-      let values = [];
-      const statement = {
-        bind(...next) {
-          values = next;
-          return statement;
-        },
-        async all() {
-          if (/sqlite_master/i.test(query)) {
-            const requested = new Set(values.map(String));
-            const results = [
-              ...REQUIRED_TABLES.filter((name) => requested.has(name)).map((name) => ({ type: "table", name })),
-              ...REQUIRED_TRIGGERS.filter((name) => requested.has(name)).map((name) => ({ type: "trigger", name })),
-            ];
-            return { results, success: true, meta: {} };
-          }
-          if (/select\s+1\s+as\s+ok/i.test(query)) return { results: [{ ok: 1 }], success: true, meta: {} };
-          return { results: [], success: true, meta: {} };
-        },
-        async raw() { return []; },
-        async first() { return null; },
-        async run() { return { success: true, meta: {} }; },
-      };
-      return statement;
-    },
-  };
-}
+  const REQUIRED_TABLES = [
+    "company_sources",
+    "sync_runs",
+    "jobs",
+    "job_snapshots",
+    "contact_evidence",
+    "candidate_claims",
+    "outreach_drafts",
+    "outreach_draft_revisions",
+    "applications",
+    "profile_evidence",
+  ];
+  const REQUIRED_TRIGGERS = [
+    "job_snapshots_immutable_update",
+    "job_snapshots_immutable_delete",
+    "candidate_claims_approved_immutable_update",
+    "candidate_claims_approved_immutable_delete",
+    "outreach_revisions_immutable_update",
+    "outreach_revisions_immutable_delete",
+  ];
 
-function ownerHeaders(extra = {}) {
-  return {
-    accept: "application/json",
-    "oai-authenticated-user-id": "test-user",
-    "oai-authenticated-user-email": "test@example.com",
-    ...extra,
-  };
-}
+  function fakeD1() {
+    return {
+      prepare(query) {
+        let values = [];
+        const statement = {
+          bind(...next) {
+            values = next;
+            return statement;
+          },
+          async all() {
+            if (/sqlite_master/i.test(query)) {
+              const requested = new Set(values.map(String));
+              const results = [
+                ...REQUIRED_TABLES.filter((name) => requested.has(name)).map((name) => ({ type: "table", name })),
+                ...REQUIRED_TRIGGERS.filter((name) => requested.has(name)).map((name) => ({ type: "trigger", name })),
+              ];
+              return { results, success: true, meta: {} };
+            }
+            if (/select\s+1\s+as\s+ok/i.test(query)) return { results: [{ ok: 1 }], success: true, meta: {} };
+            return { results: [], success: true, meta: {} };
+          },
+          async raw() { return []; },
+          async first() { return null; },
+          async run() { return { success: true, meta: {} }; },
+        };
+        return statement;
+      },
+    };
+  }
 
-test("production release rehearsal keeps Scout owner-only, zero-network, and non-sending", async () => {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  function ownerHeaders(extra = {}) {
+    return {
+      accept: "application/json",
+      "oai-authenticated-user-id": "test-user",
+      "oai-authenticated-user-email": "test@example.com",
+      ...extra,
+    };
+  }
+
+  const workerUrl = pathToFileURL(resolve("dist/server/index.js"));
   workerUrl.searchParams.set("release-rehearsal", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
@@ -156,5 +165,51 @@ test("production release rehearsal keeps Scout owner-only, zero-network, and non
     assert.deepEqual(externalFetches, []);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+}
+
+test("production release rehearsal keeps Scout owner-only, zero-network, and non-sending", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "scout-release-rehearsal-"));
+  const loaderPath = join(tempDir, "cloudflare-loader.mjs");
+  await writeFile(loaderPath, [
+    "export async function resolve(specifier, context, nextResolve) {",
+    "  if (specifier === 'cloudflare:workers') {",
+    "    return { url: 'data:text/javascript,export const env = {};', shortCircuit: true };",
+    "  }",
+    "  return nextResolve(specifier, context);",
+    "}",
+    "",
+  ].join("\n"), "utf8");
+
+  try {
+    const result = await new Promise((resolveResult, reject) => {
+      const child = spawn(process.execPath, [
+        "--experimental-loader",
+        pathToFileURL(loaderPath).href,
+        "--input-type=module",
+        "--eval",
+        `(${runBuiltWorkerRehearsal.toString()})()`,
+      ], {
+        cwd: new URL("../", import.meta.url),
+        env: { ...process.env, NODE_NO_WARNINGS: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.on("error", reject);
+      child.on("close", (code, signal) => resolveResult({ code, signal, stdout, stderr }));
+    });
+
+    assert.equal(
+      result.code,
+      0,
+      `Built-worker rehearsal failed${result.signal ? ` (${result.signal})` : ""}.\n${result.stderr}${result.stdout}`,
+    );
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
 });
