@@ -332,6 +332,6 @@ export function ShortlistWorkspace() {
       })}
     </section>
 
-    <footer className={styles.boundary}>Scout ranks and prepares. Accept, Watch and Reject change only Scout's local review state. Opportunity quality remains a separate evidence axis, preference feedback remains a small browser-local nudge, and Scout never sends email or submits applications.</footer>
+    <footer className={styles.boundary}>Scout ranks and prepares. Accept, Watch and Reject change only Scout’s local review state. Opportunity quality remains a separate evidence axis, preference feedback remains a small browser-local nudge, and Scout never sends email or submits applications.</footer>
   </main>;
 }
