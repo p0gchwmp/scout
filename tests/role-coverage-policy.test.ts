@@ -23,6 +23,6 @@ test("shortlist exposes role-family filtering and does not hide the software-dev
   assert.match(client, /assessment\.roleFamilyLabel/);
   assert.match(client, /assessment\.preferenceLabel/);
   assert.match(client, /assessment\.sectorTags/);
-  assert.match(client, /Pure software development stays visible as a stretch preference rather than being hidden/);
+  assert.match(client, /familyFilter !== "all" && assessment\.roleFamilyId !== familyFilter/);
   assert.doesNotMatch(client, /roleFamilyId\s*!==\s*"software_development"/);
 });
