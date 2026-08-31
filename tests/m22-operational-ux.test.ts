@@ -7,9 +7,9 @@ const inbox = await readFile(new URL("../app/inbox/inbox-client.tsx", import.met
 const applications = await readFile(new URL("../app/applications/workspace-client.tsx", import.meta.url), "utf8");
 
 test("M22 presents Accept Watch Reject without changing Scout's persisted review states", () => {
-  assert.match(shortlist, /updateJob\(job\.id, "shortlisted"\)[^>]*>Accept<\/button>/s);
-  assert.match(shortlist, /updateJob\(job\.id, "saved"\)[^>]*>Watch<\/button>/s);
-  assert.match(shortlist, /updateJob\(job\.id, "rejected"\)[^>]*>Reject<\/button>/s);
+  assert.match(shortlist, /updateJob\(job\.id, "shortlisted"\)\}>Accept<\/button>/);
+  assert.match(shortlist, /updateJob\(job\.id, "saved"\)\}>Watch<\/button>/);
+  assert.match(shortlist, /updateJob\(job\.id, "rejected"\)\}>Reject<\/button>/);
   assert.match(shortlist, /filter === "Accepted"\) return job\.state === "shortlisted"/);
   assert.match(shortlist, /filter === "Watch"\) return job\.state === "saved"/);
 });
