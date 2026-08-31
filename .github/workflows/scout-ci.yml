@@ -40,46 +40,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run M22 operational UX test
-        run: node --experimental-strip-types --test tests/m22-operational-ux.test.ts
-
-      - name: Run full unit suite
-        run: npm run test:unit
-
-      - name: Run first production build
-        run: npm run build
-
-      - name: Run rendered HTML and release rehearsal tests
-        run: node --test tests/rendered-html.test.mjs tests/release-rehearsal.test.mjs
-
-      - name: Run lint
-        run: npm run lint
-
-      - name: Run migration smoke
-        run: python tests/migration-smoke.py
-
-      - name: Run company outreach migration smoke
-        run: python tests/company-outreach-migration-smoke.py
-
-      - name: Generate database schema
-        run: npm run db:generate
-
-      - name: Verify generated schema is clean
-        run: git diff --exit-code
-
-      - name: Verify clean worktree after schema generation
-        run: npm run check:clean
-
-      - name: Run final production build
-        run: npm run build
-
-      - name: Check whitespace
-        run: git diff --check
-
-      - name: Verify final clean worktree
-        run: npm run check:clean
-
-      - name: Report release status
-        run: |
-          git status --short --branch
-          git diff --stat
+      - name: Run Scout release verification
+        run: npm run verify:release
