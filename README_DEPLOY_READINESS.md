@@ -4,7 +4,7 @@ Scout is owner-only and fail-closed. This checklist prepares a release; it does 
 
 ## 1. Required release gate
 
-From a clean checkout of `feat/discovery-contact-mvp`:
+From a clean checkout of `main`:
 
 ```bash
 npm ci
@@ -46,9 +46,13 @@ A release is blocked if migration smoke fails or generation produces unexpected 
 
 Do not blindly restore or downgrade the database during a code rollback. Job snapshots, candidate claims, contact provenance, and outreach revisions are designed to preserve evidence/history. Treat code rollback and database rollback as separate decisions.
 
-## 4. Readiness endpoint
+## 4. Readiness endpoints
 
-After starting the intended release build, authenticate as the configured owner and open:
+After starting the intended release build, authenticate as the configured owner.
+
+### Minimal health check
+
+Open:
 
 ```text
 /api/health
@@ -68,34 +72,82 @@ Healthy response:
 }
 ```
 
-A failed readiness check is a release blocker. The endpoint is read-only and owner-gated.
+A failed health check is a release blocker. The endpoint remains read-only and owner-gated.
+
+### Operational runtime preflight
+
+Open:
+
+```text
+/api/runtime-readiness
+```
+
+This endpoint is also owner-only, GET-only and read-only. It is intentionally **zero-network**: it does not call search providers, AI providers, the cloud agent, Gmail OAuth, Gmail APIs, company sites or ATS discovery merely to calculate readiness.
+
+The preflight:
+
+- checks D1 through Scout's database layer;
+- verifies the core Scout tables required by the first-run workflow;
+- verifies the job-snapshot, approved-claim and outreach-revision immutability triggers;
+- classifies search configuration, including free/included versus explicitly allowed metered use;
+- reports search-result persistence policy separately;
+- classifies AI routing without calling a model;
+- classifies cloud-agent and browser-handoff configuration without contacting either service;
+- reports Gmail draft handoff availability without refreshing Gmail OAuth or creating a draft;
+- keeps application submission, email sending, CAPTCHA solving and private-contact scraping unavailable.
+
+The response never includes raw API keys, OAuth tokens, shared secrets, owner IDs or configured endpoint URLs. A configured Gmail agent handoff is reported as unverified because the remote agent's Gmail OAuth is deliberately not probed by this endpoint.
+
+Interpretation:
+
+- `ready`: core database/schema/evidence protections are ready; optional capabilities may intentionally be disabled.
+- `attention`: core is ready, but an optional capability has an incomplete, invalid or permission-blocked configuration.
+- `blocked`: a required core database/schema/evidence protection is unavailable.
+
+Do not make an `attention` item green by enabling metered usage or weakening a safety gate without separate approval.
 
 ## 5. Manual smoke check
 
 Before release approval, verify as the owner:
 
 1. Dashboard loads without a client runtime error.
-2. Claims tab loads and draft/approved/rejected states render correctly.
-3. Jobs render resume alignment without missing-field crashes.
-4. Internship Inbox can run bounded local/cloud discovery without bursting one ATS provider.
-5. A discovered supported role can be upgraded to an immutable official snapshot.
-6. Contact evidence remains `needs_review` until explicitly reviewed.
-7. Outreach creation produces a draft only; nothing is sent.
-8. Application preparation produces a review packet only; nothing is submitted.
-9. A non-owner request is denied.
-10. Missing `SCOUT_OWNER_USER_ID` fails closed.
+2. `/setup` loads the Runtime Preflight panel without exposing secret values.
+3. Claims tab loads and draft/approved/rejected states render correctly.
+4. Jobs render resume alignment without missing-field crashes.
+5. Internship Inbox can run bounded local/cloud discovery without bursting one ATS provider.
+6. A discovered supported role can be upgraded to an immutable official snapshot.
+7. Contact evidence remains `needs_review` until explicitly reviewed.
+8. Outreach creation produces a draft only; nothing is sent.
+9. Application preparation produces a review packet only; nothing is submitted.
+10. A non-owner request is denied.
+11. Missing `SCOUT_OWNER_USER_ID` fails closed.
 
 ## 6. Optional agent configuration
 
 Cloud-agent/search/email-draft integrations are optional deployment surfaces and must stay disabled unless their exact configuration and safety review are intentional. Do not enable paid overage, automatic sending, automatic application submission, private-contact scraping, guessed emails, or uncontrolled discovery sources.
 
-## 7. Release decision
+The runtime preflight is diagnostic only. It does not edit environment variables or verify provider credentials through live external requests.
+
+## 7. Safe local demo tooling
+
+Use the existing local demo commands rather than introducing another demo database path:
+
+```bash
+npm run scout:demo:status
+npm run scout:demo:seed
+npm run scout:demo:reset
+```
+
+The demo tooling is local-only and production execution is prohibited. The hosted runtime-readiness endpoint never calls demo seed/reset operations.
+
+## 8. Release decision
 
 A deploy is ready for explicit owner approval only when all of the following are true:
 
 - `npm run verify:release` passes from a clean current checkout.
 - target D1 migrations are confirmed current.
 - `/api/health` returns `status: ok` under owner authentication.
+- `/api/runtime-readiness` has no blocked core checks, and every `attention` item has been intentionally reviewed.
 - owner-only and same-origin protections remain intact.
 - the manual smoke check passes.
 - there are no unreviewed deployment-environment secrets/bindings.
