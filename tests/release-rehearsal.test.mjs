@@ -71,16 +71,17 @@ async function runBuiltWorkerRehearsal() {
     };
   }
 
-  const workerUrl = pathToFileURL(resolve("dist/server/index.js"));
-  workerUrl.searchParams.set("release-rehearsal", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
   const env = {
     ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
     DB: fakeD1(),
     SCOUT_OWNER_USER_ID: "test-user",
     SCOUT_SEARCH_PROVIDER: "disabled",
   };
+  globalThis.__SCOUT_RELEASE_REHEARSAL_ENV__ = env;
+
+  const workerUrl = pathToFileURL(resolve("dist/server/index.js"));
+  workerUrl.searchParams.set("release-rehearsal", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
   const context = { waitUntil() {}, passThroughOnException() {} };
 
   const originalFetch = globalThis.fetch;
@@ -174,7 +175,8 @@ test("production release rehearsal keeps Scout owner-only, zero-network, and non
   await writeFile(loaderPath, [
     "export async function resolve(specifier, context, nextResolve) {",
     "  if (specifier === 'cloudflare:workers') {",
-    "    return { url: 'data:text/javascript,export const env = {};', shortCircuit: true };",
+    "    const code = \"export const env = globalThis.__SCOUT_RELEASE_REHEARSAL_ENV__ ?? {};\";",
+    "    return { url: 'data:text/javascript,' + encodeURIComponent(code), shortCircuit: true };",
     "  }",
     "  return nextResolve(specifier, context);",
     "}",
