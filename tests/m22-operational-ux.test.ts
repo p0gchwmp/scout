@@ -27,6 +27,6 @@ test("M22 makes evidence and qualification review explicit across discovery shor
 
 test("M22 remains review-only and does not add outbound execution", () => {
   const surface = `${shortlist}\n${inbox}\n${applications}`;
-  assert.match(shortlist, /Accept, Watch and Reject change only Scout's local review state/);
+  assert.match(shortlist, /Accept, Watch and Reject change only Scout&apos;s local review state/);
   assert.doesNotMatch(surface, /\/api\/(?:send|submit|applications\/submit|outreach\/send)/i);
 });
