@@ -20,12 +20,13 @@ test("preference workspace is owner-only, browser-local and inspectable", async 
   assert.doesNotMatch(client, /method:\s*"(?:POST|PATCH|PUT|DELETE)"/);
 });
 
-test("shortlist feedback uses explicit decisions only and Save clears the local taste signal", async () => {
+test("shortlist feedback uses explicit decisions only and Watch remains preference-neutral", async () => {
   const shortlist = await readFile(new URL("../app/shortlist/shortlist-client.tsx", import.meta.url), "utf8");
   assert.match(shortlist, /state === "shortlisted" \? "interested"/);
   assert.match(shortlist, /state === "rejected" \? "not_interested"/);
   assert.match(shortlist, /: null;/);
-  assert.match(shortlist, /Save \/ neutral/);
+  assert.match(shortlist, /updateJob\(job\.id, "saved"\)/);
+  assert.match(shortlist, />Watch<\/button>/);
   assert.match(shortlist, /Saved\/discovered roles are neutral/);
   assert.doesNotMatch(shortlist, /recordPreferenceFeedback\([^\n]*(?:viewed|opened|clicked)/i);
 });
