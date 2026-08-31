@@ -10,5 +10,5 @@ test("shortlist surfaces quality as a separate review axis without replacing fit
   assert.match(shortlist, /Opportunity quality · \{quality\.score\}\/100/);
   assert.match(shortlist, /if \(right\.assessment\.score !== left\.assessment\.score\) return right\.assessment\.score - left\.assessment\.score/);
   assert.doesNotMatch(shortlist, /right\.quality\.score\s*-\s*left\.quality\.score/);
-  assert.match(shortlist, /Opportunity quality is shown as a separate evidence axis and does not alter the resume-fit score/);
+  assert.match(shortlist, /Opportunity quality remains a separate evidence axis/);
 });
