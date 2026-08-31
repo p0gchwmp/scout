@@ -40,7 +40,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit tests
+      - name: Run M22 operational UX test
+        run: node --experimental-strip-types --test tests/m22-operational-ux.test.ts
+
+      - name: Run full unit suite
         run: npm run test:unit
 
       - name: Run first production build
