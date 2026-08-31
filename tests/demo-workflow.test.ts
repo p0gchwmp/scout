@@ -13,8 +13,13 @@ import { resetLocalDemo } from "../scripts/scout-demo-db.mjs";
 
 function applyScoutMigrations(database: DatabaseSync) {
   database.exec("PRAGMA foreign_keys=ON");
-  for (const file of ["0000_heavy_slapstick.sql", "0001_scout_vertical.sql"]) {
-    const sql = readFileSync(new URL(`../drizzle/${file}`, import.meta.url), "utf8").replaceAll("--> statement-breakpoint", "");
+  const journal = JSON.parse(readFileSync(new URL("../drizzle/meta/_journal.json", import.meta.url), "utf8")) as {
+    entries?: Array<{ tag?: unknown }>;
+  };
+  const tags = (journal.entries ?? []).map((entry) => entry.tag).filter((tag): tag is string => typeof tag === "string" && tag.length > 0);
+  assert.ok(tags.length > 0, "Drizzle migration journal must contain Scout migrations");
+  for (const tag of tags) {
+    const sql = readFileSync(new URL(`../drizzle/${tag}.sql`, import.meta.url), "utf8").replaceAll("--> statement-breakpoint", "");
     database.exec(sql);
   }
 }
