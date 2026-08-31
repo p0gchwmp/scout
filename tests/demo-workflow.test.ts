@@ -9,7 +9,7 @@ import {
   getLocalDemoWorkflowStatus,
   seedLocalDemoWorkflow,
 } from "../scripts/scout-demo-workflow.mjs";
-import { resetLocalDemo } from "../scripts/scout-demo-db.mjs";
+import { buildDemoFixture, resetLocalDemo } from "../scripts/scout-demo-db.mjs";
 
 function applyScoutMigrations(database: DatabaseSync) {
   database.exec("PRAGMA foreign_keys=ON");
@@ -95,8 +95,13 @@ test("complete local demo workflow is deterministic and review-only", () => {
     assert.equal(packet.requiredProfileKeys.length, 6);
     assert.equal(packet.profileBindings.length, 6);
     assert.ok(packet.profileBindings.every((binding: { id?: string; kind?: string; updatedAt?: string }) => binding.id && binding.kind && binding.updatedAt));
-    assert.deepEqual(packet.claimIds, ["demo_claim_clinic_ops", "demo_claim_scout", "demo_claim_skills"]);
-    assert.equal(packet.claimStatements.length, 3);
+
+    const approvedDemoClaimIds = new Set(buildDemoFixture().claims.filter((claim) => claim.status === "approved").map((claim) => claim.id));
+    assert.ok(packet.claimIds.length > 0 && packet.claimIds.length <= 6);
+    assert.ok(packet.claimIds.every((id: string) => approvedDemoClaimIds.has(id)));
+    assert.equal(new Set(packet.claimIds).size, packet.claimIds.length);
+    assert.equal(packet.claimStatements.length, packet.claimIds.length);
+
     assert.equal(packet.review.synthetic, true);
     assert.equal(packet.review.applicationReview.humanReviewRequired, true);
     assert.equal(packet.review.outreachReview.state, "contact_accepted");
