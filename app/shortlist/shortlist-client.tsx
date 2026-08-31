@@ -52,10 +52,10 @@ type Contact = {
 
 type Source = OpportunityQualitySource & { registered: boolean; enabled: boolean };
 type RankedJob = { job: Job; assessment: ShortlistAssessment; quality: OpportunityQualityAssessment };
-type Filter = "All" | "High priority" | "Quality review" | "India" | "Remote" | "Shortlisted" | "Saved";
+type Filter = "All" | "High priority" | "Quality review" | "India" | "Remote" | "Accepted" | "Watch";
 type FamilyFilter = "all" | RoleFamilyId;
 
-const filters: Filter[] = ["All", "High priority", "Quality review", "India", "Remote", "Shortlisted", "Saved"];
+const filters: Filter[] = ["All", "High priority", "Quality review", "India", "Remote", "Accepted", "Watch"];
 
 function formatDate(value: string | null) {
   if (!value) return "Date unavailable";
@@ -154,8 +154,8 @@ export function ShortlistWorkspace() {
     if (filter === "Quality review") return quality.tier !== "strong_evidence";
     if (filter === "India") return assessment.locationContext === "India";
     if (filter === "Remote") return assessment.locationTags.includes("Remote");
-    if (filter === "Shortlisted") return job.state === "shortlisted";
-    if (filter === "Saved") return job.state === "saved";
+    if (filter === "Accepted") return job.state === "shortlisted";
+    if (filter === "Watch") return job.state === "saved";
     return true;
   }), [ranked, filter, familyFilter, query]);
 
@@ -197,7 +197,7 @@ export function ShortlistWorkspace() {
           : state === "rejected"
             ? " A soft negative preference signal was recorded locally; one rejection never blocks a role family."
             : " Any local preference signal for this role was cleared to neutral.";
-      setNotice(`${state === "shortlisted" ? "Role shortlisted." : state === "saved" ? "Role saved for later." : "Role rejected and removed from the active shortlist."}${preferenceNote}`);
+      setNotice(`${state === "shortlisted" ? "Role accepted for active review." : state === "saved" ? "Role moved to Watch." : "Role rejected and removed from the active shortlist."}${preferenceNote}`);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to update job");
@@ -243,8 +243,8 @@ export function ShortlistWorkspace() {
     <header className={styles.header}>
       <div>
         <p className={styles.kicker}>SCOUT / SHORTLIST INTELLIGENCE</p>
-        <h1>Broad prospects. Evidence-backed ranking.</h1>
-        <p>Product, analytics, business, finance, operations, research and technical-systems roles are first-class lanes. Pure software development stays visible as a stretch preference rather than being hidden.</p>
+        <h1>Broad prospects. Evidence-backed decisions.</h1>
+        <p>Product, analytics, business, finance, operations, research and technical-systems roles are first-class lanes. Accept, Watch and Reject are local review decisions only: they never apply to a role or contact an employer.</p>
       </div>
       <div className={styles.headerLinks}><Link href="/quality">Opportunity quality</Link><Link href="/preferences">Preference calibration</Link><Link href="/inbox">Internship Inbox</Link><Link href="/">Dashboard</Link></div>
     </header>
@@ -256,7 +256,7 @@ export function ShortlistWorkspace() {
       <div><strong>{ranked.length}</strong><span>Active roles</span></div>
       <div><strong>{summary.high}</strong><span>High priority</span></div>
       <div><strong>{summary.qualityReview}</strong><span>Quality review</span></div>
-      <div><strong>{summary.shortlisted}</strong><span>Shortlisted</span></div>
+      <div><strong>{summary.shortlisted}</strong><span>Accepted</span></div>
       <div><strong>{summary.india}</strong><span>India context</span></div>
       <div><strong>{summary.remote}</strong><span>Remote</span></div>
     </section>
@@ -303,7 +303,7 @@ export function ShortlistWorkspace() {
             <span>{job.currentSnapshotId ? "Official snapshot" : "Needs official snapshot"}</span>
           </div>
 
-          <div className={styles.why}><strong>Why this is worth your time</strong><p>{assessment.whyWorthYourTime}</p></div>
+          <div className={styles.why}><strong>Why Scout surfaced this</strong><p>{assessment.whyWorthYourTime}</p></div>
 
           <div className={styles.qualityBox}>
             <strong>Opportunity quality · {quality.score}/100</strong>
@@ -313,16 +313,16 @@ export function ShortlistWorkspace() {
           </div>
 
           <div className={styles.columns}>
-            <div><strong>Evidence supporting the fit</strong>{assessment.alignment.supportingClaims.length ? assessment.alignment.supportingClaims.map((support) => <p key={support.theme}>{support.theme}: <code>{support.claimIds.join(", ")}</code></p>) : <p>No approved supporting claims matched yet.</p>}</div>
-            <div><strong>Gaps / checks</strong>{assessment.gaps.length ? assessment.gaps.map((gap) => <p className={styles.gap} key={gap}>{gap}</p>) : <p>No explicit eligibility gap detected by current rules.</p>}<p className={styles.caveat}>Still confirm work authorization, availability and any application-specific legal questions yourself.</p></div>
+            <div><strong>Exact approved claim support</strong>{assessment.alignment.supportingClaims.length ? assessment.alignment.supportingClaims.map((support) => <p key={support.theme}>{support.theme}: <code>{support.claimIds.join(", ")}</code></p>) : <p>No approved supporting claims matched yet.</p>}</div>
+            <div><strong>Qualification / evidence checks</strong>{assessment.gaps.length ? assessment.gaps.map((gap) => <p className={styles.gap} key={gap}>{gap}</p>) : <p>No explicit eligibility gap detected by current rules.</p>}<p className={styles.caveat}>Still confirm work authorization, availability and any application-specific legal questions yourself.</p></div>
           </div>
 
           <p className={styles.description}>{job.description.slice(0, 320)}{job.description.length > 320 ? "…" : ""}</p>
           <div className={styles.footerMeta}><span>Posted: {formatDate(job.postedAt)}</span><span>{contactCount ? `${contactCount} contact candidate(s)` : "No reviewed contact candidate yet"}</span><span>State: {job.state}</span></div>
 
           <div className={styles.actions}>
-            <button className={styles.primary} disabled={busy === `job:${job.id}`} onClick={() => void updateJob(job.id, "shortlisted")}>Shortlist</button>
-            <button disabled={busy === `job:${job.id}`} onClick={() => void updateJob(job.id, "saved")}>Save / neutral</button>
+            <button className={styles.primary} disabled={busy === `job:${job.id}`} onClick={() => void updateJob(job.id, "shortlisted")}>Accept</button>
+            <button disabled={busy === `job:${job.id}`} onClick={() => void updateJob(job.id, "saved")}>Watch</button>
             <button disabled={busy === `apply:${job.id}` || !job.currentSnapshotId} onClick={() => void prepareApplication(job.id)}>Prepare application</button>
             <button disabled={busy === `contact:${job.id}` || !job.currentSnapshotId} onClick={() => void researchContact(job.id)}>{contactCount ? "Refresh contact research" : "Research contact"}</button>
             <a href={job.canonicalUrl} target="_blank" rel="noreferrer">Official posting ↗</a>
@@ -332,6 +332,6 @@ export function ShortlistWorkspace() {
       })}
     </section>
 
-    <footer className={styles.boundary}>Scout ranks and prepares. Opportunity quality is shown as a separate evidence axis and does not alter the resume-fit score. Preference feedback remains a small browser-local nudge; Scout never sends email or submits applications.</footer>
+    <footer className={styles.boundary}>Scout ranks and prepares. Accept, Watch and Reject change only Scout's local review state. Opportunity quality remains a separate evidence axis, preference feedback remains a small browser-local nudge, and Scout never sends email or submits applications.</footer>
   </main>;
 }

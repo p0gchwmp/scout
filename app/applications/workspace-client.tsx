@@ -228,6 +228,7 @@ export function ApplicationWorkspace() {
 
         <div className={styles.actions}>
           <a href={job.canonicalUrl} target="_blank" rel="noreferrer">Official posting ↗</a>
+          <Link href={`/roles/${job.id}`}>Review role evidence →</Link>
           {application && !progress.externallySubmitted && submissionEditor?.applicationId !== application.id && <button onClick={() => setSubmissionEditor({ applicationId: application.id, confirmationUrl: "", confirmed: false })}>I submitted this externally</button>}
           {application && progress.externallySubmitted && <button className={styles.mutedAction} disabled={busy === `submission:${application.id}`} onClick={() => {
             if (window.confirm("Clear Scout’s submission record for this application? This will not change anything on the employer site.")) void updateSubmission(application, "clear_external_submission");

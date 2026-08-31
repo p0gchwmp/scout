@@ -263,7 +263,7 @@ export function InternshipInbox() {
     </section>
 
     {discovered.length > 0 && <section className={styles.results}>
-      <div className={styles.listHead}><div><p className={styles.kicker}>LATEST DISCOVERY</p><h2>{visibleDiscovered.length} of {trackDiscovered.length} in {OPPORTUNITY_TRACK_LABELS[trackFilter]}</h2></div><p>Remote-India opportunities can belong to both Remote and India. Brand/culture relevance is only a soft watch signal and never overrides eligibility or evidence.</p></div>
+      <div className={styles.listHead}><div><p className={styles.kicker}>LATEST DISCOVERY</p><h2>{visibleDiscovered.length} of {trackDiscovered.length} in {OPPORTUNITY_TRACK_LABELS[trackFilter]}</h2></div><p>These are discovery leads, not final fit decisions. Exact approved claim IDs and qualification checks appear only after official resolution. <Link href="/shortlist">Review resolved evidence →</Link></p></div>
       <div className={styles.regionFilters} aria-label="Opportunity track filters">
         {discoveryTracks.map((track) => <button key={track} className={trackFilter === track ? styles.regionActive : ""} onClick={() => chooseTrack(track)}>{OPPORTUNITY_TRACK_LABELS[track]} <span>{trackCounts[track]}</span></button>)}
       </div>
@@ -290,7 +290,7 @@ export function InternshipInbox() {
     </section>
 
     <section className={styles.list}>
-      <div className={styles.listHead}><div><p className={styles.kicker}>UNRESOLVED INTERNSHIP LEADS</p><h2>{leads.length} waiting for official resolution</h2></div><p>LinkedIn, Internshala, Tally/forms and unsupported portals stay here until Scout can bind them to trustworthy job evidence.</p></div>
+      <div className={styles.listHead}><div><p className={styles.kicker}>UNRESOLVED INTERNSHIP LEADS</p><h2>{leads.length} waiting for official resolution</h2></div><p>LinkedIn, Internshala, Tally/forms and unsupported portals stay here until Scout can bind them to trustworthy job evidence. Scout does not claim resume support or qualification fit before that evidence exists.</p></div>
       {!leads.length && <div className={styles.empty}>No unresolved internship leads right now.</div>}
       {leads.map((lead) => <article className={styles.card} key={lead.id}>
         <div><p className={styles.source}>{lead.source.replace("lead:", "").toUpperCase()}</p><h3>{lead.company} — {lead.title}</h3><p>{lead.currentSnapshotId ? "Official snapshot captured" : "Needs official posting resolution before application prep"}</p></div>
