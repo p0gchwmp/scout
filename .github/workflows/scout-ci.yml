@@ -40,5 +40,37 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Scout release verification
-        run: npm run verify:release
+      - name: Run tests and production build
+        run: npm test
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run migration smoke
+        run: python tests/migration-smoke.py
+
+      - name: Run company outreach migration smoke
+        run: python tests/company-outreach-migration-smoke.py
+
+      - name: Generate database schema
+        run: npm run db:generate
+
+      - name: Verify generated schema is clean
+        run: git diff --exit-code
+
+      - name: Verify clean worktree after schema generation
+        run: npm run check:clean
+
+      - name: Run final production build
+        run: npm run build
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Verify final clean worktree
+        run: npm run check:clean
+
+      - name: Report release status
+        run: |
+          git status --short --branch
+          git diff --stat
