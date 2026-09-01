@@ -20,7 +20,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "check:clean": "node scripts/assert-clean-worktree.mjs",
-    "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && python tests/personio-migration-smoke.py && python tests/company-outreach-migration-smoke.py && npm run db:generate && git diff --exit-code && npm run check:clean && node scripts/scout-local-run.mjs --self-test && node scripts/scout-doctor.mjs --self-test && node scripts/scout-smoke.mjs --self-test && node scripts/scout-smoke.mjs && npm run build && git diff --check && npm run check:clean && git status --short --branch && git diff --stat",
+    "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && python tests/personio-migration-smoke.py && python tests/company-outreach-migration-smoke.py && npm run db:generate && git diff --exit-code && npm run check:clean && node scripts/scout-local-run.mjs --self-test && node scripts/scout-doctor.mjs --self-test && node scripts/scout-smoke.mjs --self-test && node scripts/scout-ready.mjs --self-test && node scripts/scout-smoke.mjs && npm run build && git diff --check && npm run check:clean && git status --short --branch && git diff --stat",
     "scout:ai:status": "node --experimental-strip-types scripts/scout-ai-status.mjs",
     "scout:gmail:oauth": "node scripts/scout-gmail-oauth.mjs",
     "scout:profile:repair": "node scripts/scout-profile-repair.mjs",
@@ -33,7 +33,8 @@
     "scout:demo:workflow:seed": "node --experimental-strip-types scripts/scout-demo-workflow.mjs seed",
     "scout:demo:workflow:reset": "node scripts/scout-demo-reset.mjs",
     "scout:company-outreach:migrate:local": "node scripts/scout-company-outreach-migrate.mjs",
-    "scout:release:rehearsal": "npm run build && node --test tests/release-rehearsal.test.mjs"
+    "scout:release:rehearsal": "npm run build && node --test tests/release-rehearsal.test.mjs",
+    "ready": "node scripts/scout-ready.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
