@@ -136,7 +136,7 @@ export function parseObservedFormFields(value: unknown): ObservedFormField[] {
 
 export function classifyFormField(field: ObservedFormField): ClassifiedFormField {
   const sourceField = profileFieldForLabel(field.label);
-  if (field.inputType === "password" || isSensitiveApplicationQuestion(field.label)) {
+  if (field.inputType === "password" || WORK_AUTHORIZATION_CONSTRAINT.test(field.label) || isSensitiveApplicationQuestion(field.label)) {
     return { ...field, category: "sensitive_manual", sourceField: null, reason: "Sensitive or per-application confirmation required" };
   }
   if (field.inputType === "file") {
