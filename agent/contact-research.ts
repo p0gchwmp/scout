@@ -13,6 +13,8 @@ const OBFUSCATED_EMAIL_PATTERN = /\b([A-Z0-9._%+-]{2,80})\s*(?:\[at\]|\(at\)|\sa
 const RECRUITING_CONTEXT_PATTERN = /\b(recruit(?:er|ing|ment)?|talent|hiring|careers?|campus|university recruiting|early careers?|internships?|career fair|human resources?|\bhr\b)\b/i;
 const GENERIC_RECRUITING_OR_BUSINESS_LOCAL = /^(?:careers?|jobs?|recruit(?:er|ing|ment)?|talent(?:acquisition)?|hiring|hr|people(?:ops|team)?|internships?|campus|early[-_.]?careers?|contact|hello|info|office|team|general|enquir(?:y|ies)|inquir(?:y|ies))(?:[._+-][a-z0-9-]+)?$/i;
 const WRONG_PURPOSE_LOCAL = /^(?:press|media|pr|sales|support|billing|privacy|security|legal|investors?|fundraising|pitch|deals?|lp|procurement|vendor)(?:[._+-]|$)/i;
+const WRONG_PURPOSE_CONTEXT_PATTERN = /\b(?:report(?:ing)?(?:\s+(?:a|an|the))?\s+(?:scam|fraud|phishing|suspicious (?:message|email|recruiter|communication)|security (?:issue|incident|vulnerability))|suspected fraud|recruitment scam|recruiting scam|phishing|security vulnerability|security incident|privacy request|data subject request|data protection request|copyright complaint|dmca notice|accessibility-only|accessibility support)\b/i;
+const EXPLICIT_RECRUITING_ACTION_PATTERN = /\b(?:apply|application|submit (?:your )?resume|send (?:your )?resume|candidate inquir(?:y|ies)|recruiting inquir(?:y|ies)|career opportunit(?:y|ies)|job opportunit(?:y|ies)|internship opportunit(?:y|ies)|join our team)\b/i;
 const MAX_FIRST_PARTY_PAGES = 12;
 const MAX_PAGE_BYTES = 750_000;
 const FETCH_TIMEOUT_MS = 8_000;
@@ -31,6 +33,7 @@ export const CONTACT_RESEARCH_CAPABILITIES = Object.freeze({
   verifiedCareersSeedSupported: true,
   deterministicExtraction: true,
   deterministicRecruitingRanking: true,
+  wrongPurposeContextRejected: true,
   aiClassificationInputReady: true,
   namedBusinessMailboxRequiresRecruitingContext: true,
   linkedinLeadClueOnly: true,
@@ -130,8 +133,10 @@ function businessEmail(email: string) {
 function firstPartyMailboxAllowed(email: string, excerpt: string) {
   const localPart = email.split("@")[0]?.toLowerCase() ?? "";
   if (!localPart || WRONG_PURPOSE_LOCAL.test(localPart)) return false;
+  const context = `${localPart} ${excerpt}`;
+  if (WRONG_PURPOSE_CONTEXT_PATTERN.test(excerpt) && !EXPLICIT_RECRUITING_ACTION_PATTERN.test(excerpt)) return false;
   if (GENERIC_RECRUITING_OR_BUSINESS_LOCAL.test(localPart)) return true;
-  return RECRUITING_CONTEXT_PATTERN.test(`${localPart} ${excerpt}`);
+  return RECRUITING_CONTEXT_PATTERN.test(context);
 }
 
 function extractOfficialLinks(html: string, base: URL, domain: string) {
