@@ -6,6 +6,32 @@ async function source(path: string) {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
+test("npm dev bootstraps a fresh local D1 without touching remote or ambiguous legacy data", async () => {
+  const [runner, packageText] = await Promise.all([
+    source("../scripts/scout-local-run.mjs"),
+    source("../package.json"),
+  ]);
+  const packageJson = JSON.parse(packageText) as { scripts: Record<string, string> };
+  const migrationArgsBody = runner.match(/export function buildMigrationArgs\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+  assert.equal(packageJson.scripts.dev, "node scripts/scout-local-run.mjs");
+  assert.equal(packageJson.scripts["dev:demo"], "node scripts/scout-local-run.mjs --demo");
+  assert.equal(packageJson.scripts["dev:raw"], "node scripts/scout-dev.mjs");
+  assert.match(packageJson.scripts["verify:release"], /scout-local-run\.mjs --self-test/);
+
+  assert.match(migrationArgsBody, /"wrangler", "d1", "migrations", "apply"/);
+  assert.match(migrationArgsBody, /"--local"/);
+  assert.match(migrationArgsBody, /"--persist-to"/);
+  assert.doesNotMatch(migrationArgsBody, /"--remote"/);
+  assert.match(runner, /WRANGLER_SEND_METRICS: "false"/);
+  assert.match(runner, /name = 'd1_migrations'/);
+  assert.match(runner, /legacy\/manual database detected; leaving it untouched/);
+  assert.match(runner, /Expected at most one local Scout D1 database/);
+  assert.match(runner, /Refusing Scout local bootstrap with NODE_ENV=production/);
+  assert.match(runner, /CF_PAGES/);
+  assert.match(runner, /WORKERS_CI/);
+});
+
 test("npm dev auto-boots a signed loopback agent without enabling paid/external services", async () => {
   const [devScript, agentServer] = await Promise.all([
     source("../scripts/scout-dev.mjs"),
