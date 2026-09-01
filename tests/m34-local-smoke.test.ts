@@ -19,7 +19,9 @@ test("M34 adds a bounded loopback-only full startup smoke check", async () => {
   assert.match(packageJson.scripts["verify:release"], /scout-smoke\.mjs/);
   assert.match(smoke, /http:\/\/127\.0\.0\.1:3000\/setup/);
   assert.match(smoke, /SCOUT_SMOKE_TIMEOUT_MS/);
-  assert.match(smoke, /45000/);
+  assert.match(smoke, /process\.platform === "win32" \? 240000 : 90000/);
+  assert.match(smoke, /AbortSignal\.timeout\(probeTimeoutMs\)/);
+  assert.doesNotMatch(smoke, /45000/);
   assert.match(smoke, /Refusing Scout smoke verification with NODE_ENV=production/);
   assert.match(smoke, /CF_PAGES/);
   assert.match(smoke, /WORKERS_CI/);
