@@ -8,6 +8,7 @@ const workspaceLinks = [
   ["Run Scout", "/run"],
   ["Command Center", "/command-center"],
   ["Ecosystem", "/ecosystem"],
+  ["External Leads", "/external-leads"],
   ["Inbox", "/inbox"],
   ["Sources", "/sources"],
   ["Evidence", "/evidence"],
