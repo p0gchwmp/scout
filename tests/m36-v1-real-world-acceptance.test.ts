@@ -8,7 +8,7 @@ const quality = {
   tier: "good",
   officialSnapshot: true,
   registeredSource: true,
-} as any;
+} as unknown as Parameters<typeof assessOpportunityFit>[1];
 
 function job(title: string, description: string, location = "India / Remote") {
   return {
@@ -23,7 +23,7 @@ function job(title: string, description: string, location = "India / Remote") {
     canonicalUrl: "https://example.com/jobs/fixture",
     currentSnapshotId: "snapshot-fixture",
     postedAt: "2026-08-28T00:00:00.000Z",
-  } as any;
+  } as unknown as Parameters<typeof assessOpportunityFit>[0];
 }
 
 test("M36 real-world acceptance keeps high-workload college conflicts out of Priority A", () => {

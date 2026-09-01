@@ -1,5 +1,9 @@
 export const EXTERNAL_LEAD_CAPABILITIES = Object.freeze({
   sproutManualImport: true,
+  oneClickVisiblePageCapture: true,
+  automaticOfficialResolution: true,
+  automaticApplicationPreparation: true,
+  automaticPublicContactResearch: true,
   exactSourceUrlPreserved: true,
   independentOfficialUrlOptional: true,
   leadOnlyUntilOfficialResolution: true,
@@ -8,6 +12,7 @@ export const EXTERNAL_LEAD_CAPABILITIES = Object.freeze({
   scrapeSprout: false,
   useSproutCredentials: false,
   trustSproutAsEmployerEvidence: false,
+  autoAcceptContact: false,
   send: false,
   submit: false,
 } as const);
@@ -72,7 +77,7 @@ export function normalizeExternalLead(input: {
 
   return {
     source: "sprout",
-    sourceLabel: "Sprout manual lead",
+    sourceLabel: "Sprout visible-page capture",
     trust: "lead_only",
     requiresOfficialResolution: true,
     leadUrl: leadUrl.href,

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Scout Sprout Capture",
+  "version": "0.1.0",
+  "description": "Capture the visible Sprout opportunity into local, owner-only Scout.",
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "action": {
+    "default_title": "Capture in Scout",
+    "default_popup": "popup.html"
+  }
+}

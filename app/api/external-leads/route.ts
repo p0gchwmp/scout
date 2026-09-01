@@ -25,7 +25,14 @@ export async function POST(request: Request) {
   try {
     const db = getDb();
     const [existing] = await db.select().from(jobs).where(eq(jobs.canonicalUrl, lead.resolutionCandidateUrl)).limit(1);
-    if (existing) return Response.json({ job: existing, externalLead: lead, created: false });
+    if (existing) {
+      const provenance = `External discovery source (Sprout): ${lead.leadUrl}`;
+      const alreadyLinked = existing.scoreExplanation.some((item) => item === provenance);
+      const [linked] = alreadyLinked
+        ? [existing]
+        : await db.update(jobs).set({ scoreExplanation: [...existing.scoreExplanation, provenance] }).where(eq(jobs.id, existing.id)).returning();
+      return Response.json({ job: linked ?? existing, externalLead: lead, created: false, provenanceLinked: !alreadyLinked });
+    }
 
     const now = new Date().toISOString();
     const [job] = await db.insert(jobs).values({
@@ -41,7 +48,7 @@ export async function POST(request: Request) {
       workplaceType: "unspecified",
       score: 0,
       scoreExplanation: [
-        `Lead captured manually from Sprout: ${lead.leadUrl}`,
+        `External discovery source (Sprout): ${lead.leadUrl}`,
         "Sprout context is not employer evidence; resolve an official employer/ATS posting before application preparation",
       ],
       eligibilityRisks: ["Official posting snapshot required before application preparation"],
@@ -53,7 +60,7 @@ export async function POST(request: Request) {
       missingCount: 0,
       currentSnapshotId: null,
     }).returning();
-    return Response.json({ job, externalLead: lead, created: true }, { status: 201 });
+    return Response.json({ job, externalLead: lead, created: true, provenanceLinked: true }, { status: 201 });
   } catch (error) {
     return scoutServerError("external-leads.create", error, "Unable to save external lead");
   }

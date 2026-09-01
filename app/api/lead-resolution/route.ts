@@ -15,6 +15,8 @@ export async function POST(request: Request) {
     const leads = await db.select().from(jobs).where(and(isNull(jobs.currentSnapshotId), like(jobs.source, "lead:%"))).limit(100);
     let resolved = 0;
     let pending = 0;
+    const resolvedJobIds: string[] = [];
+    const pendingJobIds: string[] = [];
     const failures: Array<{ jobId: string; reason: string }> = [];
 
     for (const lead of leads) {
@@ -81,14 +83,17 @@ export async function POST(request: Request) {
           }).where(and(eq(jobs.id, lead.id), isNull(jobs.currentSnapshotId))),
         ]);
         resolved += 1;
+        resolvedJobIds.push(lead.id);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Resolution failed";
-        if (/not supported for this application channel yet/i.test(message)) pending += 1;
-        else failures.push({ jobId: lead.id, reason: message.slice(0, 160) });
+        if (/not supported for this application channel yet/i.test(message)) {
+          pending += 1;
+          pendingJobIds.push(lead.id);
+        } else failures.push({ jobId: lead.id, reason: message.slice(0, 160) });
       }
     }
 
-    return Response.json({ scanned: leads.length, resolved, pending, failures });
+    return Response.json({ scanned: leads.length, resolved, pending, resolvedJobIds, pendingJobIds, failures });
   } catch (error) {
     return scoutServerError("lead-resolution.run", error, "Unable to resolve internship leads");
   }
