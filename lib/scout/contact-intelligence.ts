@@ -1,3 +1,5 @@
+import { officialContactSourceLabel, officialContactSourceScoreBonus } from "./contact-source-registry.ts";
+
 export type ContactIntelligenceSignal = "recruiting" | "general_business" | "low_relevance";
 
 export type PublishedContactLike = {
@@ -53,17 +55,12 @@ export function assessPublishedContact(contact: PublishedContactLike, clue?: Rec
   const reasons: string[] = [];
   let score = 20;
 
-  if ((contact.sourceType ?? "").includes("careers")) {
-    score += 15;
-    reasons.push("Published on an official careers/recruiting page");
-  } else if ((contact.sourceType ?? "").includes("contact")) {
-    score += 6;
-    reasons.push("Published on an official contact page");
-  } else if (contact.sourceContext && contact.sourceContext !== "first_party") {
+  if (contact.sourceContext && contact.sourceContext !== "first_party") {
     score += 5;
     reasons.push(`Published public recruiting evidence (${contact.sourceContext.replaceAll("_", " ")})`);
   } else {
-    reasons.push("Published on an official company page");
+    score += officialContactSourceScoreBonus(contact.sourceType);
+    reasons.push(`Published on ${officialContactSourceLabel(contact.sourceType)}`);
   }
 
   if (RECRUITING_PATTERN.test(text)) {
