@@ -54,9 +54,17 @@ export default defineConfig(async ({ command, mode }) => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    // Local Scout should never silently bind to a LAN/public interface. An
+    // explicit IPv4 loopback also avoids localhost resolving to ::1 in CI while
+    // readiness probes use 127.0.0.1.
+    server: {
+      host: "127.0.0.1",
+      port: 3000,
+      strictPort: true,
+      ...(isCodexSeatbeltSandbox
+        ? { watch: { useFsEvents: false, usePolling: true } }
+        : {}),
+    },
     plugins: [
       vinext(),
       sites(),
