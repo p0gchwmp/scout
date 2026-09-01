@@ -4,7 +4,7 @@ import { Dashboard } from "./dashboard";
 import { requireScoutPageOwner } from "./scout-api";
 
 const workspaceLinks = [
-  ["Start Here", "/setup"],
+  ["Start Here", "/start"],
   ["Run Scout", "/run"],
   ["Command Center", "/command-center"],
   ["Ecosystem", "/ecosystem"],
