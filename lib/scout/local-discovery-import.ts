@@ -108,7 +108,9 @@ function validateCanonicalUrl(provider: LocalBridgeProvider, slug: string, exter
     return;
   }
   if (provider === "workable") {
-    if (url.hostname !== "apply.workable.com" || parts.length !== 3 || parts[0] !== slug || parts[1] !== "j" || parts[2] !== externalId || url.search) {
+    const currentShortlink = parts.length === 2 && parts[0] === "j" && parts[1] === externalId;
+    const legacySlugged = parts.length === 3 && parts[0] === slug && parts[1] === "j" && parts[2] === externalId;
+    if (url.hostname !== "apply.workable.com" || !(currentShortlink || legacySlugged) || url.search) {
       throw new Error("Workable canonical URL does not match its controlled source");
     }
     return;
