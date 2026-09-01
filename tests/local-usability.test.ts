@@ -19,10 +19,13 @@ test("npm dev bootstraps a fresh local D1 without touching remote or ambiguous l
   assert.equal(packageJson.scripts["dev:raw"], "node scripts/scout-dev.mjs");
   assert.match(packageJson.scripts["verify:release"], /scout-local-run\.mjs --self-test/);
 
-  assert.match(migrationArgsBody, /"wrangler", "d1", "migrations", "apply"/);
+  assert.match(migrationArgsBody, /"d1", "migrations", "apply"/);
   assert.match(migrationArgsBody, /"--local"/);
   assert.match(migrationArgsBody, /"--persist-to"/);
   assert.doesNotMatch(migrationArgsBody, /"--remote"/);
+  assert.match(runner, /node_modules", "wrangler", "bin", "wrangler\.js/);
+  assert.match(runner, /spawnSync\(process\.execPath, \[wranglerCliPath, \.\.\.buildMigrationArgs\(\)\]/);
+  assert.doesNotMatch(runner, /npm\.cmd/);
   assert.match(runner, /WRANGLER_SEND_METRICS: "false"/);
   assert.match(runner, /name = 'd1_migrations'/);
   assert.match(runner, /legacy\/manual database detected; leaving it untouched/);
