@@ -1,6 +1,7 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
 import { BreezyOfficialPageAdapter } from "../breezy-adapter.ts";
+import { PersonioPublicXmlAdapter } from "../personio-adapter.ts";
 import { RecruiteePublicCareersAdapter } from "../recruitee-adapter.ts";
 import { TeamtailorOfficialPageAdapter } from "../teamtailor-adapter.ts";
 import type { NormalizedJob } from "../types.ts";
@@ -31,7 +32,6 @@ type DiscoverySource = {
 
 import discoveryCatalog from "../../config/discovery-sources.json" with { type: "json" };
 
-// Public ATS boards only. Client callers cannot add slugs or URLs to this list.
 export const CONTROLLED_DISCOVERY_SOURCES: readonly DiscoverySource[] = Object.freeze(
   discoveryCatalog.map((source) => ({ ...source })) as DiscoverySource[],
 );
@@ -63,36 +63,28 @@ async function discoverSource(source: DiscoverySource): Promise<NormalizedJob[]>
     case "recruitee": return new RecruiteePublicCareersAdapter().discover(source.slug);
     case "teamtailor": return new TeamtailorOfficialPageAdapter().discover(source.slug);
     case "breezy": return new BreezyOfficialPageAdapter().discover(source.slug);
+    case "personio": return new PersonioPublicXmlAdapter().discover(source.slug);
   }
 }
 
 async function discoverSettledByProvider(sources: readonly DiscoverySource[]) {
   const settled = new Array<PromiseSettledResult<Array<{ source: DiscoverySource; job: NormalizedJob }>>>(sources.length);
   const grouped = new Map<AtsProvider, Array<{ source: DiscoverySource; index: number }>>();
-
   sources.forEach((source, index) => {
     const group = grouped.get(source.provider) ?? [];
     group.push({ source, index });
     grouped.set(source.provider, group);
   });
-
-  // Keep different ATS providers concurrent, but never burst one public provider with
-  // every registered board at once. This avoids turning a normal Scout run into a
-  // self-inflicted provider rate-limit spike while preserving source isolation.
   await Promise.all([...grouped.values()].map(async (group) => {
     for (const { source, index } of group) {
       try {
         const jobs = await discoverSource(source);
-        settled[index] = {
-          status: "fulfilled",
-          value: jobs.filter(isInternship).map((job) => ({ source, job })),
-        };
+        settled[index] = { status: "fulfilled", value: jobs.filter(isInternship).map((job) => ({ source, job })) };
       } catch (reason) {
         settled[index] = { status: "rejected", reason };
       }
     }
   }));
-
   return settled;
 }
 
@@ -105,10 +97,8 @@ function stableDiscoveryFailure(error: unknown) {
 
 export async function discoverControlledInternships() {
   const settled = await discoverSettledByProvider(CONTROLLED_DISCOVERY_SOURCES);
-
   const leads: DiscoveredInternshipLead[] = [];
   const failures: Array<{ company: string; provider: string; reason: string }> = [];
-
   settled.forEach((result, index) => {
     const source = CONTROLLED_DISCOVERY_SOURCES[index];
     if (result.status === "rejected") {
@@ -117,34 +107,18 @@ export async function discoverControlledInternships() {
     }
     for (const { job } of result.value) {
       try {
-        const normalized = normalizeInternshipLead({
-          url: job.canonicalUrl,
-          company: source.company,
-          title: job.title,
-        });
-        leads.push({
-          ...normalized,
-          provider: source.provider,
-          sourceUrl: source.sourceUrl,
-          focus: source.focus,
-          location: job.location,
-          description: job.description,
-          postedAt: job.postedAt,
-        });
+        const normalized = normalizeInternshipLead({ url: job.canonicalUrl, company: source.company, title: job.title });
+        leads.push({ ...normalized, provider: source.provider, sourceUrl: source.sourceUrl, focus: source.focus, location: job.location, description: job.description, postedAt: job.postedAt });
       } catch {
-        // An ATS result with a malformed/non-HTTPS canonical URL is ignored.
+        // Malformed/non-HTTPS ATS results are ignored.
       }
     }
   });
-
   const deduped = [...new Map(leads.map((lead) => [lead.canonicalUrl, lead])).values()];
   deduped.sort((left, right) => {
     const rightDate = Date.parse(right.postedAt ?? "") || 0;
     const leftDate = Date.parse(left.postedAt ?? "") || 0;
     return rightDate - leftDate || left.company.localeCompare(right.company);
   });
-
-  // Scout is globally open by default. India-specific discovery is added through
-  // dedicated controlled sources/search lanes rather than excluding overseas roles.
   return { leads: deduped.slice(0, 100), failures };
 }
