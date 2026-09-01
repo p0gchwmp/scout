@@ -3,7 +3,7 @@ import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqli
 
 export const companySources = sqliteTable("company_sources", {
   id: text("id").primaryKey(),
-  provider: text("provider").$type<"greenhouse" | "lever" | "ashby" | "workable" | "smartrecruiters" | "workday" | "bamboohr" | "recruitee" | "teamtailor" | "breezy">().notNull(),
+  provider: text("provider").$type<"greenhouse" | "lever" | "ashby" | "workable" | "smartrecruiters" | "workday" | "bamboohr" | "recruitee" | "teamtailor" | "breezy" | "personio">().notNull(),
   companyName: text("company_name").notNull(),
   boardToken: text("board_token").notNull(),
   companyDomain: text("company_domain").notNull(),

@@ -1,6 +1,7 @@
 import { AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter, WorkablePublicAdapter } from "../adapters.ts";
 import { BambooHrPublicCareersAdapter } from "../bamboohr-adapter.ts";
 import { BreezyOfficialPageAdapter } from "../breezy-adapter.ts";
+import { PersonioPublicXmlAdapter } from "../personio-adapter.ts";
 import { RecruiteePublicCareersAdapter } from "../recruitee-adapter.ts";
 import { TeamtailorOfficialPageAdapter } from "../teamtailor-adapter.ts";
 import { WorkdayPublicCxsAdapter } from "../workday-adapter.ts";
@@ -10,6 +11,7 @@ import {
   validateBreezyEvidenceUrl,
   validateGreenhouseEvidenceUrl,
   validateLeverEvidenceUrl,
+  validatePersonioEvidenceUrl,
   validateRecruiteeEvidenceUrl,
   validateSmartRecruitersEvidenceUrl,
   validateTeamtailorEvidenceUrl,
@@ -32,6 +34,7 @@ function adapterFor(provider: AtsProvider) {
     case "recruitee": return new RecruiteePublicCareersAdapter();
     case "teamtailor": return new TeamtailorOfficialPageAdapter();
     case "breezy": return new BreezyOfficialPageAdapter();
+    case "personio": return new PersonioPublicXmlAdapter();
   }
 }
 
@@ -47,6 +50,7 @@ function validateEvidence(provider: AtsProvider, raw: string, token: string, ext
     case "recruitee": return validateRecruiteeEvidenceUrl(raw, token, externalId);
     case "teamtailor": return validateTeamtailorEvidenceUrl(raw, token, externalId);
     case "breezy": return validateBreezyEvidenceUrl(raw, token, externalId);
+    case "personio": return validatePersonioEvidenceUrl(raw, token, externalId);
   }
 }
 
