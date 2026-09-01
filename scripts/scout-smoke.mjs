@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 
 const root = process.cwd();
 const smokeUrl = "http://127.0.0.1:3000/setup";
-const timeoutMs = Number.parseInt(process.env.SCOUT_SMOKE_TIMEOUT_MS ?? "45000", 10);
+const defaultTimeoutMs = process.platform === "win32" ? 240000 : 90000;
+const timeoutMs = Number.parseInt(process.env.SCOUT_SMOKE_TIMEOUT_MS ?? String(defaultTimeoutMs), 10);
+const probeTimeoutMs = Math.min(5000, Math.max(900, Math.floor(timeoutMs / 24)));
 
 function enabled(value) {
   if (value === undefined || value === null) return false;
@@ -32,7 +34,7 @@ async function waitForWeb(child) {
     try {
       const response = await fetch(smokeUrl, {
         redirect: "manual",
-        signal: AbortSignal.timeout(900),
+        signal: AbortSignal.timeout(probeTimeoutMs),
         headers: { accept: "text/html" },
       });
       lastStatus = response.status;
@@ -41,9 +43,9 @@ async function waitForWeb(child) {
         if (html.trim()) return;
       }
     } catch {
-      // Expected while Vinext is compiling/binding its local listener.
+      // Expected while migrations, Vinext optimization, compilation, or loopback binding are still starting.
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`Scout web did not become ready at ${smokeUrl} within ${timeoutMs}ms${lastStatus ? ` (last HTTP ${lastStatus})` : ""}`);
 }
@@ -78,6 +80,7 @@ async function stopProcessTree(child) {
 function selfTest() {
   assertLocalOnly({});
   if (timeoutMs < 5000) throw new Error("SCOUT_SMOKE_TIMEOUT_MS must be at least 5000ms");
+  if (probeTimeoutMs < 900 || probeTimeoutMs > 5000) throw new Error("Scout smoke probe timeout is outside its bounded range");
   if (new URL(smokeUrl).hostname !== "127.0.0.1") throw new Error("Smoke URL self-test failed");
   console.log("Scout local smoke self-test: OK (loopback-only startup probe)." );
 }
