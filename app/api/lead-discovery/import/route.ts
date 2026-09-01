@@ -130,7 +130,9 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof Error && /Discovery|discovery|Canonical|Greenhouse|Lever|Ashby|Workable|SmartRecruiters|stale|signature|controlled/i.test(error.message)) {
-      return Response.json({ error: error instanceof Error ? error.message : "Invalid local discovery import" }, { status: 400 });
+      const reason = error instanceof Error ? error.message : "Invalid local discovery import";
+      console.warn("Scout local discovery import rejected", { reason });
+      return Response.json({ error: reason }, { status: 400 });
     }
     return scoutServerError("lead-discovery.import", error, "Unable to import discovered internships");
   }
