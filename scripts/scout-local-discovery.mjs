@@ -107,13 +107,29 @@ async function ashby(source) {
   });
 }
 
+function workableJobPageUrl(value, source, externalId) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  let url;
+  try { url = new URL(text); }
+  catch { return null; }
+  if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash || url.hostname.toLowerCase() !== "apply.workable.com") return null;
+  const parts = url.pathname.split("/").filter(Boolean);
+  const current = parts.length === 2 && parts[0] === "j" && parts[1] === externalId;
+  const legacy = parts.length === 3 && parts[0] === source.slug && parts[1] === "j" && parts[2] === externalId;
+  return current || legacy ? url.href : null;
+}
+
 async function workable(source) {
   const payload = await fetchJson(`https://www.workable.com/api/accounts/${encodeURIComponent(source.slug)}?details=true`);
   if (!Array.isArray(payload?.jobs)) throw new Error("invalid Workable payload");
   return payload.jobs.flatMap((raw) => {
     const externalId = String(raw.shortcode ?? raw.code ?? "").trim();
-    const canonicalUrl = String(raw.application_url ?? raw.shortlink ?? "").trim();
-    if (!externalId || !canonicalUrl) return [];
+    if (!externalId) return [];
+    const canonicalUrl = [raw.shortlink, raw.application_url]
+      .map((candidate) => workableJobPageUrl(candidate, source, externalId))
+      .find(Boolean);
+    if (!canonicalUrl) throw new Error("invalid Workable URL payload");
     return [{
       ...base(source),
       externalId,
