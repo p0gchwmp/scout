@@ -6,6 +6,7 @@ export const FORM_INTELLIGENCE_CAPABILITIES = Object.freeze({
   draftFromApprovedClaims: true,
   detectLiveEligibilityAndScheduleConstraints: true,
   browserConstraintReviewUsesMetadataOnly: true,
+  constraintQuestionsStayManual: true,
   answerSensitiveQuestions: false,
   inferUnknownAnswers: false,
   uploadFiles: false,
@@ -72,6 +73,10 @@ const WORK_AUTHORIZATION_CONSTRAINT = /\b(?:authorized|authorised|legally eligib
 const SCHEDULE_CONSTRAINT = /\b(?:\d{1,2}(?:\s*(?:-|–|to)\s*\d{1,2})?\s*(?:hours?|hrs?)\s*(?:per|a|\/)\s*day|\d{1,2}\s*days?\s*(?:per|a|\/)\s*week|monday\s*(?:-|–|to|through)\s*friday|full[- ]time commitment|working hours?|work schedule|shift timings?|night shift|weekend shift)\b/i;
 const GRADUATION_OR_DEGREE_CONSTRAINT = /\b(?:graduat(?:e|ing|ion)|passing[- ]out|class of|degree|major|year of study|current semester|semester|final[- ]year)\b/i;
 const AVAILABILITY_CONSTRAINT = /\b(?:availability|available to (?:start|join|work)|when can you (?:start|join)|start date|joining date|date of joining|notice period|join immediately|immediate joiner)\b/i;
+
+function explicitConstraintAnswerRequired(label: string) {
+  return SCHEDULE_CONSTRAINT.test(label) || GRADUATION_OR_DEGREE_CONSTRAINT.test(label) || AVAILABILITY_CONSTRAINT.test(label);
+}
 
 function singleLine(value: unknown, field: string, max: number) {
   if (typeof value !== "string") throw new Error(`${field} is required`);
@@ -145,6 +150,9 @@ export function classifyFormField(field: ObservedFormField): ClassifiedFormField
   }
   if (sourceField) {
     return { ...field, category: "safe_autofill", sourceField, reason: `Fill only from verified profile field ${sourceField}` };
+  }
+  if (explicitConstraintAnswerRequired(field.label)) {
+    return { ...field, category: "needs_user_answer", sourceField: null, reason: "Live eligibility, schedule or availability constraint requires an explicit user answer" };
   }
   const freeText = field.controlKind === "textarea"
     || (field.controlKind === "input" && (field.inputType === "text" || field.inputType === "search") && (field.maxLength === null || field.maxLength >= 40));

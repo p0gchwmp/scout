@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { analyzeFormFields, FORM_INTELLIGENCE_CAPABILITIES, reviewApplicationFormConstraints } from "../lib/scout/form-intelligence.ts";
+import { analyzeFormFields, draftableApplicationQuestions, FORM_INTELLIGENCE_CAPABILITIES, reviewApplicationFormConstraints } from "../lib/scout/form-intelligence.ts";
 
 function field(id: string, label: string, controlKind: "input" | "textarea" | "select" = "select", inputType = "select", required = true) {
   return { id, label, controlKind, inputType, maxLength: null, required };
@@ -10,7 +10,7 @@ function field(id: string, label: string, controlKind: "input" | "textarea" | "s
 test("M30 detects live work-authorization, schedule, graduation and availability review constraints", () => {
   const form = analyzeFormFields([
     field("auth", "Are you legally authorized to work in the United States?"),
-    field("hours", "Can you commit to at least 6 hours per day, Monday-Friday?"),
+    field("hours", "Can you commit to at least 6 hours per day, Monday-Friday?", "input", "text"),
     field("grad", "What is your expected graduation year?", "input", "text"),
     field("start", "When can you start?", "input", "text"),
   ]);
@@ -24,7 +24,10 @@ test("M30 detects live work-authorization, schedule, graduation and availability
     "availability",
   ]);
   assert.equal(review.counts.schedule_commitment, 1);
+  assert.deepEqual(form.fields.map((item) => item.category), ["sensitive_manual", "needs_user_answer", "needs_user_answer", "needs_user_answer"]);
+  assert.deepEqual(draftableApplicationQuestions(form.fields), []);
   assert.equal(FORM_INTELLIGENCE_CAPABILITIES.browserConstraintReviewUsesMetadataOnly, true);
+  assert.equal(FORM_INTELLIGENCE_CAPABILITIES.constraintQuestionsStayManual, true);
 });
 
 test("M30 does not turn a verified reusable degree-program field into an eligibility constraint", () => {
