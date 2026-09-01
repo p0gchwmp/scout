@@ -6,6 +6,9 @@ const scoutUrlInput = document.querySelector("#scout-url");
 const handoffInput = document.querySelector("#handoff");
 const intelligence = document.querySelector("#intelligence");
 const counts = document.querySelector("#counts");
+const constraintReview = document.querySelector("#constraint-review");
+const constraintList = document.querySelector("#constraint-list");
+const acknowledgeConstraintsButton = document.querySelector("#ack-constraints");
 const answerReview = document.querySelector("#answer-review");
 const reviewList = document.querySelector("#review-list");
 
@@ -82,6 +85,61 @@ function reviewMatchesTask(review, task) {
     && review.expiresAt > Date.now()
     && Array.isArray(review.drafts)
   );
+}
+
+function constraintReviewMatchesTask(review, task) {
+  return Boolean(
+    review && task
+    && review.schemaVersion === 1
+    && review.applicationId === task.applicationId
+    && review.artifactVersion === task.artifactVersion
+    && review.expiresAt === task.expiresAt
+    && review.expiresAt > Date.now()
+    && Array.isArray(review.constraints)
+  );
+}
+
+function constraintAcknowledgementMatchesTask(acknowledgement, task) {
+  return Boolean(
+    acknowledgement && task
+    && acknowledgement.schemaVersion === 1
+    && acknowledgement.applicationId === task.applicationId
+    && acknowledgement.artifactVersion === task.artifactVersion
+    && acknowledgement.expiresAt === task.expiresAt
+    && acknowledgement.expiresAt > Date.now()
+    && Number.isFinite(acknowledgement.acknowledgedAt)
+  );
+}
+
+function renderConstraintReview(review, task, acknowledgement) {
+  if (!constraintReviewMatchesTask(review, task) || !review.constraints.length) {
+    constraintReview.hidden = true;
+    constraintList.textContent = "";
+    acknowledgeConstraintsButton.disabled = false;
+    return;
+  }
+  const acknowledged = constraintAcknowledgementMatchesTask(acknowledgement, task);
+  const cards = review.constraints.map((item) => {
+    const card = document.createElement("div");
+    card.className = "constraint-item";
+    const heading = document.createElement("strong");
+    heading.textContent = item.label;
+    const meta = document.createElement("span");
+    meta.textContent = `${String(item.kind || "review").replaceAll("_", " ")}${item.required ? " · required" : ""} — ${item.reason || "Review this question manually."}`;
+    card.append(heading, meta);
+    return card;
+  });
+  constraintList.replaceChildren(...cards);
+  acknowledgeConstraintsButton.disabled = acknowledged;
+  acknowledgeConstraintsButton.textContent = acknowledged ? "Reviewed for this exact task" : "I reviewed these constraints";
+  constraintReview.hidden = false;
+}
+
+async function constraintReviewBlocksFill(task) {
+  const { pendingConstraintReview, constraintReviewAcknowledgement } = await chrome.storage.local.get(["pendingConstraintReview", "constraintReviewAcknowledgement"]);
+  return constraintReviewMatchesTask(pendingConstraintReview, task)
+    && pendingConstraintReview.constraints.length > 0
+    && !constraintAcknowledgementMatchesTask(constraintReviewAcknowledgement, task);
 }
 
 function answerSource(questionId) {
@@ -237,10 +295,14 @@ async function refreshInspection() {
   }
   status.classList.remove("blocked");
   const total = result.formIntelligence?.summary?.total ?? result.fields ?? 0;
-  status.textContent = result.taskReady
-    ? `${total} visible field(s) found on ${result.platform}. Scout has an exact-page task ready; only verified profile values and explicitly reviewed text can be filled.`
-    : `${total} visible field(s) found on ${result.platform}. Generate a browser handoff in Scout, then load it here.`;
-  fillButton.disabled = !result.taskReady;
+  const { approvedTask } = await chrome.storage.local.get("approvedTask");
+  const constraintBlocked = approvedTask ? await constraintReviewBlocksFill(approvedTask) : false;
+  status.textContent = constraintBlocked
+    ? `${total} visible field(s) found on ${result.platform}. Review the flagged eligibility/schedule questions before Safe Fill.`
+    : result.taskReady
+      ? `${total} visible field(s) found on ${result.platform}. Scout has an exact-page task ready; only verified profile values and explicitly reviewed text can be filled.`
+      : `${total} visible field(s) found on ${result.platform}. Generate a browser handoff in Scout, then load it here.`;
+  fillButton.disabled = !result.taskReady || constraintBlocked;
   return result;
 }
 
@@ -280,22 +342,60 @@ async function loadApprovedTask() {
       ? payload.answerReview.drafts.map((draft) => ({ ...draft, decision: "pending", editedAnswer: draft.proposedAnswer }))
       : [],
   };
-  await chrome.storage.local.set({ approvedTask: payload.task, pendingAnswerReview, scoutBaseUrl: baseUrl });
+  const pendingConstraintReview = {
+    schemaVersion: 1,
+    applicationId: payload.task.applicationId,
+    artifactVersion: payload.task.artifactVersion,
+    expiresAt: payload.task.expiresAt,
+    constraints: Array.isArray(payload.constraintReview?.constraints) ? payload.constraintReview.constraints : [],
+  };
+  await chrome.storage.local.remove("constraintReviewAcknowledgement");
+  await chrome.storage.local.set({ approvedTask: payload.task, pendingAnswerReview, pendingConstraintReview, scoutBaseUrl: baseUrl });
   handoffInput.value = "";
   renderIntelligence(payload.formIntelligence?.summary);
+  renderConstraintReview(pendingConstraintReview, payload.task, null);
   renderAnswerReview(pendingAnswerReview, payload.task);
   const aiCount = pendingAnswerReview.drafts.length;
   const manualCount = payload.manualQuestions?.length ?? 0;
+  const constraintCount = pendingConstraintReview.constraints.length;
   const safeCount = payload.formIntelligence?.summary?.safeAutofill ?? 0;
   const aiNote = payload.ai?.error ? ` ${payload.ai.error}.` : "";
-  status.textContent = `Task loaded. ${safeCount} verified profile field(s) are fillable, ${aiCount} claim-backed draft(s) await your approval, and ${manualCount} field(s) stay manual.${aiNote}`;
-  fillButton.disabled = false;
+  status.textContent = constraintCount
+    ? `Task loaded. Review ${constraintCount} eligibility/schedule constraint${constraintCount === 1 ? "" : "s"} before Safe Fill. Scout has not answered those fields.${aiNote}`
+    : `Task loaded. ${safeCount} verified profile field(s) are fillable, ${aiCount} claim-backed draft(s) await your approval, and ${manualCount} field(s) stay manual.${aiNote}`;
+  fillButton.disabled = constraintCount > 0;
 }
 
-chrome.storage.local.get(["scoutBaseUrl", "approvedTask", "pendingAnswerReview"]).then(({ scoutBaseUrl, approvedTask, pendingAnswerReview }) => {
+acknowledgeConstraintsButton.addEventListener("click", async () => {
+  try {
+    const { approvedTask, pendingConstraintReview } = await chrome.storage.local.get(["approvedTask", "pendingConstraintReview"]);
+    if (!constraintReviewMatchesTask(pendingConstraintReview, approvedTask) || !pendingConstraintReview.constraints.length) {
+      throw new Error("This constraint review expired. Load a fresh Scout handoff.");
+    }
+    const acknowledgement = {
+      schemaVersion: 1,
+      applicationId: approvedTask.applicationId,
+      artifactVersion: approvedTask.artifactVersion,
+      expiresAt: approvedTask.expiresAt,
+      acknowledgedAt: Date.now(),
+    };
+    await chrome.storage.local.set({ constraintReviewAcknowledgement: acknowledgement });
+    renderConstraintReview(pendingConstraintReview, approvedTask, acknowledgement);
+    fillButton.disabled = false;
+    status.classList.remove("blocked");
+    status.textContent = "Constraint review acknowledged for this exact task. Scout still will not answer those fields; review the full form before manual submit.";
+  } catch (error) {
+    status.classList.add("blocked");
+    status.textContent = error instanceof Error ? error.message : "Unable to acknowledge constraint review";
+  }
+});
+
+chrome.storage.local.get(["scoutBaseUrl", "approvedTask", "pendingAnswerReview", "pendingConstraintReview", "constraintReviewAcknowledgement"]).then(({ scoutBaseUrl, approvedTask, pendingAnswerReview, pendingConstraintReview, constraintReviewAcknowledgement }) => {
   scoutUrlInput.value = scoutBaseUrl || "http://localhost:3000";
   if (reviewMatchesTask(pendingAnswerReview, approvedTask)) renderAnswerReview(pendingAnswerReview, approvedTask);
   else if (pendingAnswerReview) void chrome.storage.local.remove("pendingAnswerReview");
+  if (constraintReviewMatchesTask(pendingConstraintReview, approvedTask)) renderConstraintReview(pendingConstraintReview, approvedTask, constraintReviewAcknowledgement);
+  else if (pendingConstraintReview) void chrome.storage.local.remove(["pendingConstraintReview", "constraintReviewAcknowledgement"]);
 });
 
 refreshInspection().catch(() => {
@@ -314,6 +414,16 @@ loadButton.addEventListener("click", async () => {
 });
 
 fillButton.addEventListener("click", async () => {
+  const { approvedTask, pendingConstraintReview, constraintReviewAcknowledgement } = await chrome.storage.local.get(["approvedTask", "pendingConstraintReview", "constraintReviewAcknowledgement"]);
+  if (constraintReviewMatchesTask(pendingConstraintReview, approvedTask)
+    && pendingConstraintReview.constraints.length
+    && !constraintAcknowledgementMatchesTask(constraintReviewAcknowledgement, approvedTask)) {
+    renderConstraintReview(pendingConstraintReview, approvedTask, constraintReviewAcknowledgement);
+    fillButton.disabled = true;
+    status.classList.add("blocked");
+    status.textContent = "Review and acknowledge the flagged eligibility/schedule constraints before Safe Fill. Scout will not answer those fields.";
+    return;
+  }
   const result = await send("SCOUT_FILL");
   const filled = result?.filled ?? 0;
   const reviewed = result?.reviewedDraftsFilled ?? 0;
