@@ -69,14 +69,10 @@ export const PROFILE_AUTOFILL_ALIASES: Readonly<Record<string, readonly string[]
   portfolio_url: ["portfolio", "portfolio url", "personal website", "website"],
 });
 
-const WORK_AUTHORIZATION_CONSTRAINT = /\b(?:authorized|authorised|legally eligible|eligible)\s+to\s+work\b|\bright to work\b|\bwork authori[sz]ation\b|\bvisa\b|\bsponsorship\b/i;
-const SCHEDULE_CONSTRAINT = /\b(?:\d{1,2}(?:\s*(?:-|–|to)\s*\d{1,2})?\s*(?:hours?|hrs?)\s*(?:per|a|\/)\s*day|\d{1,2}\s*days?\s*(?:per|a|\/)\s*week|monday\s*(?:-|–|to|through)\s*friday|full[- ]time commitment|working hours?|work schedule|shift timings?|night shift|weekend shift)\b/i;
-const GRADUATION_OR_DEGREE_CONSTRAINT = /\b(?:graduat(?:e|ing|ion)|passing[- ]out|class of|degree|major|year of study|current semester|semester|final[- ]year)\b/i;
-const AVAILABILITY_CONSTRAINT = /\b(?:availability|available to (?:start|join|work)|when can you (?:start|join)|start date|joining date|date of joining|notice period|join immediately|immediate joiner)\b/i;
-
-function explicitConstraintAnswerRequired(label: string) {
-  return SCHEDULE_CONSTRAINT.test(label) || GRADUATION_OR_DEGREE_CONSTRAINT.test(label) || AVAILABILITY_CONSTRAINT.test(label);
-}
+const WORK_AUTHORIZATION_CONSTRAINT = /\b(?:authorized|authorised|legally eligible|eligible)\s+to\s+work\b|\bright to work\b|\bwork authori[sz]ation\b|\bwork permit\b|\bvisa(?: status)?\b|\bimmigration status\b|\bsponsor(?:ship|ed|ing)?\b/i;
+const SCHEDULE_CONSTRAINT = /\b(?:\d{1,2}(?:\.\d+)?(?:\s*(?:-|–|to)\s*\d{1,2}(?:\.\d+)?)?\s*(?:hours?|hrs?)\s*(?:per|a|\/)\s*(?:day|week)|\d{1,2}\s*days?\s*(?:per|a|\/)\s*week|monday\s*(?:-|–|to|through)\s*friday|full[- ]time commitment|part[- ]time commitment|working hours?|work schedule|shift timings?|night shift|weekend shift|weekly hours?)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*(?:-|–|to|through)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i;
+const GRADUATION_OR_DEGREE_CONSTRAINT = /\b(?:graduat(?:e|ing|ion)|passing[- ]out|class of|degree|major|year of study|current semester|semester|final[- ]year|currently enrolled|current student|student status|undergraduate student|postgraduate student)\b/i;
+const AVAILABILITY_CONSTRAINT = /\b(?:availability|available to (?:start|join|work)|available from|when can you (?:start|join)|earliest (?:start|joining|availability)|start date|joining date|date of joining|notice period|join immediately|immediate joiner)\b/i;
 
 function singleLine(value: unknown, field: string, max: number) {
   if (typeof value !== "string") throw new Error(`${field} is required`);
@@ -103,6 +99,16 @@ export function profileFieldForLabel(label: string) {
   for (const [sourceField, aliases] of Object.entries(PROFILE_AUTOFILL_ALIASES)) {
     if (aliases.includes(normalized)) return sourceField;
   }
+  return null;
+}
+
+export function applicationFormConstraintKind(label: string, sourceField = profileFieldForLabel(label)): ApplicationFormConstraintKind | null {
+  const clean = label.replace(/\s+/g, " ").trim();
+  if (WORK_AUTHORIZATION_CONSTRAINT.test(clean)) return "work_authorization";
+  if (SCHEDULE_CONSTRAINT.test(clean)) return "schedule_commitment";
+  if (AVAILABILITY_CONSTRAINT.test(clean)) return "availability";
+  if (sourceField && sourceField !== "graduation_year") return null;
+  if (GRADUATION_OR_DEGREE_CONSTRAINT.test(clean)) return "graduation_or_degree";
   return null;
 }
 
@@ -136,14 +142,15 @@ export function parseObservedFormFields(value: unknown): ObservedFormField[] {
 
 export function classifyFormField(field: ObservedFormField): ClassifiedFormField {
   const sourceField = profileFieldForLabel(field.label);
-  if (field.inputType === "password" || WORK_AUTHORIZATION_CONSTRAINT.test(field.label) || isSensitiveApplicationQuestion(field.label)) {
+  const constraintKind = applicationFormConstraintKind(field.label, sourceField);
+  if (field.inputType === "password" || constraintKind === "work_authorization" || isSensitiveApplicationQuestion(field.label)) {
     return { ...field, category: "sensitive_manual", sourceField: null, reason: "Sensitive or per-application confirmation required" };
   }
   if (field.inputType === "file") {
     return { ...field, category: "unsupported_manual", sourceField: null, reason: "File uploads stay manual" };
   }
   if (field.inputType === "checkbox" || field.inputType === "radio") {
-    return { ...field, category: "needs_user_answer", sourceField: null, reason: "Choice controls require an explicit user decision" };
+    return { ...field, category: "needs_user_answer", sourceField: null, reason: constraintKind ? "Live eligibility, schedule or availability constraint requires an explicit user answer" : "Choice controls require an explicit user decision" };
   }
   if (sourceField === "graduation_year") {
     return { ...field, category: "needs_user_answer", sourceField: null, reason: "Graduation year / degree path must be confirmed for each application" };
@@ -151,7 +158,7 @@ export function classifyFormField(field: ObservedFormField): ClassifiedFormField
   if (sourceField) {
     return { ...field, category: "safe_autofill", sourceField, reason: `Fill only from verified profile field ${sourceField}` };
   }
-  if (explicitConstraintAnswerRequired(field.label)) {
+  if (constraintKind) {
     return { ...field, category: "needs_user_answer", sourceField: null, reason: "Live eligibility, schedule or availability constraint requires an explicit user answer" };
   }
   const freeText = field.controlKind === "textarea"
@@ -188,19 +195,18 @@ export function draftableApplicationQuestions(fields: ClassifiedFormField[]): Ap
 
 function constraintForField(field: ClassifiedFormField): ApplicationFormConstraint | null {
   const label = field.label.replace(/\s+/g, " ").trim();
-  if (WORK_AUTHORIZATION_CONSTRAINT.test(label)) {
-    return { fieldId: field.id, label, kind: "work_authorization", required: field.required, reason: "Work authorization, visa or sponsorship must be decided by the applicant for this exact role" };
+  const kind = applicationFormConstraintKind(label, field.sourceField);
+  if (!kind) return null;
+  if (kind === "work_authorization") {
+    return { fieldId: field.id, label, kind, required: field.required, reason: "Work authorization, visa or sponsorship must be decided by the applicant for this exact role" };
   }
-  if (SCHEDULE_CONSTRAINT.test(label)) {
-    return { fieldId: field.id, label, kind: "schedule_commitment", required: field.required, reason: "The visible form asks for a concrete work-hours or schedule commitment that should be checked against college availability" };
+  if (kind === "schedule_commitment") {
+    return { fieldId: field.id, label, kind, required: field.required, reason: "The visible form asks for a concrete work-hours or schedule commitment that should be checked against college availability" };
   }
-  if (field.category !== "safe_autofill" && GRADUATION_OR_DEGREE_CONSTRAINT.test(label)) {
-    return { fieldId: field.id, label, kind: "graduation_or_degree", required: field.required, reason: "Degree, graduation, semester or student-status eligibility requires per-application review" };
+  if (kind === "graduation_or_degree") {
+    return { fieldId: field.id, label, kind, required: field.required, reason: "Degree, graduation, semester or student-status eligibility requires per-application review" };
   }
-  if (AVAILABILITY_CONSTRAINT.test(label)) {
-    return { fieldId: field.id, label, kind: "availability", required: field.required, reason: "Joining or availability timing requires an explicit current answer from the applicant" };
-  }
-  return null;
+  return { fieldId: field.id, label, kind, required: field.required, reason: "Joining or availability timing requires an explicit current answer from the applicant" };
 }
 
 export function reviewApplicationFormConstraints(fields: ClassifiedFormField[]): ApplicationFormConstraintReview {
