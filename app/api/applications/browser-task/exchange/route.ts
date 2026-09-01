@@ -9,7 +9,7 @@ import { applicationPacketProfileBindingIssues } from "../../../../../lib/scout/
 import { applicationPacketMatchesCurrentSnapshot, applicationPacketSnapshotId } from "../../../../../lib/scout/application-review-packet";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
-import { analyzeFormFields, draftableApplicationQuestions, summarizeFormFields } from "../../../../../lib/scout/form-intelligence";
+import { analyzeFormFields, draftableApplicationQuestions, reviewApplicationFormConstraints, summarizeFormFields } from "../../../../../lib/scout/form-intelligence";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -133,6 +133,7 @@ export async function POST(request: Request) {
         : field
     ));
     const form = { fields: resolvedFields, summary: summarizeFormFields(resolvedFields) };
+    const constraintReview = reviewApplicationFormConstraints(form.fields);
     const draftableQuestions = draftableApplicationQuestions(form.fields);
     const manualQuestions = form.fields
       .filter((field) => field.category === "sensitive_manual" || field.category === "needs_user_answer" || field.category === "unsupported_manual")
@@ -198,9 +199,11 @@ export async function POST(request: Request) {
         ...task,
         answers: task.answers,
         formIntelligence: { summary: form.summary },
+        formConstraintReviewRequired: constraintReview.required,
         aiDraftAnswersRequireReview: answerReview.drafts.length > 0,
       },
       answerReview,
+      constraintReview,
       formIntelligence: {
         summary: form.summary,
         fields: form.fields.map((field) => ({
@@ -217,6 +220,8 @@ export async function POST(request: Request) {
       safety: {
         browserSentFieldValues: false,
         bearerTokenContainsProfileData: false,
+        liveFormConstraintsUseMetadataOnly: true,
+        liveFormConstraintsRequireHumanReview: constraintReview.required,
         sensitiveQuestionsRequireReview: true,
         unknownAnswersRequireUser: true,
         aiAnswersAreDrafts: true,
