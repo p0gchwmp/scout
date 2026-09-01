@@ -1,4 +1,5 @@
 import type { OpportunityQualityAssessment, OpportunityQualityJob } from "./opportunity-quality-intelligence.ts";
+import { assessOpportunityTrack } from "./opportunity-tracks.ts";
 
 export const OPPORTUNITY_FIT_CAPABILITIES = Object.freeze({
   persistedPostingEvidenceOnly: true,
@@ -7,6 +8,9 @@ export const OPPORTUNITY_FIT_CAPABILITIES = Object.freeze({
   remoteAloneImpliesCollegeCompatibility: false,
   missingEvidenceMeansMismatch: false,
   summer2027WindowFixed: true,
+  dailyScheduleParsing: true,
+  passingOutGraduationParsing: true,
+  workAuthorizationManualReviewBlocksPriorityA: true,
   resumeClaimsModified: false,
   autoRejectOpportunity: false,
   sendEmail: false,
@@ -39,6 +43,8 @@ export type OpportunityFitAssessment = {
   roleReason: string;
   eligibility: FitStatus;
   eligibilityReasons: string[];
+  eligibilityReviewRequired: boolean;
+  eligibilityReviewReasons: string[];
   duration: { text: string | null; weeks: number | null; evidence: string | null };
   hoursPerWeek: { min: number | null; max: number | null; evidence: string | null };
   dateWindow: { start: string | null; end: string | null; evidence: string | null };
@@ -62,13 +68,16 @@ const PART_TIME_PATTERN = /\bpart[- ]time\b/i;
 const FLEXIBLE_PATTERN = /\b(?:flexible hours?|flexible schedule|asynchronous|async work|choose your hours?|work around (?:your )?classes|student[- ]friendly schedule)\b/i;
 const FULL_TIME_PATTERN = /\bfull[- ]time\b/i;
 const HOURS_PATTERN = /\b(\d{1,2})(?:\s*(?:-|–|to)\s*(\d{1,2}))?\s*(?:hours?|hrs?)\s*(?:per|a|\/)\s*week\b/i;
+const DAILY_HOURS_PATTERN = /\b(?:at least\s+|minimum(?:\s+of)?\s+|up to\s+)?(\d{1,2})(?:\s*(?:-|–|to)\s*(\d{1,2}))?\s*(?:hours?|hrs?)\s*(?:per|a|\/)\s*day\b/i;
+const FIVE_DAY_WEEK_PATTERN = /\b(?:monday\s*(?:-|–|to|through)\s*friday|5\s*days?\s*(?:per|a|\/)\s*week|five\s+days?\s*(?:per|a|\/)\s*week)\b/i;
 const FIXED_US_HOURS_PATTERN = /\b(?:(?:must|required to|requires? you to)\s+(?:work|be available).{0,55}(?:US|U\.S\.|Eastern|Pacific|EST|EDT|ET|PST|PDT|PT).{0,25}(?:business|working)?\s*hours|9\s*(?:am|a\.m\.)\s*(?:-|–|to)\s*5\s*(?:pm|p\.m\.).{0,30}(?:EST|EDT|ET|PST|PDT|PT|Eastern|Pacific))\b/i;
+const WORK_AUTH_REVIEW_PATTERN = /\b(?:(?:authorized|authorised) to work in (?:the )?(?:u\.?s\.?|united states)|u\.?s\.? work authori[sz]ation|work authori[sz]ation|right to work|visa sponsorship|sponsorship (?:is|will be|not) available)\b/i;
 const SUMMER_2027_PATTERN = /\bsummer\s+2027\b/i;
 const FUTURE_PATTERN = /\b(?:summer|winter|spring|fall|autumn)\s+(2028|2029|2030)\b/i;
 const MBA_REQUIRED_PATTERN = /\b(?:mba|master'?s degree|graduate degree|postgraduate degree)\b.{0,50}\b(?:required|mandatory|must have|minimum qualification)\b/i;
 const EXPERIENCE_PATTERN = /\b(?:minimum(?:\s+of)?\s+)?(\d{1,2})\+?\s+years?\s+(?:of\s+)?(?:professional\s+|work\s+|industry\s+|relevant\s+)?experience\b/i;
 const ENROLLED_PATTERN = /\b(?:currently enrolled|currently pursuing|pursuing (?:a )?bachelor'?s|undergraduate student|college student)\b/i;
-const GRAD_YEAR_PATTERN = /\b(?:graduating|graduation(?:\s+year)?|expected graduation).{0,35}?(20\d{2})(?:\s*(?:-|–|to|through|or)\s*(20\d{2}))?/i;
+const GRAD_YEAR_PATTERN = /\b(?:graduating|graduation(?:\s+(?:year|date))?|expected graduation|passing[- ]out(?:\s+(?:year|date))?|class of).{0,50}?(20\d{2})(?:\s*(?:-|–|to|through|or)\s*(20\d{2}))?/i;
 
 const NUMBER_WORDS: Record<string, number> = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
@@ -114,11 +123,30 @@ function durationFrom(text: string) {
 }
 
 function hoursFrom(text: string) {
-  const match = text.match(HOURS_PATTERN);
-  if (!match) return { min: null, max: null, evidence: null };
-  const first = Number(match[1]);
-  const second = match[2] ? Number(match[2]) : first;
-  return { min: Math.min(first, second), max: Math.max(first, second), evidence: excerptAround(text, match) };
+  const weekly = text.match(HOURS_PATTERN);
+  if (weekly) {
+    const first = Number(weekly[1]);
+    const second = weekly[2] ? Number(weekly[2]) : first;
+    return { min: Math.min(first, second), max: Math.max(first, second), evidence: excerptAround(text, weekly) };
+  }
+
+  const daily = text.match(DAILY_HOURS_PATTERN);
+  const fiveDayWeek = text.match(FIVE_DAY_WEEK_PATTERN);
+  if (daily && fiveDayWeek) {
+    const first = Number(daily[1]);
+    const second = daily[2] ? Number(daily[2]) : first;
+    const start = Math.min(daily.index ?? 0, fiveDayWeek.index ?? 0);
+    const end = Math.max((daily.index ?? 0) + daily[0].length, (fiveDayWeek.index ?? 0) + fiveDayWeek[0].length);
+    const syntheticMatch = [text.slice(start, end)] as unknown as RegExpMatchArray;
+    syntheticMatch.index = start;
+    return {
+      min: Math.min(first, second) * 5,
+      max: Math.max(first, second) * 5,
+      evidence: excerptAround(text, syntheticMatch),
+    };
+  }
+
+  return { min: null, max: null, evidence: null };
 }
 
 function parseDateToken(value: string) {
@@ -180,7 +208,7 @@ function summerFit(text: string, duration: ReturnType<typeof durationFrom>, date
       return { status: "mismatch" as const, reason: "Published 2027 date range does not overlap the 21 May–31 July availability window" };
     }
     if (mentions2027 && (dates.start < SUMMER_START || dates.end > SUMMER_END)) {
-      return { status: "mismatch" as const, reason: "Published 2027 date range extends outside the available 21 May–1 July window" };
+      return { status: "mismatch" as const, reason: "Published 2027 date range extends outside the available 21 May–31 July window" };
     }
   }
   if (duration.weeks !== null && duration.weeks > 11) {
@@ -195,13 +223,13 @@ function summerFit(text: string, duration: ReturnType<typeof durationFrom>, date
 function collegeFit(text: string, hours: ReturnType<typeof hoursFrom>) {
   const fullTime = text.match(FULL_TIME_PATTERN);
   const fixedUs = text.match(FIXED_US_HOURS_PATTERN);
-  if (hours.max !== null && hours.max >= 35) return { status: "mismatch" as const, reason: `Published workload reaches ${hours.max} hours/week`, match: text.match(HOURS_PATTERN) };
+  if (hours.max !== null && hours.max >= 30) return { status: "mismatch" as const, reason: `Published workload reaches ${hours.max} hours/week`, match: text.match(HOURS_PATTERN) ?? text.match(DAILY_HOURS_PATTERN) };
   if (fullTime) return { status: "mismatch" as const, reason: "Posting explicitly requires full-time availability", match: fullTime };
   if (fixedUs) return { status: "mismatch" as const, reason: "Posting requires fixed US business-hour availability", match: fixedUs };
 
   const partTime = text.match(PART_TIME_PATTERN);
   const flexible = text.match(FLEXIBLE_PATTERN);
-  if (hours.max !== null && hours.max <= 20) return { status: "compatible" as const, reason: `Published workload is at most ${hours.max} hours/week`, match: text.match(HOURS_PATTERN) };
+  if (hours.max !== null && hours.max <= 20) return { status: "compatible" as const, reason: `Published workload is at most ${hours.max} hours/week`, match: text.match(HOURS_PATTERN) ?? text.match(DAILY_HOURS_PATTERN) };
   if (partTime && flexible) return { status: "compatible" as const, reason: "Posting explicitly says part-time with flexible scheduling", match: flexible };
   if (partTime) return { status: "unknown" as const, reason: "Part-time is published, but weekly hours or scheduling flexibility are still missing", match: partTime };
   if (flexible) return { status: "unknown" as const, reason: "Flexible scheduling is published, but the weekly workload is still missing", match: flexible };
@@ -285,6 +313,7 @@ function priorityFrom(input: {
   summer: Summer2027Fit;
   college: FitStatus;
   eligibility: FitStatus;
+  eligibilityReviewRequired: boolean;
   freshness: FreshnessFit;
 }) {
   const reasons: string[] = [];
@@ -299,13 +328,14 @@ function priorityFrom(input: {
   const timingUnknown = input.summer === "unknown" && input.college === "unknown";
   const evidenceStrong = input.quality.officialSnapshot && input.quality.registeredSource;
 
-  if (input.roleFit === "strong" && timingProven && evidenceStrong && input.freshness !== "aging") {
+  if (input.roleFit === "strong" && timingProven && evidenceStrong && input.freshness !== "aging" && !input.eligibilityReviewRequired) {
     return { priority: "A" as const, label: "Priority A", reasons: ["Core role lane", "Timing compatibility is supported by published evidence", "Official job evidence is bound"] };
   }
   if ((input.roleFit === "strong" || input.roleFit === "adjacent") && (timingProven || timingUnknown)) {
     const why = [input.roleFit === "strong" ? "Core role lane" : "Adjacent role lane"];
     if (timingUnknown) why.push("Important timing details remain unknown rather than mismatched");
     else why.push("At least one target timing lane is compatible");
+    if (input.eligibilityReviewRequired) why.push("Work-authorization or sponsorship eligibility still needs manual review");
     return { priority: "B" as const, label: "Priority B", reasons: why };
   }
   return { priority: "C" as const, label: "Priority C", reasons: [input.roleFit === "stretch" ? "Stretch role lane" : "Role/timing evidence is weaker or incomplete"] };
@@ -324,6 +354,15 @@ export function assessOpportunityFit(
   const college = collegeFit(text, hours);
   const role = roleFitFrom(job.title);
   const eligibility = eligibilityFrom(text, job.title);
+  const track = assessOpportunityTrack({
+    company: job.company,
+    title: job.title,
+    description: job.description,
+    location: job.location,
+    workplaceType: job.workplaceType,
+  });
+  const eligibilityReviewReasons = [...track.eligibilityFlags];
+  const eligibilityReviewRequired = eligibilityReviewReasons.length > 0;
   const freshness = freshnessFrom(job.postedAt, now);
   const timingLane = timingLaneFrom(text, summer.status, college.status);
   const priority = priorityFrom({
@@ -332,6 +371,7 @@ export function assessOpportunityFit(
     summer: summer.status,
     college: college.status,
     eligibility: eligibility.status,
+    eligibilityReviewRequired,
     freshness: freshness.status,
   });
 
@@ -340,11 +380,16 @@ export function assessOpportunityFit(
   if (hours.evidence) evidence.push({ code: "hours", label: "Published weekly hours", excerpt: hours.evidence });
   if (dates.evidence) evidence.push({ code: "date_window", label: "Published internship dates", excerpt: dates.evidence });
   if (college.match) evidence.push({ code: "college_schedule", label: "Published scheduling evidence", excerpt: excerptAround(text, college.match) ?? college.match[0] });
+  const workAuthorization = text.match(WORK_AUTH_REVIEW_PATTERN);
+  if (eligibilityReviewRequired && workAuthorization) {
+    evidence.push({ code: "work_authorization_review", label: "Work-authorization / sponsorship review", excerpt: excerptAround(text, workAuthorization) ?? workAuthorization[0] });
+  }
 
   const unknowns: string[] = [];
   if (summer.status === "unknown") unknowns.push("Summer 2027 dates/duration");
   if (college.status === "unknown") unknowns.push("Alongside-college hours/schedule");
   if (eligibility.status === "unknown") unknowns.push("Candidate eligibility");
+  if (eligibilityReviewRequired) unknowns.push("Work authorization / sponsorship eligibility");
   if (freshness.status === "unknown") unknowns.push("Posting date");
 
   return {
@@ -360,6 +405,8 @@ export function assessOpportunityFit(
     roleReason: role.reason,
     eligibility: eligibility.status,
     eligibilityReasons: eligibility.reasons,
+    eligibilityReviewRequired,
+    eligibilityReviewReasons,
     duration,
     hoursPerWeek: hours,
     dateWindow: { start: isoDay(dates.start), end: isoDay(dates.end), evidence: dates.evidence },
