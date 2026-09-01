@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { APPLICATION_OUTCOME_STATES, outcomeGuidance, type ApplicationOutcomeState } from "../../lib/scout/application-outcomes";
+import { buildOutcomeLearning } from "../../lib/scout/outcome-learning";
 import styles from "../applications/workspace.module.css";
 
-type Job = { company: string; title: string; canonicalUrl: string };
+type Job = { id: string; company: string; title: string; description: string; canonicalUrl: string };
 type Application = {
   id: string; jobId: string; status: string; artifactVersion: number;
   submittedAt: string | null; approvedAt: string | null; job?: Job | null;
@@ -24,15 +25,21 @@ function label(value: string) {
 
 export function OutcomesWorkspace() {
   const [applications, setApplications] = useState<Application[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/applications");
-    const payload = await response.json() as { applications?: Application[]; error?: string };
-    if (!response.ok) throw new Error(payload.error ?? "Unable to load outcomes");
-    setApplications((payload.applications ?? []).filter((item) => Boolean(item.submittedAt)));
+    const [applicationsResponse, jobsResponse] = await Promise.all([fetch("/api/applications"), fetch("/api/jobs")]);
+    const [applicationsPayload, jobsPayload] = await Promise.all([
+      applicationsResponse.json() as Promise<{ applications?: Application[]; error?: string }>,
+      jobsResponse.json() as Promise<{ jobs?: Job[]; error?: string }>,
+    ]);
+    if (!applicationsResponse.ok) throw new Error(applicationsPayload.error ?? "Unable to load outcomes");
+    if (!jobsResponse.ok) throw new Error(jobsPayload.error ?? "Unable to load jobs for outcome learning");
+    setApplications((applicationsPayload.applications ?? []).filter((item) => Boolean(item.submittedAt)));
+    setJobs(jobsPayload.jobs ?? []);
   }, []);
 
   useEffect(() => {
@@ -42,6 +49,9 @@ export function OutcomesWorkspace() {
 
   const rows = useMemo(() => applications.map((application) => ({ application, guidance: outcomeGuidance(application) }))
     .sort((a, b) => Number(b.guidance.followUpDue) - Number(a.guidance.followUpDue)), [applications]);
+  const learning = useMemo(() => buildOutcomeLearning(jobs, applications), [applications, jobs]);
+  const learnedFamilies = useMemo(() => learning.families.filter((family) => family.sampleSize > 0)
+    .sort((left, right) => Math.abs(right.adjustment) - Math.abs(left.adjustment) || right.sampleSize - left.sampleSize), [learning]);
 
   async function mutate(application: Application, body: Record<string, unknown>) {
     setBusy(application.id); setNotice(""); setError("");
@@ -66,7 +76,11 @@ export function OutcomesWorkspace() {
       <div className={styles.headerLinks}><Link href="/applications">Applications</Link><Link href="/command-center">Command Center</Link><Link href="/">Dashboard</Link></div>
     </header>
 
-    <section className={styles.queueLegend}><span><strong>Gmail boundary</strong> Scout can create approved Gmail drafts elsewhere, but its current runtime does not read Gmail threads. M16 never claims a recruiter replied unless you record it, and never sends follow-ups automatically.</span></section>
+    <section className={styles.queueLegend}><span><strong>Gmail boundary</strong> Scout can create approved Gmail drafts elsewhere, but its current runtime does not read Gmail threads. It never claims a recruiter replied unless you record it, and never sends follow-ups automatically.</span></section>
+    <section className={styles.queueLegend} aria-label="Outcome learning">
+      <span><strong>Outcome learning</strong> {learning.summary}</span>
+      {learnedFamilies.slice(0, 5).map((family) => <span key={family.familyId}><strong>{family.familyLabel}</strong> {family.sampleSize} recorded · {family.interviews} interview · {family.offers} offer · {family.rejections} rejected · soft nudge {family.adjustment > 0 ? `+${family.adjustment}` : family.adjustment}</span>)}
+    </section>
     {notice && <div className={styles.notice}>{notice}</div>}
     {error && <div className={`${styles.notice} ${styles.error}`}>{error}</div>}
 
