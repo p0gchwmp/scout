@@ -1,20 +1,30 @@
 import { rankPublishedContacts } from "../lib/scout/contact-intelligence.ts";
 import type { BraveSearchResult } from "../lib/scout/brave-search.ts";
+import {
+  OFFICIAL_CONTACT_CRAWL_SEEDS,
+  classifyOfficialContactSource,
+  isOfficialContactResearchLink,
+  type OfficialContactSourceType,
+} from "../lib/scout/contact-source-registry.ts";
 
 const DOMAIN_PATTERN = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}/gi;
 const OBFUSCATED_EMAIL_PATTERN = /\b([A-Z0-9._%+-]{2,80})\s*(?:\[at\]|\(at\)|\sat\s)\s*([A-Z0-9.-]{2,180})\s*(?:\[dot\]|\(dot\)|\sdot\s)\s*([A-Z]{2,63})\b/gi;
-const RELEVANT_LINK_PATTERN = /(?:career|job|join|contact|recruit|talent|people|team|about|campus|university|early[- ]?career|intern)/i;
 const RECRUITING_CONTEXT_PATTERN = /\b(recruit(?:er|ing|ment)?|talent|hiring|careers?|campus|university recruiting|early careers?|internships?|career fair|human resources?|\bhr\b)\b/i;
 const GENERIC_RECRUITING_OR_BUSINESS_LOCAL = /^(?:careers?|jobs?|recruit(?:er|ing|ment)?|talent(?:acquisition)?|hiring|hr|people(?:ops|team)?|internships?|campus|early[-_.]?careers?|contact|hello|info|office|team|general|enquir(?:y|ies)|inquir(?:y|ies))(?:[._+-][a-z0-9-]+)?$/i;
 const WRONG_PURPOSE_LOCAL = /^(?:press|media|pr|sales|support|billing|privacy|security|legal|investors?|fundraising|pitch|deals?|lp|procurement|vendor)(?:[._+-]|$)/i;
-const MAX_FIRST_PARTY_PAGES = 8;
+const MAX_FIRST_PARTY_PAGES = 12;
 const MAX_PAGE_BYTES = 750_000;
 const FETCH_TIMEOUT_MS = 8_000;
 const CONSUMER_EMAIL_HOSTS = new Set(["gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "hotmail.com", "outlook.com", "live.com", "icloud.com", "me.com", "proton.me", "protonmail.com", "aol.com"]);
 
 export const CONTACT_RESEARCH_CAPABILITIES = Object.freeze({
   officialCompanyPagesFirst: true,
+  registeredOfficialSourceTypes: true,
+  officialJobPostingPages: true,
+  officialTeamPages: true,
+  officialEventPages: true,
+  officialPressPages: true,
   broaderPublicRecruitingEvidence: false,
   thirdPartyPublicPageFetch: false,
   companyDomainBoundFirstParty: true,
@@ -37,7 +47,7 @@ export type PublishedContactResearchCandidate = {
   email: string;
   sourceUrl: string;
   excerpt: string;
-  sourceType: "official_careers" | "official_contact" | "official_company";
+  sourceType: OfficialContactSourceType;
   sourceContext?: ContactSourceContext;
 };
 
@@ -81,13 +91,6 @@ function decodeText(html: string) {
     .trim();
 }
 
-function sourceType(url: URL): PublishedContactResearchCandidate["sourceType"] {
-  const hostAndPath = `${url.hostname}${url.pathname}`;
-  if (/career|job|join|recruit|talent|campus|early[- ]?career|intern/i.test(hostAndPath)) return "official_careers";
-  if (/contact/i.test(hostAndPath)) return "official_contact";
-  return "official_company";
-}
-
 async function candidateId(email: string, sourceUrl: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${email}\n${sourceUrl}`));
   const short = Array.from(new Uint8Array(digest).slice(0, 12), (value) => value.toString(16).padStart(2, "0")).join("");
@@ -104,9 +107,7 @@ function excerptAround(text: string, email: string) {
 
 function extractEmails(text: string) {
   const found = new Set((text.match(EMAIL_PATTERN) ?? []).map((email) => email.toLowerCase().replace(/[.,;:!?]+$/, "")));
-  for (const match of text.matchAll(OBFUSCATED_EMAIL_PATTERN)) {
-    found.add(`${match[1]}@${match[2]}.${match[3]}`.toLowerCase());
-  }
+  for (const match of text.matchAll(OBFUSCATED_EMAIL_PATTERN)) found.add(`${match[1]}@${match[2]}.${match[3]}`.toLowerCase());
   return [...found];
 }
 
@@ -138,10 +139,10 @@ function extractOfficialLinks(html: string, base: URL, domain: string) {
   for (const match of html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
     try {
       const url = safeOfficialUrl(new URL(match[1], base).toString(), domain);
-      if (!RELEVANT_LINK_PATTERN.test(`${url.pathname}${url.search}`)) continue;
+      if (!isOfficialContactResearchLink(url)) continue;
       links.push(url);
     } catch {
-      // External, malformed, non-HTTPS and off-domain links are intentionally ignored in the first-party crawl.
+      // External, malformed, non-HTTPS and off-domain links are intentionally ignored.
     }
   }
   return links;
@@ -150,11 +151,7 @@ function extractOfficialLinks(html: string, base: URL, domain: string) {
 async function fetchTextPage(initial: URL, fetcher: FetchLike, officialDomain: string) {
   let current = initial;
   for (let redirect = 0; redirect <= 3; redirect += 1) {
-    const response = await fetcher(current, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { accept: "text/html,text/plain;q=0.9" },
-    });
+    const response = await fetcher(current, { redirect: "manual", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: { accept: "text/html,text/plain;q=0.9" } });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error("Official page redirect was missing a location");
@@ -185,7 +182,7 @@ export async function researchPublishedCompanyContacts(input: {
   const fetcher = input.fetcher ?? fetch;
   const queue: URL[] = [];
   if (input.careersUrl) queue.push(safeOfficialUrl(input.careersUrl, domain));
-  queue.push(...["/careers", "/jobs", "/contact", "/contact-us", "/team", "/people", "/about", "/"].map((path) => new URL(path, `https://${domain}`)));
+  queue.push(...OFFICIAL_CONTACT_CRAWL_SEEDS.map((path) => new URL(path, `https://${domain}`)));
   const visited = new Set<string>();
   const failures: Array<{ sourceUrl: string; reason: string }> = [];
   const candidates = new Map<string, PublishedContactResearchCandidate>();
@@ -193,11 +190,9 @@ export async function researchPublishedCompanyContacts(input: {
   while (queue.length && visited.size < MAX_FIRST_PARTY_PAGES) {
     const proposed = queue.shift()!;
     let safe: URL;
-    try { safe = safeOfficialUrl(proposed.toString(), domain); }
-    catch { continue; }
+    try { safe = safeOfficialUrl(proposed.toString(), domain); } catch { continue; }
     if (visited.has(safe.href)) continue;
     visited.add(safe.href);
-
     try {
       const page = await fetchTextPage(safe, fetcher, domain);
       const text = decodeText(page.html);
@@ -208,14 +203,7 @@ export async function researchPublishedCompanyContacts(input: {
         if (!firstPartyMailboxAllowed(email, clauseAroundEmail(text, email))) continue;
         const sourceUrl = page.url.href;
         const id = await candidateId(email, sourceUrl);
-        candidates.set(`${email}|${sourceUrl}`, {
-          id,
-          email,
-          sourceUrl,
-          excerpt,
-          sourceType: sourceType(page.url),
-          sourceContext: "first_party",
-        });
+        candidates.set(`${email}|${sourceUrl}`, { id, email, sourceUrl, excerpt, sourceType: classifyOfficialContactSource(page.url), sourceContext: "first_party" });
       }
       for (const link of extractOfficialLinks(page.html, page.url, domain)) {
         if (!visited.has(link.href) && queue.length + visited.size < MAX_FIRST_PARTY_PAGES * 3) queue.push(link);

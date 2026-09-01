@@ -43,9 +43,11 @@ test("LinkedIn clue accepts only normal profile URLs and never arbitrary hosts",
   assert.equal(validateLinkedInRecruiterClueUrl("javascript:alert(1)"), null);
 });
 
-test("v1 contact research stays bounded to first-party evidence and blocks broad/private scraping", async () => {
+test("contact research stays bounded to first-party evidence and blocks broad/private scraping", async () => {
   const source = await readFile(new URL("../agent/contact-research.ts", import.meta.url), "utf8");
-  assert.match(source, /MAX_FIRST_PARTY_PAGES = 8/);
+  const cap = source.match(/MAX_FIRST_PARTY_PAGES = (\d+)/)?.[1];
+  assert.ok(cap, "first-party page cap must remain explicit");
+  assert.ok(Number(cap) > 0 && Number(cap) <= 12, "first-party research must remain bounded to at most 12 pages");
   assert.match(source, /officialCompanyPagesFirst: true/);
   assert.match(source, /broaderPublicRecruitingEvidence: false/);
   assert.match(source, /thirdPartyPublicPageFetch: false/);
