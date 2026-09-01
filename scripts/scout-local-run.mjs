@@ -10,6 +10,7 @@ const wranglerDir = resolve(root, ".wrangler");
 const stateDir = resolve(wranglerDir, "state");
 const d1Dir = resolve(stateDir, "v3/d1/miniflare-D1DatabaseObject");
 const configPath = resolve(wranglerDir, "scout-local-bootstrap.jsonc");
+const wranglerCliPath = resolve(root, "node_modules", "wrangler", "bin", "wrangler.js");
 const databaseName = "site-creator-d1";
 const databaseId = "00000000-0000-4000-8000-000000000000";
 
@@ -61,7 +62,7 @@ export function buildLocalWranglerConfig() {
 
 export function buildMigrationArgs() {
   return [
-    "exec", "--", "wrangler", "d1", "migrations", "apply", databaseName,
+    "d1", "migrations", "apply", databaseName,
     "--local",
     "--persist-to", stateDir,
     "--config", configPath,
@@ -83,8 +84,10 @@ async function applyPendingLocalMigrations() {
   mkdirSync(wranglerDir, { recursive: true });
   await writeFile(configPath, `${JSON.stringify(buildLocalWranglerConfig(), null, 2)}\n`, "utf8");
 
-  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-  const result = spawnSync(npmCommand, buildMigrationArgs(), {
+  if (!existsSync(wranglerCliPath)) {
+    throw new Error("Scout local D1 migration bootstrap requires Wrangler; run npm ci first");
+  }
+  const result = spawnSync(process.execPath, [wranglerCliPath, ...buildMigrationArgs()], {
     cwd: root,
     env: {
       ...process.env,
@@ -113,6 +116,7 @@ function selfTest() {
   if (config.d1_databases?.[0]?.migrations_dir !== "../drizzle") throw new Error("Local migration directory self-test failed");
   if (!args.includes("--local") || args.includes("--remote")) throw new Error("Local-only migration arguments self-test failed");
   if (!args.includes("--persist-to")) throw new Error("Local persistence self-test failed");
+  if (!wranglerCliPath.endsWith(resolve("node_modules", "wrangler", "bin", "wrangler.js"))) throw new Error("Wrangler CLI path self-test failed");
   console.log("Scout local bootstrap self-test: OK (local-only D1 migration plan)." );
 }
 
