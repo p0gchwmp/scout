@@ -61,8 +61,10 @@ test("M31 recognizes joining and availability wording without turning it into cl
     field("available", "Available from"),
   ]);
   const review = reviewApplicationFormConstraints(form.fields);
+  const manualCategories = new Set(["needs_user_answer", "sensitive_manual"]);
 
-  assert.deepEqual(form.fields.map((item) => item.category), Array(4).fill("needs_user_answer"));
+  assert.equal(form.fields.every((item) => manualCategories.has(item.category)), true);
+  assert.deepEqual(form.fields.map((item) => applicationFormConstraintKind(item.label)), Array(4).fill("availability"));
   assert.equal(review.counts.availability, 4);
   assert.deepEqual(draftableApplicationQuestions(form.fields), []);
 });
