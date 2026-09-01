@@ -14,6 +14,20 @@ function httpsUrl(value: unknown, field: string) {
   return url.href;
 }
 
+function workableCanonicalJobUrl(raw: Record<string, unknown>, externalId: string) {
+  for (const candidate of [raw.shortlink, raw.application_url, raw.url]) {
+    if (typeof candidate !== "string" || !candidate.trim()) continue;
+    let url: URL;
+    try { url = new URL(candidate); } catch { continue; }
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash || url.hostname.toLowerCase() !== "apply.workable.com") continue;
+    const parts = url.pathname.split("/").filter(Boolean);
+    const currentShortlink = parts.length === 2 && parts[0] === "j" && parts[1] === externalId;
+    const legacySlugged = parts.length === 3 && parts[1] === "j" && parts[2] === externalId;
+    if (currentShortlink || legacySlugged) return url.href;
+  }
+  throw new Error("Workable discovery did not return a trusted exact job-page URL for its shortcode");
+}
+
 function htmlText(value: unknown) {
   return String(value ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -117,7 +131,7 @@ export class WorkablePublicAdapter implements SourceAdapter {
       const raw = rawValue as Record<string, unknown>;
       const externalId = String(raw.shortcode ?? raw.code ?? "").trim();
       if (!externalId) return [];
-      const canonicalUrl = httpsUrl(raw.application_url ?? raw.shortlink, "Workable job URL");
+      const canonicalUrl = workableCanonicalJobUrl(raw, externalId);
       const location = [raw.city, raw.state, raw.country].map((value) => String(value ?? "").trim()).filter(Boolean).join(", ");
       return [{
         source: this.source,
