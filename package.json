@@ -6,7 +6,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "node scripts/scout-dev.mjs",
+    "dev": "node scripts/scout-local-run.mjs",
+    "dev:demo": "node scripts/scout-local-run.mjs --demo",
+    "dev:raw": "node scripts/scout-dev.mjs",
     "build": "vinext build",
     "start": "vinext start",
     "agent:start": "node --experimental-strip-types agent/server.ts",
@@ -16,7 +18,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "check:clean": "node scripts/assert-clean-worktree.mjs",
-    "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && python tests/personio-migration-smoke.py && python tests/company-outreach-migration-smoke.py && npm run db:generate && git diff --exit-code && npm run check:clean && npm run build && git diff --check && npm run check:clean && git status --short --branch && git diff --stat",
+    "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && python tests/personio-migration-smoke.py && python tests/company-outreach-migration-smoke.py && npm run db:generate && git diff --exit-code && npm run check:clean && node scripts/scout-local-run.mjs --self-test && npm run build && git diff --check && npm run check:clean && git status --short --branch && git diff --stat",
     "scout:ai:status": "node --experimental-strip-types scripts/scout-ai-status.mjs",
     "scout:gmail:oauth": "node scripts/scout-gmail-oauth.mjs",
     "scout:profile:repair": "node scripts/scout-profile-repair.mjs",
