@@ -228,7 +228,8 @@ await new Promise((resolve, reject) => {
 console.log(`Scout discovery bridge: http://${DISCOVERY_HOST}:${DISCOVERY_PORT}/discover`);
 
 const vinextCli = fileURLToPath(new URL("../node_modules/vinext/dist/cli.js", import.meta.url));
-const vinextChild = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: "inherit" });
+let vinextChild = null;
+let vinextRestartCount = 0;
 let stopping = false;
 
 function stopChild(child) {
@@ -244,22 +245,41 @@ function shutdown(code) {
   setTimeout(() => process.exit(code), 500).unref();
 }
 
+function launchVinext() {
+  const child = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: "inherit" });
+  vinextChild = child;
+
+  child.on("error", (error) => {
+    if (child !== vinextChild || stopping) return;
+    console.error("Unable to start Vinext:", error.message);
+    shutdown(1);
+  });
+
+  child.on("exit", (code, signal) => {
+    if (child !== vinextChild || stopping) return;
+    const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
+    if (!signal && code === 0 && vinextRestartCount < 1) {
+      vinextRestartCount += 1;
+      vinextChild = null;
+      console.warn(`Scout web runtime exited unexpectedly (${reason}); restarting once.`);
+      setTimeout(() => {
+        if (!stopping) launchVinext();
+      }, 250);
+      return;
+    }
+    console.error(`Scout web runtime stopped unexpectedly (${reason}).`);
+    shutdown(signal === "SIGINT" ? 130 : (code ?? 1));
+  });
+}
+
 process.on("SIGINT", () => shutdown(130));
 process.on("SIGTERM", () => shutdown(143));
 
-vinextChild.on("error", (error) => {
-  console.error("Unable to start Vinext:", error.message);
-  shutdown(1);
-});
-vinextChild.on("exit", (code, signal) => {
-  if (stopping) return;
-  stopChild(agentChild);
-  bridge.close(() => process.exit(signal === "SIGINT" ? 130 : (code ?? 1)));
-});
+launchVinext();
 
 if (agentChild) {
   agentChild.on("exit", (code, signal) => {
-    if (stopping || vinextChild.exitCode !== null) return;
+    if (stopping || (vinextChild && vinextChild.exitCode !== null)) return;
     console.error(`Scout local agent stopped unexpectedly (${signal ?? code ?? "unknown"}).`);
     shutdown(code ?? 1);
   });
