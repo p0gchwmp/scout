@@ -20,3 +20,12 @@ test("local dev runtime handles unexpected Vinext exits explicitly and boundedly
 
   assert.doesNotMatch(source, /while\s*\([^)]*vinextRestart/i, "Vinext restarts must stay bounded");
 });
+
+test("outer local launcher reports the exact child exit reason before returning to the shell", async () => {
+  const source = await readFile(new URL("../scripts/scout-local-run.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /const reason = signal \? `signal \$\{signal\}` : `code \$\{code \?\? "unknown"\}`/);
+  assert.match(source, /Scout local development runtime exited \(\$\{reason\}\)\./);
+  assert.match(source, /if \(signal\) process\.kill\(process\.pid, signal\)/);
+  assert.match(source, /else process\.exit\(code \?\? 1\)/);
+});
