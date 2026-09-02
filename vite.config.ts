@@ -7,6 +7,24 @@ import { buildLocalDevWorkerBindings } from "./lib/scout/local-dev-auth";
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
+// Vinext's App Router client shims are already valid ESM and must keep their
+// original module identity for @vitejs/plugin-rsc. Letting Vite pre-bundle
+// them can produce hashed .vite/deps chunks that drift from the RSC client
+// reference map after a dev restart, causing failed dynamic imports such as
+// navigation-*.js. Keep the list explicit rather than disabling dependency
+// optimization globally.
+const VINEXT_RSC_OPTIMIZE_EXCLUDE = [
+  "vinext/shims/layout-segment-context",
+  "vinext/shims/slot",
+  "vinext/shims/link",
+  "vinext/shims/navigation",
+  "vinext/shims/form",
+  "vinext/shims/script",
+  "vinext/shims/error-boundary",
+  "vinext/shims/client-hook-error",
+  "vinext/dist/shims/internal/app-prefetch-fetch-queue.js",
+];
+
 const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
@@ -64,6 +82,21 @@ export default defineConfig(async ({ command, mode }) => {
       ...(isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
+    },
+    optimizeDeps: {
+      exclude: VINEXT_RSC_OPTIMIZE_EXCLUDE,
+    },
+    environments: {
+      rsc: {
+        optimizeDeps: {
+          exclude: VINEXT_RSC_OPTIMIZE_EXCLUDE,
+        },
+      },
+      ssr: {
+        optimizeDeps: {
+          exclude: VINEXT_RSC_OPTIMIZE_EXCLUDE,
+        },
+      },
     },
     plugins: [
       vinext(),
