@@ -14,6 +14,8 @@
     "ready": "node scripts/scout-ready.mjs",
     "hosting:doctor": "node scripts/scout-hosting-doctor.mjs",
     "build": "vinext build",
+    "build:node": "node scripts/scout-node-build.mjs",
+    "heroku-postbuild": "npm run build:node",
     "start": "vinext start",
     "agent:start": "node --experimental-strip-types agent/server.ts",
     "agent:dev": "node --experimental-strip-types agent/server.ts",
