@@ -26,6 +26,21 @@ const VINEXT_RSC_OPTIMIZE_EXCLUDE = [
   "vinext/dist/shims/internal/app-prefetch-fetch-queue.js",
 ];
 
+// Vite 8 supports disabling automatic dependency discovery while still
+// explicitly optimizing CommonJS-ish browser essentials. Scout only needs this
+// escape hatch for the Windows client environment: the RSC/SSR optimizers start
+// successfully there, while the client scanner can terminate the Node process
+// before it even begins bundling. Keep the list intentionally small so this does
+// not become a second dependency graph that drifts from package.json.
+const WINDOWS_CLIENT_OPTIMIZE_INCLUDE = [
+  "react",
+  "react-dom",
+  "react-dom/client",
+  "react/jsx-runtime",
+  "react/jsx-dev-runtime",
+];
+
+const isWindows = process.platform === "win32";
 const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
@@ -86,6 +101,12 @@ export default defineConfig(async ({ command, mode }) => {
     },
     optimizeDeps: {
       exclude: VINEXT_RSC_OPTIMIZE_EXCLUDE,
+      ...(isWindows
+        ? {
+            noDiscovery: true,
+            include: WINDOWS_CLIENT_OPTIMIZE_INCLUDE,
+          }
+        : {}),
     },
     environments: {
       rsc: {
