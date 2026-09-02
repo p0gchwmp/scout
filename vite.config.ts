@@ -7,13 +7,14 @@ import { buildLocalDevWorkerBindings } from "./lib/scout/local-dev-auth";
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
-// Vinext's App Router client shims are already valid ESM and must keep their
-// original module identity for @vitejs/plugin-rsc. Letting Vite pre-bundle
-// them can produce hashed .vite/deps chunks that drift from the RSC client
-// reference map after a dev restart, causing failed dynamic imports such as
-// navigation-*.js. Keep the list explicit rather than disabling dependency
-// optimization globally.
+// Vinext's App Router client shims and virtual-module graph must keep their
+// original module identity for @vitejs/plugin-rsc. On Windows with npm-installed
+// Vinext, optimizing only part of the package can still pull Vinext internals
+// into hashed .vite/deps chunks and terminate the dev server after optimizer
+// bundling. Exclude the whole Vinext package plus the explicit shim paths in all
+// dev environments. Dependency optimization remains enabled for everything else.
 const VINEXT_RSC_OPTIMIZE_EXCLUDE = [
+  "vinext",
   "vinext/shims/layout-segment-context",
   "vinext/shims/slot",
   "vinext/shims/link",
