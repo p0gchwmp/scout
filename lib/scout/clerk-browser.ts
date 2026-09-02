@@ -3,6 +3,9 @@ type ClerkSignInProps = {
   forceRedirectUrl?: string;
   signUpFallbackRedirectUrl?: string;
   signUpForceRedirectUrl?: string;
+  withSignUp?: boolean;
+  routing?: "hash" | "path";
+  path?: string;
 };
 
 type ClerkBrowser = {
