@@ -1,1 +1,1 @@
-web: npm start
+web: node scripts/scout-heroku-run.mjs
