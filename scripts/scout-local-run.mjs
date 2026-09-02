@@ -150,6 +150,8 @@ child.on("error", (error) => {
   process.exitCode = 1;
 });
 child.on("exit", (code, signal) => {
+  const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
+  console.error(`Scout local development runtime exited (${reason}).`);
   if (signal) process.kill(process.pid, signal);
   else process.exit(code ?? 1);
 });
