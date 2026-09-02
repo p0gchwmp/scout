@@ -66,7 +66,6 @@ export async function proxy(request: NextRequest) {
   headers.delete("oai-authenticated-user-full-name-encoding");
   headers.delete("x-scout-owner-user-id");
   headers.set("oai-authenticated-user-id", session.userId);
-  headers.set("oai-authenticated-user-email", `${session.userId}@clerk.scout.invalid`);
   headers.set("x-scout-owner-user-id", ownerId);
   headers.set("x-scout-auth-provider", "clerk");
 
