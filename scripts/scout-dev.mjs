@@ -228,9 +228,31 @@ await new Promise((resolve, reject) => {
 console.log(`Scout discovery bridge: http://${DISCOVERY_HOST}:${DISCOVERY_PORT}/discover`);
 
 const vinextCli = fileURLToPath(new URL("../node_modules/vinext/dist/cli.js", import.meta.url));
+const VINEXT_OUTPUT_TAIL_BYTES = 16 * 1024;
 let vinextChild = null;
 let vinextRestartCount = 0;
+let vinextOutputTail = Buffer.alloc(0);
 let stopping = false;
+
+function appendVinextOutput(chunk) {
+  const next = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+  vinextOutputTail = Buffer.concat([vinextOutputTail, next]);
+  if (vinextOutputTail.length > VINEXT_OUTPUT_TAIL_BYTES) {
+    vinextOutputTail = vinextOutputTail.subarray(vinextOutputTail.length - VINEXT_OUTPUT_TAIL_BYTES);
+  }
+}
+
+function teeVinextOutput(stream, target) {
+  stream?.on("data", (chunk) => {
+    appendVinextOutput(chunk);
+    target.write(chunk);
+  });
+}
+
+function printVinextOutputTail() {
+  if (!vinextOutputTail.length) return;
+  process.stderr.write(`\nVinext output tail before exit:\n${vinextOutputTail.toString("utf8")}\n`);
+}
 
 function stopChild(child) {
   if (child && child.exitCode === null && !child.killed) child.kill();
@@ -246,12 +268,16 @@ function shutdown(code) {
 }
 
 function launchVinext() {
-  const child = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: "inherit" });
+  vinextOutputTail = Buffer.alloc(0);
+  const child = spawn(process.execPath, [vinextCli, "dev"], { env, stdio: ["inherit", "pipe", "pipe"] });
   vinextChild = child;
+  teeVinextOutput(child.stdout, process.stdout);
+  teeVinextOutput(child.stderr, process.stderr);
 
   child.on("error", (error) => {
     if (child !== vinextChild || stopping) return;
     console.error("Unable to start Vinext:", error.message);
+    printVinextOutputTail();
     shutdown(1);
   });
 
@@ -268,6 +294,7 @@ function launchVinext() {
       return;
     }
     console.error(`Scout web runtime stopped unexpectedly (${reason}).`);
+    printVinextOutputTail();
     shutdown(signal === "SIGINT" ? 130 : (code ?? 1));
   });
 }

@@ -11,5 +11,12 @@ test("local dev runtime handles unexpected Vinext exits explicitly and boundedly
   assert.match(source, /Scout web runtime stopped unexpectedly/);
   assert.match(source, /signal === "SIGINT" \? 130 : \(code \?\? 1\)/);
 
+  assert.match(source, /const VINEXT_OUTPUT_TAIL_BYTES = 16 \* 1024/);
+  assert.match(source, /stdio: \["inherit", "pipe", "pipe"\]/);
+  assert.match(source, /teeVinextOutput\(child\.stdout, process\.stdout\)/);
+  assert.match(source, /teeVinextOutput\(child\.stderr, process\.stderr\)/);
+  assert.match(source, /Vinext output tail before exit/);
+  assert.match(source, /vinextOutputTail\.length > VINEXT_OUTPUT_TAIL_BYTES/);
+
   assert.doesNotMatch(source, /while\s*\([^)]*vinextRestart/i, "Vinext restarts must stay bounded");
 });
