@@ -34,7 +34,6 @@ const isNodeTarget = process.env.SCOUT_RUNTIME_TARGET?.trim().toLowerCase() === 
 const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const nodeCloudflareEnvShim = fileURLToPath(new URL("./lib/scout/node-cloudflare-env.ts", import.meta.url));
-const nodeAgentRuntime = fileURLToPath(new URL("./lib/scout/node-agent-runtime.ts", import.meta.url));
 
 export default defineConfig(async ({ command, mode }) => {
   process.env.WRANGLER_WRITE_LOGS ??= "false";
@@ -77,13 +76,9 @@ export default defineConfig(async ({ command, mode }) => {
     return {
       ...common,
       resolve: {
-        alias: [
-          { find: "cloudflare:workers", replacement: nodeCloudflareEnvShim },
-          {
-            find: /(?:^|\/)lib\/scout\/agent-runtime(?:\.ts)?$/,
-            replacement: nodeAgentRuntime,
-          },
-        ],
+        alias: {
+          "cloudflare:workers": nodeCloudflareEnvShim,
+        },
       },
       plugins: [vinext()],
     };
