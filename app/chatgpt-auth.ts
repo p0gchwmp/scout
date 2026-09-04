@@ -16,15 +16,21 @@ const USER_FULL_NAME_ENCODING_HEADER =
 const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
+const CLERK_SIGN_IN_PATH = "/sign-in";
+const CLERK_SIGN_OUT_PATH = "/sign-out";
 const CALLBACK_PATH = "/callback";
 const SCOUT_OWNER_USER_ID_HEADER = "x-scout-owner-user-id";
+
+function clerkHostedAuth() {
+  return process.env.SCOUT_AUTH_PROVIDER?.trim().toLowerCase() === "clerk";
+}
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const userId = requestHeaders.get(USER_ID_HEADER);
-  const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!userId || !email) return null;
+  if (!userId) return null;
 
+  const email = requestHeaders.get(USER_EMAIL_HEADER) ?? "";
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
   const fullName =
     encodedFullName &&
@@ -34,7 +40,7 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
 
   return {
     userId,
-    displayName: fullName ?? email,
+    displayName: fullName ?? (email || userId),
     email,
     fullName,
   };
@@ -55,12 +61,14 @@ export async function requireChatGPTUser(
 
 export function chatGPTSignInPath(returnTo: string): string {
   const safeReturnTo = safeRelativeReturnPath(returnTo);
-  return `${SIGN_IN_PATH}?return_to=${encodeURIComponent(safeReturnTo)}`;
+  const path = clerkHostedAuth() ? CLERK_SIGN_IN_PATH : SIGN_IN_PATH;
+  return `${path}?return_to=${encodeURIComponent(safeReturnTo)}`;
 }
 
 export function chatGPTSignOutPath(returnTo = "/"): string {
   const safeReturnTo = safeRelativeReturnPath(returnTo);
-  return `${SIGN_OUT_PATH}?return_to=${encodeURIComponent(safeReturnTo)}`;
+  const path = clerkHostedAuth() ? CLERK_SIGN_OUT_PATH : SIGN_OUT_PATH;
+  return `${path}?return_to=${encodeURIComponent(safeReturnTo)}`;
 }
 
 function safeRelativeReturnPath(value: string): string {
@@ -82,6 +90,8 @@ function isReservedAuthPath(pathname: string): boolean {
   return (
     pathname === SIGN_IN_PATH ||
     pathname === SIGN_OUT_PATH ||
+    pathname === CLERK_SIGN_IN_PATH ||
+    pathname === CLERK_SIGN_OUT_PATH ||
     pathname === CALLBACK_PATH
   );
 }
