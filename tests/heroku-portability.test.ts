@@ -16,24 +16,24 @@ test("Heroku build uses the Node target and an explicit supervised web process",
   ]);
   assert.match(packageJson, /"build:node": "node scripts\/scout-node-build\.mjs"/);
   assert.match(packageJson, /"heroku-postbuild": "npm run build:node"/);
-  assert.equal(procfile.trim(), "web: node scripts/scout-heroku-run.mjs");
+  assert.match(procfile, /^release: node scripts\/scout-heroku-migrate\.mjs$/m);
+  assert.match(procfile, /^web: node scripts\/scout-heroku-run\.mjs$/m);
   assert.match(buildScript, /SCOUT_RUNTIME_TARGET: "node"/);
   assert.match(vite, /isNodeTarget/);
-  assert.match(vite, /"cloudflare:workers"/);
-  assert.match(vite, /nodeAgentRuntime/);
+  assert.match(vite, /"cloudflare:workers": nodeCloudflareEnvShim/);
   assert.match(launcher, /SCOUT_AGENT_ALLOW_LOCAL_RUNTIME: "1"/);
   assert.match(launcher, /SCOUT_AGENT_HOST: LOOPBACK/);
   assert.match(launcher, /randomBytes\(32\)\.toString\("hex"\)/);
   assert.match(launcher, /delete runtimeEnv\.SCOUT_AGENT_ALLOW_LOOPBACK_DEV/);
 });
 
-test("Node agent adapter permits only explicit 127.0.0.1 service origins", async () => {
-  const adapter = await source("lib/scout/node-agent-runtime.ts");
-  assert.match(adapter, /url\.hostname === "127\.0\.0\.1"/);
-  assert.match(adapter, /url\.protocol === "http:"/);
-  assert.match(adapter, /SCOUT_AGENT_ALLOW_LOCAL_RUNTIME/);
-  assert.match(adapter, /allowLoopbackDev: allowPrivateNodeAgent/);
-  assert.doesNotMatch(adapter, /hostname === "localhost"/);
+test("shared agent runtime permits hosted loopback only with explicit exact 127.0.0.1 binding", async () => {
+  const runtime = await source("lib/scout/agent-runtime.ts");
+  assert.match(runtime, /url\.hostname === "127\.0\.0\.1"/);
+  assert.match(runtime, /url\.protocol === "http:"/);
+  assert.match(runtime, /SCOUT_AGENT_ALLOW_LOCAL_RUNTIME/);
+  assert.match(runtime, /allowLoopbackDev: allowLoopbackDev \|\| allowLocalRuntime/);
+  assert.doesNotMatch(runtime, /hostname === "localhost"/);
 });
 
 test("Clerk proxy rebuilds owner identity only after verified session", async () => {
