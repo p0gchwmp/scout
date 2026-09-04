@@ -74,9 +74,9 @@ export async function proxy(request: NextRequest) {
 
 export default proxy;
 
+// Keep the matcher syntax deliberately simple for Vinext's middleware parser.
+// The proxy may be invoked for non-Scout/static paths, but ownerProtected()
+// remains the authorization boundary and immediately passes those requests on.
 export const config = {
-  matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    "/(api)(.*)",
-  ],
+  matcher: ["/:path*"],
 };
