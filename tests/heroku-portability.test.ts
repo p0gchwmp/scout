@@ -47,6 +47,14 @@ test("Clerk proxy rebuilds owner identity only after verified session", async ()
   assert.doesNotMatch(proxy, /SCOUT_LOCAL_DEV_AUTH/);
 });
 
+test("Clerk proxy uses a Vinext-safe broad matcher while ownerProtected remains the auth boundary", async () => {
+  const proxy = await source("proxy.ts");
+  assert.match(proxy, /matcher:\s*\["\/:path\*"\]/);
+  assert.match(proxy, /if \(!ownerProtected\(request\.nextUrl\.pathname\)\) return NextResponse\.next\(\)/);
+  assert.doesNotMatch(proxy, /\(\?!_next/);
+  assert.doesNotMatch(proxy, /webmanifest\)\.\*\)/);
+});
+
 test("hosted sign-in is owner-oriented and does not expose a Clerk secret", async () => {
   const [signIn, page, auth] = await Promise.all([
     source("app/sign-in/[[...sign-in]]/sign-in-client.tsx"),
