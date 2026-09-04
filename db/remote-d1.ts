@@ -57,11 +57,15 @@ function queryBody(spec: QuerySpec) {
 }
 
 class RemoteD1PreparedStatement {
-  constructor(
-    private readonly database: RemoteD1Database,
-    readonly sql: string,
-    readonly params: unknown[] = [],
-  ) {}
+  private readonly database: RemoteD1Database;
+  readonly sql: string;
+  readonly params: unknown[];
+
+  constructor(database: RemoteD1Database, sql: string, params: unknown[] = []) {
+    this.database = database;
+    this.sql = sql;
+    this.params = params;
+  }
 
   bind(...values: unknown[]) {
     return new RemoteD1PreparedStatement(this.database, this.sql, values);
@@ -95,7 +99,11 @@ class RemoteD1PreparedStatement {
 }
 
 export class RemoteD1Database {
-  constructor(private readonly config: RemoteD1Config) {}
+  private readonly config: RemoteD1Config;
+
+  constructor(config: RemoteD1Config) {
+    this.config = config;
+  }
 
   prepare(sql: string) {
     return new RemoteD1PreparedStatement(this, sql);
