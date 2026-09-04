@@ -1,2 +1,2 @@
-release: node scripts/scout-heroku-migrate.mjs
+release: node --experimental-strip-types scripts/scout-heroku-migrate.mjs
 web: node scripts/scout-heroku-run.mjs
