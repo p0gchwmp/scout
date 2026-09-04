@@ -16,7 +16,7 @@ test("Heroku build uses the Node target and an explicit supervised web process",
   ]);
   assert.match(packageJson, /"build:node": "node scripts\/scout-node-build\.mjs"/);
   assert.match(packageJson, /"heroku-postbuild": "npm run build:node"/);
-  assert.match(procfile, /^release: node scripts\/scout-heroku-migrate\.mjs$/m);
+  assert.match(procfile, /^release: node --experimental-strip-types scripts\/scout-heroku-migrate\.mjs$/m);
   assert.match(procfile, /^web: node scripts\/scout-heroku-run\.mjs$/m);
   assert.match(buildScript, /SCOUT_RUNTIME_TARGET: "node"/);
   assert.match(vite, /isNodeTarget/);
