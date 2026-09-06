@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
+import { ClerkSessionKeeper } from "./clerk-session-keeper";
 import "./globals.css";
 import "./dashboard-ui.css";
 
@@ -23,9 +24,17 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const clerkHosted = process.env.SCOUT_AUTH_PROVIDER?.trim().toLowerCase() === "clerk";
+  const clerkPublishableKey = clerkHosted
+    ? process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? ""
+    : "";
+
   return (
     <html lang="en">
-      <body className={`${geist.variable} ${mono.variable}`}>{children}</body>
+      <body className={`${geist.variable} ${mono.variable}`}>
+        {clerkPublishableKey ? <ClerkSessionKeeper publishableKey={clerkPublishableKey} /> : null}
+        {children}
+      </body>
     </html>
   );
 }

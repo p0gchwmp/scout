@@ -67,6 +67,21 @@ test("hosted sign-in is owner-oriented and does not expose a Clerk secret", asyn
   assert.doesNotMatch(`${signIn}\n${page}\n${auth}`, /CLERK_SECRET_KEY/);
 });
 
+test("hosted ClerkJS stays mounted across Scout navigation so short-lived session cookies keep refreshing", async () => {
+  const [layout, keeper, browser] = await Promise.all([
+    source("app/layout.tsx"),
+    source("app/clerk-session-keeper.tsx"),
+    source("lib/scout/clerk-browser.ts"),
+  ]);
+  assert.match(layout, /SCOUT_AUTH_PROVIDER/);
+  assert.match(layout, /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY/);
+  assert.match(layout, /<ClerkSessionKeeper publishableKey=\{clerkPublishableKey\} \/>/);
+  assert.match(keeper, /loadClerkBrowser\(publishableKey\)/);
+  assert.match(browser, /await current\.Clerk\.load/);
+  assert.doesNotMatch(`${layout}\n${keeper}`, /CLERK_SECRET_KEY/);
+  assert.doesNotMatch(keeper, /SCOUT_OWNER_USER_ID/);
+});
+
 test("portable runtime keeps send and application submission outside deployment config", async () => {
   const [proxy, procfile, buildScript, launcher] = await Promise.all([
     source("proxy.ts"),
