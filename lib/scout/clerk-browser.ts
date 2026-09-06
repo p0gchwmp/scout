@@ -10,6 +10,9 @@ type ClerkSignInProps = {
 
 type ClerkBrowser = {
   isSignedIn?: boolean;
+  session?: {
+    getToken(options?: { skipCache?: boolean }): Promise<string | null>;
+  } | null;
   load(options?: { ui?: { ClerkUI?: unknown }; signInUrl?: string }): Promise<void>;
   mountSignIn(node: HTMLDivElement, props?: ClerkSignInProps): void;
   unmountSignIn?(node: HTMLDivElement): void;
