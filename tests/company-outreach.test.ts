@@ -132,6 +132,18 @@ test("company-first workspace is owner-only and autopilot is reachable from the 
   assert.match(root, /Company Outreach/);
 });
 
+test("review autopilot reports non-JSON responses without leaking raw server bodies", async () => {
+  const autopilotPanel = await readFile(new URL("../app/review/autopilot-panel.tsx", import.meta.url), "utf8");
+  assert.match(autopilotPanel, /headers\.set\("accept", "application\/json"\)/);
+  assert.match(autopilotPanel, /response\.text\(\)/);
+  assert.match(autopilotPanel, /content-type/);
+  assert.match(autopilotPanel, /Promise\.allSettled/);
+  assert.match(autopilotPanel, /returned invalid JSON/);
+  assert.match(autopilotPanel, /returned HTTP \$\{response\.status\} without JSON/);
+  assert.doesNotMatch(autopilotPanel, /response\.json\(\)/);
+  assert.doesNotMatch(autopilotPanel, /throw new Error\(text\)/);
+});
+
 test("company-first migrations preserve evidence boundaries and add autopilot provenance", async () => {
   const baseMigration = await readFile(new URL("../drizzle/0011_company_outreach_targets.sql", import.meta.url), "utf8");
   const autopilotMigration = await readFile(new URL("../drizzle/0012_company_outreach_autopilot.sql", import.meta.url), "utf8");
