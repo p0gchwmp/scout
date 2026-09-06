@@ -39,9 +39,15 @@ test("cloud agent control-plane routes require owner auth and same-origin mutati
   }
 });
 
-test("cloud discovery persists leads without caller-supplied fetch targets", async () => {
+test("cloud discovery persists leads without caller-supplied fetch targets and stays inside the hosted request budget", async () => {
   const route = await readFile(new URL("../app/api/agent/discover/route.ts", import.meta.url), "utf8");
-  assert.match(route, /client\.discoverInternships\(\)/);
+  assert.match(route, /const DISCOVERY_TIMEOUT_MS = 15_000/);
+  assert.match(route, /const runBudget = createRunBudget\(\)/);
+  assert.match(route, /client\.discoverInternships\(\{ timeoutMs: discoveryTimeoutMs \}\)/);
+  assert.match(route, /runBudget\.canSpend\(DB_STEP_RESERVE_MS\)/);
+  assert.match(route, /persistenceDeferred/);
+  assert.match(route, /db\.select\(\{ canonicalUrl: jobs\.canonicalUrl \}\)\.from\(jobs\)/);
+  assert.doesNotMatch(route, /where\(eq\(jobs\.canonicalUrl, lead\.canonicalUrl\)\)/);
   assert.match(route, /lead:agent:\$\{lead\.provider\}/);
   assert.doesNotMatch(route, /request\.json\(\)/);
   assert.match(route, /Official immutable posting snapshot required/);
