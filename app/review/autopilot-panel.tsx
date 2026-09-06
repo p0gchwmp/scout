@@ -36,6 +36,39 @@ type Draft = {
   revisions: Revision[];
 };
 
+type ErrorPayload = { error?: string };
+
+async function requestJson<T extends ErrorPayload>(endpoint: string, init: RequestInit | undefined, failureLabel: string): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("accept", "application/json");
+  const response = await fetch(endpoint, { ...init, headers });
+  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  const text = await response.text();
+
+  if (!contentType.includes("json")) {
+    throw new Error(`${failureLabel}: ${endpoint} returned HTTP ${response.status} without JSON`);
+  }
+  if (!text.trim()) {
+    throw new Error(`${failureLabel}: ${endpoint} returned HTTP ${response.status} with an empty JSON response`);
+  }
+
+  let payload: T;
+  try {
+    payload = JSON.parse(text) as T;
+  } catch {
+    throw new Error(`${failureLabel}: ${endpoint} returned invalid JSON (HTTP ${response.status})`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`${failureLabel}: ${payload.error ?? `HTTP ${response.status}`} (${endpoint}, HTTP ${response.status})`);
+  }
+  return payload;
+}
+
+function failureMessage(result: PromiseRejectedResult) {
+  return result.reason instanceof Error ? result.reason.message : "Scout outreach data request failed";
+}
+
 export function AutopilotPanel() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -45,20 +78,26 @@ export function AutopilotPanel() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const [targetsResponse, contactsResponse, draftsResponse] = await Promise.all([
-      fetch("/api/company-outreach"),
-      fetch("/api/company-outreach/contacts"),
-      fetch("/api/company-outreach/drafts"),
+    const [targetsResult, contactsResult, draftsResult] = await Promise.allSettled([
+      requestJson<{ targets?: Target[]; error?: string }>("/api/company-outreach", undefined, "Unable to load Scout outreach targets"),
+      requestJson<{ contacts?: Contact[]; error?: string }>("/api/company-outreach/contacts", undefined, "Unable to load Scout outreach contacts"),
+      requestJson<{ drafts?: Draft[]; error?: string }>("/api/company-outreach/drafts", undefined, "Unable to load Scout outreach drafts"),
     ]);
-    const targetsPayload = await targetsResponse.json() as { targets?: Target[]; error?: string };
-    const contactsPayload = await contactsResponse.json() as { contacts?: Contact[]; error?: string };
-    const draftsPayload = await draftsResponse.json() as { drafts?: Draft[]; error?: string };
-    if (!targetsResponse.ok) throw new Error(targetsPayload.error ?? "Unable to load Scout outreach targets");
-    if (!contactsResponse.ok) throw new Error(contactsPayload.error ?? "Unable to load Scout outreach contacts");
-    if (!draftsResponse.ok) throw new Error(draftsPayload.error ?? "Unable to load Scout outreach drafts");
-    setTargets((targetsPayload.targets ?? []).filter((target) => target.state === "active"));
-    setContacts(contactsPayload.contacts ?? []);
-    setDrafts(draftsPayload.drafts ?? []);
+
+    const failures: string[] = [];
+    if (targetsResult.status === "fulfilled") {
+      setTargets((targetsResult.value.targets ?? []).filter((target) => target.state === "active"));
+    } else failures.push(failureMessage(targetsResult));
+
+    if (contactsResult.status === "fulfilled") {
+      setContacts(contactsResult.value.contacts ?? []);
+    } else failures.push(failureMessage(contactsResult));
+
+    if (draftsResult.status === "fulfilled") {
+      setDrafts(draftsResult.value.drafts ?? []);
+    } else failures.push(failureMessage(draftsResult));
+
+    if (failures.length) throw new Error(failures.join(" · "));
   }, []);
 
   useEffect(() => {
@@ -75,11 +114,12 @@ export function AutopilotPanel() {
   async function runScout() {
     setBusy("run"); setError(""); setNotice("");
     try {
-      const discovery = await fetch("/api/agent/discover", { method: "POST" });
-      const discoveryPayload = await discovery.json() as { found?: number; error?: string };
-      if (!discovery.ok) throw new Error(discoveryPayload.error ?? "Internship discovery failed");
-      const outreach = await fetch("/api/company-outreach/autopilot", { method: "POST" });
-      const payload = await outreach.json() as {
+      const discoveryPayload = await requestJson<{ found?: number; error?: string }>(
+        "/api/agent/discover",
+        { method: "POST" },
+        "Internship discovery failed",
+      );
+      const payload = await requestJson<{
         createdTargets?: number;
         queuedTargets?: number;
         researchedTargets?: number;
@@ -87,8 +127,11 @@ export function AutopilotPanel() {
         searchQueriesAttempted?: number;
         searchProvider?: string | null;
         error?: string;
-      };
-      if (!outreach.ok) throw new Error(payload.error ?? "Company outreach autopilot failed");
+      }>(
+        "/api/company-outreach/autopilot",
+        { method: "POST" },
+        "Company outreach autopilot failed",
+      );
       await load();
       setNotice(`Scout run complete: ${discoveryPayload.found ?? 0} internship lead(s), ${payload.queuedTargets ?? 0} company target(s), ${payload.researchedTargets ?? 0} company research pass(es), ${payload.candidatesFound ?? 0} published contact candidate(s).${payload.searchProvider ? ` Public search: ${payload.searchProvider}.` : " Public search is not configured yet; first-party research only."} Nothing was sent.`);
     } catch (caught) {
@@ -99,13 +142,15 @@ export function AutopilotPanel() {
   async function reviewContact(contact: Contact, reviewState: "accepted" | "rejected") {
     setBusy(`contact-${contact.id}`); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/company-outreach/contacts", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: contact.id, reviewState }),
-      });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to review public contact evidence");
+      await requestJson<{ error?: string }>(
+        "/api/company-outreach/contacts",
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: contact.id, reviewState }),
+        },
+        "Unable to review public contact evidence",
+      );
       await load();
       setNotice(reviewState === "accepted" ? "Published contact accepted. Scout can now draft from automatically selected approved claims." : "Contact rejected. Nothing was sent.");
     } catch (caught) {
@@ -116,13 +161,16 @@ export function AutopilotPanel() {
   async function createDraft(contact: Contact) {
     setBusy(`draft-${contact.id}`); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/company-outreach/drafts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contactId: contact.id }),
-      });
-      const payload = await response.json() as { draft?: { model?: string; deterministicFallback?: boolean; claimSelection?: string }; error?: string };
-      if (!response.ok || !payload.draft) throw new Error(payload.error ?? "Unable to draft speculative outreach");
+      const payload = await requestJson<{ draft?: { model?: string; deterministicFallback?: boolean; claimSelection?: string }; error?: string }>(
+        "/api/company-outreach/drafts",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ contactId: contact.id }),
+        },
+        "Unable to draft speculative outreach",
+      );
+      if (!payload.draft) throw new Error("Unable to draft speculative outreach: response did not include a draft");
       await load();
       setNotice(`Scout drafted the outreach using ${payload.draft.claimSelection === "automatic" ? "automatically matched approved claims" : "approved claim evidence"}${payload.draft.deterministicFallback ? " with the deterministic fallback" : payload.draft.model ? ` via ${payload.draft.model}` : ""}. Review the exact revision below.`);
     } catch (caught) {
@@ -135,13 +183,15 @@ export function AutopilotPanel() {
     if (!revision) return;
     setBusy(`${action}-${draft.id}`); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/company-outreach/drafts", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: draft.id, action, revisionId: revision.id }),
-      });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? `Unable to ${action} draft`);
+      await requestJson<{ error?: string }>(
+        "/api/company-outreach/drafts",
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: draft.id, action, revisionId: revision.id }),
+        },
+        `Unable to ${action} draft`,
+      );
       await load();
       setNotice(action === "approve" ? "Exact company-first revision approved. It can become a Gmail draft; nothing was sent." : "Draft rejected. Nothing was sent.");
     } catch (caught) {
@@ -152,13 +202,16 @@ export function AutopilotPanel() {
   async function createGmailDraft(draft: Draft) {
     setBusy(`gmail-${draft.id}`); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/company-outreach/gmail-draft", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ draftId: draft.id }),
-      });
-      const payload = await response.json() as { gmailDraft?: { draftId?: string; reused?: boolean }; error?: string };
-      if (!response.ok || !payload.gmailDraft) throw new Error(payload.error ?? "Unable to create Gmail draft");
+      const payload = await requestJson<{ gmailDraft?: { draftId?: string; reused?: boolean }; error?: string }>(
+        "/api/company-outreach/gmail-draft",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ draftId: draft.id }),
+        },
+        "Unable to create Gmail draft",
+      );
+      if (!payload.gmailDraft) throw new Error("Unable to create Gmail draft: response did not include a Gmail draft");
       setNotice(payload.gmailDraft.reused ? `Existing Gmail draft reused (${payload.gmailDraft.draftId}). Nothing was sent.` : `Gmail draft created (${payload.gmailDraft.draftId}). Nothing was sent.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create Gmail draft");
