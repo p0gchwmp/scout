@@ -12,6 +12,10 @@ const MAX_RESPONSE_BYTES = 2_000_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 const DISCOVERY_REQUEST_TIMEOUT_MS = 60_000;
 
+export type AgentCallOptions = {
+  timeoutMs?: number;
+};
+
 export const AGENT_CLIENT_CAPABILITIES = Object.freeze({
   planJob: true,
   discoverInternships: true,
@@ -294,7 +298,7 @@ export function createScoutAgentClient(options: AgentClientOptions) {
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? (() => crypto.randomUUID());
 
-  async function post(operation: AgentServiceOperation, pathname: string, payload: unknown) {
+  async function post(operation: AgentServiceOperation, pathname: string, payload: unknown, callOptions?: AgentCallOptions) {
     const body = JSON.stringify(payload);
     const issued = now();
     const expires = new Date(issued.getTime() + 5 * 60_000);
@@ -311,7 +315,12 @@ export function createScoutAgentClient(options: AgentClientOptions) {
       body,
       secret,
     });
-    const timeoutMs = operation === "discover_internships" ? DISCOVERY_REQUEST_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
+    const defaultTimeoutMs = operation === "discover_internships" ? DISCOVERY_REQUEST_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
+    const requestedTimeoutMs = callOptions?.timeoutMs;
+    if (requestedTimeoutMs !== undefined && (!Number.isInteger(requestedTimeoutMs) || requestedTimeoutMs < 250 || requestedTimeoutMs > defaultTimeoutMs)) {
+      throw new Error("Scout agent timeout override is invalid");
+    }
+    const timeoutMs = requestedTimeoutMs ?? defaultTimeoutMs;
     const response = await fetcher(`${baseUrl}${pathname}`, {
       method: "POST",
       headers,
@@ -341,17 +350,17 @@ export function createScoutAgentClient(options: AgentClientOptions) {
     }) {
       return post("plan_job", "/v1/plan", input);
     },
-    async discoverInternships() {
-      return validateDiscovery(await post("discover_internships", "/v1/discover", {}));
+    async discoverInternships(callOptions?: AgentCallOptions) {
+      return validateDiscovery(await post("discover_internships", "/v1/discover", {}, callOptions));
     },
-    async resolveJob(input: { canonicalUrl: string; company?: string; title?: string }) {
-      return validateResolvedJob(await post("resolve_job", "/v1/resolve", input));
+    async resolveJob(input: { canonicalUrl: string; company?: string; title?: string }, callOptions?: AgentCallOptions) {
+      return validateResolvedJob(await post("resolve_job", "/v1/resolve", input, callOptions));
     },
-    async researchContacts(input: { companyDomain: string; jobSnapshotId: string; careersUrl?: string | null }) {
-      return validateContactResearch(await post("research_contacts", "/v1/research-contacts", input));
+    async researchContacts(input: { companyDomain: string; jobSnapshotId: string; careersUrl?: string | null }, callOptions?: AgentCallOptions) {
+      return validateContactResearch(await post("research_contacts", "/v1/research-contacts", input, callOptions));
     },
-    async classifyContacts(candidates: PublishedContactCandidate[]) {
-      const raw = record(await post("classify_contacts", "/v1/classify-contacts", { candidates }));
+    async classifyContacts(candidates: PublishedContactCandidate[], callOptions?: AgentCallOptions) {
+      const raw = record(await post("classify_contacts", "/v1/classify-contacts", { candidates }, callOptions));
       if (raw.schemaVersion !== 1 || !Array.isArray(raw.classifications)) throw new Error("Agent contact classification response is invalid");
       return {
         model: stringField(raw.model, "AI model", 200),

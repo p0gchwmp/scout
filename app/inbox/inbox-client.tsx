@@ -46,10 +46,11 @@ type RunScoutResponse = {
   run?: {
     discovery?: { found?: number; created?: number; existing?: number; failures?: DiscoveryFailure[]; leads?: DiscoveryLead[] };
     resolution?: { attempted?: number; resolved?: number; deferred?: number; failures?: unknown[] };
-    applications?: { prepared?: number; readyForReview?: number; needsInput?: number };
+    applications?: { prepared?: number; readyForReview?: number; needsInput?: number; deferred?: number };
     companyDomains?: { attempted?: number; enriched?: number; pending?: number; failures?: unknown[] };
-    contacts?: { jobsResearched?: number; candidatesSaved?: number; classified?: number; failures?: unknown[] };
+    contacts?: { jobsResearched?: number; candidatesSaved?: number; classified?: number; deferred?: number; failures?: unknown[] };
     reviewQueue?: { applicationsReady?: number; applicationsNeedInput?: number; contactsNeedReview?: number };
+    budget?: { limitMs?: number; elapsedMs?: number; deferredDueToTime?: number };
   };
   error?: string;
 };
@@ -201,9 +202,10 @@ export function InternshipInbox() {
       const pipelineFailures = (run.resolution?.failures?.length ?? 0)
         + (run.companyDomains?.failures?.length ?? 0)
         + (run.contacts?.failures?.length ?? 0);
+      const timeDeferred = run.budget?.deferredDueToTime ?? 0;
       const sourceDetails = sourceFailureDetails(discoveryFailures, 4);
       setNotice(
-        `Scout found ${run.discovery?.found ?? 0} opportunity lead(s) across controlled and search lanes, saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), verified/enriched ${run.companyDomains?.enriched ?? 0} company domain(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}${sourceDetails ? ` Discovery source details: ${sourceDetails}.` : ""}`,
+        `Scout found ${run.discovery?.found ?? 0} opportunity lead(s) across controlled and search lanes, saved ${run.discovery?.created ?? 0} new lead(s), resolved ${run.resolution?.resolved ?? 0} official posting(s), verified/enriched ${run.companyDomains?.enriched ?? 0} company domain(s), prepared ${run.applications?.prepared ?? 0} application packet(s), found ${run.contacts?.candidatesSaved ?? 0} published contact candidate(s), and AI-classified ${run.contacts?.classified ?? 0}. Review queue: ${run.reviewQueue?.applicationsReady ?? 0} application(s) ready, ${run.reviewQueue?.applicationsNeedInput ?? 0} needing input, ${run.reviewQueue?.contactsNeedReview ?? 0} contact(s) needing review.${timeDeferred ? ` ${timeDeferred} item(s) were deferred to a later run so Scout could return before the hosted request deadline.` : ""}${sourceFailures + pipelineFailures ? ` ${sourceFailures + pipelineFailures} bounded stage/source failure(s) were recorded.` : ""}${sourceDetails ? ` Discovery source details: ${sourceDetails}.` : ""}`,
       );
     } catch (caught) {
       if (!isLoopbackBrowser()) {

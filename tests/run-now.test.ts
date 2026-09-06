@@ -6,9 +6,9 @@ test("Run Scout now is owner-only, same-origin and has no send/submit surface", 
   const route = await readFile(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
   assert.match(route, /requireScoutApiUser\(\)/);
   assert.match(route, /requireSameOriginMutation\(request\)/);
-  assert.match(route, /client\.discoverInternships\(\)/);
+  assert.match(route, /client\.discoverInternships\(\{ timeoutMs: discoveryTimeoutMs \}\)/);
   assert.match(route, /const resolveInput = \{ canonicalUrl: lead\.canonicalUrl, company: lead\.company, title: lead\.title \}/);
-  assert.match(route, /client\.resolveJob\(resolveInput\)/);
+  assert.match(route, /client\.resolveJob\(resolveInput, \{ timeoutMs: RESOLUTION_TIMEOUT_MS \}\)/);
   assert.match(route, /client\.researchContacts/);
   assert.match(route, /client\.classifyContacts/);
   assert.doesNotMatch(route, /request\.json\(\)/);
@@ -25,6 +25,12 @@ test("Run Scout now is bounded and leaves contact decisions to human review", as
   assert.match(route, /MAX_APPLICATION_PREP_PER_RUN = 24/);
   assert.match(route, /MAX_DOMAIN_ENRICHMENT_PER_RUN = 8/);
   assert.match(route, /MAX_CONTACT_RESEARCH_PER_RUN = 6/);
+  assert.match(route, /createRunBudget\(\)/);
+  assert.match(route, /DISCOVERY_TIMEOUT_MS = 15_000/);
+  assert.match(route, /RESOLUTION_TIMEOUT_MS = 4_000/);
+  assert.match(route, /CONTACT_TIMEOUT_MS = 3_000/);
+  assert.match(route, /runBudget\.canSpend/);
+  assert.match(route, /deferredDueToTime/);
   assert.match(route, /reviewState: "needs_review"/);
   assert.doesNotMatch(route, /reviewState:\s*"accepted"/);
   assert.doesNotMatch(route, /reviewState:\s*"rejected"/);
@@ -42,12 +48,14 @@ test("Run Scout now skips unresolved domains and upgrades only placeholder sourc
 
 test("Run Scout now retries unresolved domains without creating duplicate snapshots", async () => {
   const route = await readFile(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
-  assert.match(route, /domainCandidates\.slice\(0, MAX_DOMAIN_ENRICHMENT_PER_RUN\)/);
+  assert.match(route, /boundedDomainCandidates = domainCandidates\.slice\(0, MAX_DOMAIN_ENRICHMENT_PER_RUN\)/);
   assert.match(route, /const domainResolveInput = \{ canonicalUrl: job\.canonicalUrl, company: job\.company, title: job\.title \}/);
   assert.match(route, /official\.source\.provider !== source\.provider \|\| official\.source\.boardToken !== source\.boardToken/);
   assert.match(route, /eq\(companySources\.companyDomain, source\.companyDomain\)/);
   assert.match(route, /companyDomains: \{/);
   assert.match(route, /domainEnrichment: MAX_DOMAIN_ENRICHMENT_PER_RUN/);
+  assert.match(route, /sourceById = new Map\(currentSources/);
+  assert.doesNotMatch(route, /for \(const job of currentJobs\)[\s\S]{0,300}db\.select\(\)\.from\(companySources\)/);
   const retrySection = route.slice(route.indexOf("for (const { job, source } of domainCandidates"), route.indexOf("let contactJobsResearched"));
   assert.doesNotMatch(retrySection, /jobSnapshots|currentSnapshotId|db\.insert\(jobSnapshots\)/);
 });
@@ -60,4 +68,11 @@ test("Internship Inbox uses cloud Run Scout first and localhost only as a loopba
   assert.match(ui, /127\.0\.0\.1:43119\/discover/);
   assert.match(ui, /const response = await fetch\("\/api\/agent\/run"[\s\S]*await runLocalDevelopmentFallback\(\)/);
   assert.match(ui, />Run Scout now</);
+});
+
+
+test("Run Scout now reports time-budget deferral in the Inbox", async () => {
+  const ui = await readFile(new URL("../app/inbox/inbox-client.tsx", import.meta.url), "utf8");
+  assert.match(ui, /deferredDueToTime/);
+  assert.match(ui, /hosted request deadline/);
 });

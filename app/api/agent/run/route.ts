@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import {
   applications,
@@ -15,12 +15,18 @@ import { createScoutAgentClientFromBindings } from "../../../../lib/scout/agent-
 import { buildApplicationPreparation } from "../../../../lib/scout/application-prep";
 import { sameOpportunityIdentity } from "../../../../lib/scout/opportunity-quality";
 import { evaluateResumeAlignment } from "../../../../lib/scout/resume-alignment";
+import { createRunBudget, RUN_REQUEST_BUDGET_MS } from "../../../../lib/scout/run-budget";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
 const MAX_RESOLUTIONS_PER_RUN = 12;
 const MAX_APPLICATION_PREP_PER_RUN = 24;
 const MAX_DOMAIN_ENRICHMENT_PER_RUN = 8;
 const MAX_CONTACT_RESEARCH_PER_RUN = 6;
+const DISCOVERY_TIMEOUT_MS = 15_000;
+const RESOLUTION_TIMEOUT_MS = 4_000;
+const CONTACT_TIMEOUT_MS = 3_000;
+const POST_RESOLUTION_WORK_RESERVE_MS = 6_000;
+const DB_STEP_RESERVE_MS = 750;
 
 function shortError(error: unknown) {
   return (error instanceof Error ? error.message : "Unknown failure").replace(/\s+/g, " ").trim().slice(0, 180);
@@ -42,17 +48,21 @@ export async function POST(request: Request) {
   if (unauthorized) return unauthorized;
   const crossOrigin = requireSameOriginMutation(request);
   if (crossOrigin) return crossOrigin;
+  const runBudget = createRunBudget();
 
   try {
     const db = getDb();
     const client = createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>);
-    const discovery = await client.discoverInternships();
+    const discoveryTimeoutMs = runBudget.boundedAgentTimeout(DISCOVERY_TIMEOUT_MS);
+    if (!discoveryTimeoutMs) throw new Error("Scout run time budget was exhausted before discovery");
+    const discovery = await client.discoverInternships({ timeoutMs: discoveryTimeoutMs });
     const discoveredJobIds: string[] = [];
     const knownJobs = await db.select().from(jobs);
     let created = 0;
     let existing = 0;
     let duplicatesReused = 0;
     let unresolvedUpgradedToOfficialLead = 0;
+    let persistenceDeferred = 0;
 
     for (const lead of discovery.leads) {
       const found = knownJobs.find((job) => sameOpportunityIdentity({
@@ -76,7 +86,7 @@ export async function POST(request: Request) {
         existing += 1;
         if (found.canonicalUrl !== lead.canonicalUrl) duplicatesReused += 1;
 
-        if (!found.currentSnapshotId && lead.provider !== "search_index" && found.canonicalUrl !== lead.canonicalUrl) {
+        if (!found.currentSnapshotId && lead.provider !== "search_index" && found.canonicalUrl !== lead.canonicalUrl && runBudget.canSpend(DB_STEP_RESERVE_MS)) {
           const observedAt = discovery.observedAt || new Date().toISOString();
           const [upgraded] = await db.update(jobs).set({
             source: `lead:agent:${lead.provider}`,
@@ -97,10 +107,16 @@ export async function POST(request: Request) {
             Object.assign(found, upgraded);
             unresolvedUpgradedToOfficialLead += 1;
           }
+        } else if (!found.currentSnapshotId && lead.provider !== "search_index" && found.canonicalUrl !== lead.canonicalUrl) {
+          persistenceDeferred += 1;
         }
         continue;
       }
 
+      if (!runBudget.canSpend(DB_STEP_RESERVE_MS)) {
+        persistenceDeferred += 1;
+        continue;
+      }
       const id = crypto.randomUUID();
       const observedAt = discovery.observedAt || new Date().toISOString();
       const [inserted] = await db.insert(jobs).values({
@@ -135,20 +151,21 @@ export async function POST(request: Request) {
       created += 1;
     }
 
-    const discoveredJobs = discoveredJobIds.length
-      ? await db.select().from(jobs).where(inArray(jobs.id, discoveredJobIds))
-      : [];
-    const unresolved = discoveredJobs
-      .filter((job) => !job.currentSnapshotId && job.source.startsWith("lead:agent:"))
-      .slice(0, MAX_RESOLUTIONS_PER_RUN);
+    const discoveredJobIdSet = new Set(discoveredJobIds);
+    const discoveredJobs = knownJobs.filter((job) => discoveredJobIdSet.has(job.id));
+    const unresolvedCandidates = discoveredJobs.filter((job) => !job.currentSnapshotId && job.source.startsWith("lead:agent:"));
+    const unresolved = unresolvedCandidates.slice(0, MAX_RESOLUTIONS_PER_RUN);
 
     const resolutionFailures: Array<{ jobId: string; reason: string }> = [];
     let resolved = 0;
+    let resolutionAttempted = 0;
 
     for (const lead of unresolved) {
+      if (!runBudget.canSpend(RESOLUTION_TIMEOUT_MS + POST_RESOLUTION_WORK_RESERVE_MS)) break;
       try {
         const resolveInput = { canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title };
-        const official = await client.resolveJob(resolveInput);
+        resolutionAttempted += 1;
+        const official = await client.resolveJob(resolveInput, { timeoutMs: RESOLUTION_TIMEOUT_MS });
         const [registered] = await db.select().from(companySources).where(and(
           eq(companySources.provider, official.source.provider),
           eq(companySources.boardToken, official.source.boardToken),
@@ -226,26 +243,53 @@ export async function POST(request: Request) {
             lastSeenAt: observedAt,
           }).where(eq(jobs.id, lead.id)),
         ]);
+        Object.assign(lead, {
+          source: official.source.provider,
+          sourceRegistryId: source.id,
+          externalId: official.snapshot.externalId,
+          canonicalUrl: official.snapshot.canonicalUrl,
+          company: official.snapshot.company,
+          title: official.snapshot.title,
+          description: official.snapshot.description,
+          location: official.snapshot.location,
+          workplaceType: official.snapshot.workplaceType,
+          score: official.snapshot.score,
+          scoreExplanation: official.snapshot.scoreExplanation,
+          eligibilityRisks: official.snapshot.eligibilityRisks,
+          postedAt: official.snapshot.postedAt,
+          fingerprint: `${source.id}|${official.snapshot.externalId}`,
+          currentSnapshotId: snapshotId,
+          lastSeenRunId: runId,
+          lastSeenAt: observedAt,
+        });
         resolved += 1;
       } catch (error) {
         resolutionFailures.push({ jobId: lead.id, reason: shortError(error) });
       }
     }
 
-    const [fields, claims, currentApplications] = await Promise.all([
+    const [fields, claims, currentApplications, currentContacts, currentSources] = await Promise.all([
       db.select().from(profileEvidence),
       db.select().from(candidateClaims),
       db.select().from(applications),
+      db.select().from(contactEvidence),
+      db.select().from(companySources),
     ]);
     const existingApplicationJobs = new Set(currentApplications.map((item) => item.jobId));
-    const candidatesForPrep = (await db.select().from(jobs))
+    const candidatesForPrep = knownJobs
       .filter((job) => job.currentSnapshotId && !existingApplicationJobs.has(job.id))
       .slice(0, MAX_APPLICATION_PREP_PER_RUN);
     let applicationsPrepared = 0;
     let applicationsReady = 0;
     let applicationsNeedInput = 0;
+    let applicationsDeferred = 0;
 
-    for (const job of candidatesForPrep) {
+    for (let applicationIndex = 0; applicationIndex < candidatesForPrep.length; applicationIndex += 1) {
+      const job = candidatesForPrep[applicationIndex];
+      if (!runBudget.canSpend(DB_STEP_RESERVE_MS)) {
+        applicationsDeferred = candidatesForPrep.length - applicationIndex;
+        break;
+      }
       const alignment = evaluateResumeAlignment(job, claims);
       const relevantClaimIds = [...new Set(alignment.supportingClaims.flatMap((support) => support.claimIds))];
       const prepared = buildApplicationPreparation({ job, profileFields: fields, claims, relevantClaimIds });
@@ -262,21 +306,25 @@ export async function POST(request: Request) {
       else applicationsNeedInput += 1;
     }
 
-    const currentJobs = (await db.select().from(jobs))
-      .filter((job) => job.currentSnapshotId && job.sourceRegistryId);
+    const currentJobs = knownJobs.filter((job) => job.currentSnapshotId && job.sourceRegistryId);
+    const sourceById = new Map(currentSources.map((source) => [source.id, source]));
     const domainCandidates: Array<{ job: (typeof currentJobs)[number]; source: typeof companySources.$inferSelect }> = [];
     for (const job of currentJobs) {
       if (!job.sourceRegistryId) continue;
-      const [source] = await db.select().from(companySources).where(eq(companySources.id, job.sourceRegistryId)).limit(1);
+      const source = sourceById.get(job.sourceRegistryId);
       if (source?.enabled && unresolvedDomain(source.companyDomain)) domainCandidates.push({ job, source });
     }
 
     let domainsEnriched = 0;
+    let domainAttempted = 0;
     const domainFailures: Array<{ jobId: string; reason: string }> = [];
-    for (const { job, source } of domainCandidates.slice(0, MAX_DOMAIN_ENRICHMENT_PER_RUN)) {
+    const boundedDomainCandidates = domainCandidates.slice(0, MAX_DOMAIN_ENRICHMENT_PER_RUN);
+    for (const { job, source } of boundedDomainCandidates) {
+      if (!runBudget.canSpend(RESOLUTION_TIMEOUT_MS + DB_STEP_RESERVE_MS)) break;
       try {
         const domainResolveInput = { canonicalUrl: job.canonicalUrl, company: job.company, title: job.title };
-        const official = await client.resolveJob(domainResolveInput);
+        domainAttempted += 1;
+        const official = await client.resolveJob(domainResolveInput, { timeoutMs: RESOLUTION_TIMEOUT_MS });
         if (official.source.provider !== source.provider || official.source.boardToken !== source.boardToken) {
           throw new Error("Domain enrichment resolved to a different ATS source");
         }
@@ -289,7 +337,10 @@ export async function POST(request: Request) {
           eq(companySources.id, source.id),
           eq(companySources.companyDomain, source.companyDomain),
         )).returning();
-        if (upgraded) domainsEnriched += 1;
+        if (upgraded) {
+          domainsEnriched += 1;
+          sourceById.set(upgraded.id, upgraded);
+        }
       } catch (error) {
         domainFailures.push({ jobId: job.id, reason: shortError(error) });
       }
@@ -299,10 +350,17 @@ export async function POST(request: Request) {
     let contactCandidatesSaved = 0;
     let contactsClassified = 0;
     const contactFailures: Array<{ jobId: string; stage: "research" | "classify"; reason: string }> = [];
+    const contactCandidates = currentJobs.slice(0, MAX_CONTACT_RESEARCH_PER_RUN);
+    let contactsDeferred = 0;
 
-    for (const job of currentJobs.slice(0, MAX_CONTACT_RESEARCH_PER_RUN)) {
+    for (let contactIndex = 0; contactIndex < contactCandidates.length; contactIndex += 1) {
+      const job = contactCandidates[contactIndex];
+      if (!runBudget.canSpend(DB_STEP_RESERVE_MS)) {
+        contactsDeferred = contactCandidates.length - contactIndex;
+        break;
+      }
       if (!job.currentSnapshotId || !job.sourceRegistryId) continue;
-      const [source] = await db.select().from(companySources).where(eq(companySources.id, job.sourceRegistryId)).limit(1);
+      const source = sourceById.get(job.sourceRegistryId);
       if (!source?.enabled || unresolvedDomain(source.companyDomain)) continue;
       let contacts = await db.select().from(contactEvidence).where(and(
         eq(contactEvidence.jobId, job.id),
@@ -310,13 +368,17 @@ export async function POST(request: Request) {
       ));
 
       if (!contacts.length) {
+        if (!runBudget.canSpend(CONTACT_TIMEOUT_MS + DB_STEP_RESERVE_MS)) {
+          contactsDeferred = contactCandidates.length - contactIndex;
+          break;
+        }
         try {
           const researchInput = {
             companyDomain: source.companyDomain,
             jobSnapshotId: job.currentSnapshotId,
             careersUrl: source.careersUrl,
           };
-          const research = await client.researchContacts(researchInput);
+          const research = await client.researchContacts(researchInput, { timeoutMs: CONTACT_TIMEOUT_MS });
           contactJobsResearched += 1;
           if (research.candidates.length) {
             await db.batch(research.candidates.map((candidate) => db.insert(contactEvidence).values({
@@ -346,6 +408,10 @@ export async function POST(request: Request) {
 
       const needsAi = contacts.filter((contact) => contact.reviewState === "needs_review" && !/^AI(?: recommends reject)?:/i.test(contact.suitabilityReason));
       if (!needsAi.length) continue;
+      if (!runBudget.canSpend(CONTACT_TIMEOUT_MS + DB_STEP_RESERVE_MS)) {
+        contactsDeferred = Math.max(contactsDeferred, contactCandidates.length - contactIndex);
+        break;
+      }
       try {
         const result = await client.classifyContacts(needsAi.map((contact) => ({
           id: contact.id,
@@ -353,7 +419,7 @@ export async function POST(request: Request) {
           sourceUrl: contact.sourceUrl,
           excerpt: contact.excerpt,
           sourceType: contact.sourceType,
-        })));
+        })), { timeoutMs: CONTACT_TIMEOUT_MS });
         for (const classification of result.classifications) {
           const suitability = classification.suitability === "high" ? "high" : "review";
           const prefix = classification.suitability === "reject" ? "AI recommends reject: " : "AI: ";
@@ -372,12 +438,16 @@ export async function POST(request: Request) {
       }
     }
 
-    const contactReviewCount = (await db.select().from(contactEvidence))
-      .filter((contact) => contact.reviewState === "needs_review").length;
-    const applicationReviewCount = (await db.select().from(applications))
-      .filter((application) => application.status === "ready_for_review").length;
-    const applicationInputCount = (await db.select().from(applications))
-      .filter((application) => application.status === "needs_input").length;
+    const contactReviewCount = currentContacts.filter((contact) => contact.reviewState === "needs_review").length + contactCandidatesSaved;
+    const applicationReviewCount = currentApplications.filter((application) => application.status === "ready_for_review").length + applicationsReady;
+    const applicationInputCount = currentApplications.filter((application) => application.status === "needs_input").length + applicationsNeedInput;
+    const resolutionDeferred = Math.max(0, unresolvedCandidates.length - resolutionAttempted);
+    const domainPending = Math.max(0, domainCandidates.length - domainAttempted);
+    const deferredDueToTime = persistenceDeferred
+      + Math.max(0, unresolved.length - resolutionAttempted)
+      + applicationsDeferred
+      + Math.max(0, boundedDomainCandidates.length - domainAttempted)
+      + contactsDeferred;
 
     return Response.json({
       run: {
@@ -387,30 +457,33 @@ export async function POST(request: Request) {
           existing,
           duplicatesReused,
           unresolvedUpgradedToOfficialLead,
+          deferredPersistence: persistenceDeferred,
           failures: discovery.failures,
           leads: discovery.leads,
         },
         resolution: {
-          attempted: unresolved.length,
+          attempted: resolutionAttempted,
           resolved,
-          deferred: Math.max(0, discoveredJobs.filter((job) => !job.currentSnapshotId && job.source.startsWith("lead:agent:")).length - unresolved.length),
+          deferred: resolutionDeferred,
           failures: resolutionFailures,
         },
         applications: {
           prepared: applicationsPrepared,
           readyForReview: applicationsReady,
           needsInput: applicationsNeedInput,
+          deferred: applicationsDeferred,
         },
         companyDomains: {
-          attempted: Math.min(domainCandidates.length, MAX_DOMAIN_ENRICHMENT_PER_RUN),
+          attempted: domainAttempted,
           enriched: domainsEnriched,
-          pending: Math.max(0, domainCandidates.length - MAX_DOMAIN_ENRICHMENT_PER_RUN),
+          pending: domainPending,
           failures: domainFailures,
         },
         contacts: {
           jobsResearched: contactJobsResearched,
           candidatesSaved: contactCandidatesSaved,
           classified: contactsClassified,
+          deferred: contactsDeferred,
           failures: contactFailures,
         },
         reviewQueue: {
@@ -423,6 +496,11 @@ export async function POST(request: Request) {
           applicationPrep: MAX_APPLICATION_PREP_PER_RUN,
           domainEnrichment: MAX_DOMAIN_ENRICHMENT_PER_RUN,
           contactResearch: MAX_CONTACT_RESEARCH_PER_RUN,
+        },
+        budget: {
+          limitMs: RUN_REQUEST_BUDGET_MS,
+          elapsedMs: runBudget.elapsedMs(),
+          deferredDueToTime,
         },
         safety: {
           sendEmail: false,
