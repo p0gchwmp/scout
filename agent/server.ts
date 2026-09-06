@@ -1,13 +1,14 @@
 import { createServer } from "node:http";
 import { buildAiApplicationAnswerEnvelope, buildAiOutreachEnvelope, type PublishedContactCandidate } from "../lib/scout/ai-agent.ts";
 import { AGENT_EXECUTION_CAPABILITIES, planAgentTasks } from "../lib/scout/agent-task-planner.ts";
-import { AGENT_SERVICE_CAPABILITIES, InMemoryAgentReplayGuard, verifyAgentServiceRequest } from "../lib/scout/agent-service-auth.ts";
+import { AGENT_SERVICE_CAPABILITIES, InMemoryAgentReplayGuard, verifyAgentServiceRequest, type AgentServiceOperation } from "../lib/scout/agent-service-auth.ts";
 import { resolveControlledLead } from "../lib/scout/lead-resolution.ts";
 import { createAgentAiProvider } from "./ai-runtime.ts";
 import { runAgentDiscovery } from "./discovery.ts";
 import { researchPublishedCompanyContacts } from "./contact-research.ts";
 import { createOrReuseGmailDraft } from "./gmail-drafts.ts";
 import { resolveSearchLeadToOfficialAts } from "./official-resolution.ts";
+import { describeAgentFailure, type AgentFailureStage } from "./request-failure.ts";
 
 const port = Number(process.env.PORT ?? process.env.SCOUT_AGENT_PORT ?? 8788);
 const host = process.env.SCOUT_AGENT_HOST?.trim() || "0.0.0.0";
@@ -63,6 +64,8 @@ function optionalVoice(raw: Record<string, unknown>) {
 }
 
 const server = createServer(async (request, response) => {
+  let failureStage: AgentFailureStage = "request";
+  let expectedOperation: AgentServiceOperation | null = null;
   try {
     if (request.method === "GET" && request.url === "/health") {
       return json(response, 200, {
@@ -77,9 +80,7 @@ const server = createServer(async (request, response) => {
       "/v1/draft-outreach", "/v1/draft-application-answers", "/v1/create-gmail-draft",
     ];
     if (request.method !== "POST" || !allowedPaths.includes(request.url ?? "")) return json(response, 404, { error: "Not found" });
-    const rawBody = await readBody(request);
-    const verified = await verifyAgentServiceRequest(toWebRequest(request, rawBody), secret);
-    const expectedOperation = request.url === "/v1/plan"
+    expectedOperation = request.url === "/v1/plan"
       ? "plan_job"
       : request.url === "/v1/discover"
         ? "discover_internships"
@@ -94,6 +95,11 @@ const server = createServer(async (request, response) => {
                 : request.url === "/v1/create-gmail-draft"
                   ? "create_gmail_draft"
                   : "draft_outreach";
+    const rawBody = await readBody(request);
+    const webRequest = toWebRequest(request, rawBody);
+    failureStage = "authentication";
+    const verified = await verifyAgentServiceRequest(webRequest, secret);
+    failureStage = "execution";
     if (verified.auth.operation !== expectedOperation) return json(response, 409, { error: "Signed operation does not match this endpoint" });
     if (!replayGuard.accept(verified.auth)) return json(response, 409, { error: "Duplicate or replayed agent task" });
 
@@ -283,8 +289,15 @@ const server = createServer(async (request, response) => {
     });
     return json(response, 200, { taskId: verified.auth.taskId, idempotencyKey: verified.auth.idempotencyKey, plan });
   } catch (error) {
-    console.error("Scout agent request rejected", { errorType: error instanceof Error ? error.name : typeof error });
-    return json(response, 401, { error: "Unauthorized or invalid agent request" });
+    const failure = describeAgentFailure(failureStage, error);
+    console.error(failure.logLabel, {
+      stage: failureStage,
+      path: expectedOperation ? (request.url ?? "unknown") : "unknown",
+      operation: expectedOperation ?? "unknown",
+      errorType: failure.errorType,
+      failureCategory: failure.category,
+    });
+    return json(response, failure.status, { error: failure.publicError });
   }
 });
 
