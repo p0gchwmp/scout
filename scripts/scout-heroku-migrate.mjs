@@ -7,10 +7,19 @@ const migrationsDir = resolve(root, "drizzle");
 const MIGRATION_FILE = /^\d+[^/\\]*\.sql$/;
 const BREAKPOINT = /^\s*-->\s*statement-breakpoint\s*$/gm;
 
+export function normalizeD1MigrationStatement(statement) {
+  const normalized = statement.replace(/\r\n?/g, "\n");
+  if (!/^\s*CREATE\s+TRIGGER\b/i.test(normalized)) return normalized;
+  return normalized.replace(
+    /\bSELECT\s+CASE\b([\s\S]*?)\bEND\s*;/gi,
+    (_match, body) => `SELECT (CASE${body}END);`,
+  );
+}
+
 export function splitMigrationSql(sql) {
   return sql
     .split(BREAKPOINT)
-    .map((statement) => statement.trim())
+    .map((statement) => normalizeD1MigrationStatement(statement.trim()))
     .filter(Boolean);
 }
 
