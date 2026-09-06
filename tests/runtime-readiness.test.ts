@@ -47,6 +47,20 @@ test("agent, browser and Gmail readiness remain strict and config-only", () => {
   assert.match(gmail.capabilities.gmailDraft.detail, /not probed/i);
 });
 
+test("hosted local agent readiness matches the exact private runtime contract", () => {
+  const hosted = { SCOUT_AGENT_SHARED_SECRET: hex, SCOUT_AGENT_ALLOW_LOCAL_RUNTIME: "1" };
+  assert.equal(buildRuntimeReadiness({ ...hosted, SCOUT_AGENT_BASE_URL: "http://127.0.0.1:43127" }, readyCore).capabilities.cloudAgent.state, "ready");
+  for (const base of [
+    "http://localhost:43127",
+    "http://127.0.0.1",
+    "https://127.0.0.1:43127",
+    "http://127.0.0.1:43127/path",
+  ]) {
+    assert.equal(buildRuntimeReadiness({ ...hosted, SCOUT_AGENT_BASE_URL: base }, readyCore).capabilities.cloudAgent.state, "invalid");
+  }
+  assert.equal(buildRuntimeReadiness({ SCOUT_AGENT_BASE_URL: "http://127.0.0.1:43127", SCOUT_AGENT_SHARED_SECRET: hex }, readyCore).capabilities.cloudAgent.state, "invalid");
+});
+
 test("core failures block readiness while consequential side effects remain unavailable", () => {
   const blocked = buildRuntimeReadiness({}, { ...readyCore, immutableEvidence: { state: "blocked", configured: false, required: true, detail: "Missing triggers.", missing: ["job_snapshots_immutable_update"] } });
   assert.equal(blocked.status, "blocked");
