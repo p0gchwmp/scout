@@ -10,7 +10,7 @@ test("Heroku D1 migration normalization parenthesizes CASE expressions inside tr
   assert.doesNotMatch(normalized, /\bSELECT\s+CASE\b/i);
   assert.match(
     normalized,
-    /SELECT \(CASE WHEN OLD\.\`state\` <> 'draft' THEN RAISE\(ABORT, 'only drafts can be approved'\) END\);/,
+    /SELECT \(CASE WHEN OLD\.`state` <> 'draft' THEN RAISE\(ABORT, 'only drafts can be approved'\) END\);/,
   );
 });
 
