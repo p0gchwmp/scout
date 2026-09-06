@@ -21,6 +21,35 @@ function userWithId(value: unknown): ScoutUser | null {
   return typeof userId === "string" && userId.length > 0 ? { userId } : null;
 }
 
+function hostedPublicOrigin() {
+  const runtimeProcess = (globalThis as {
+    process?: { env?: Record<string, unknown> };
+  }).process;
+  const configured = runtimeProcess?.env?.SCOUT_PUBLIC_ORIGIN;
+  return typeof configured === "string" ? configured.trim() : "";
+}
+
+function canonicalMutationOrigin(requestUrl: URL): string | null {
+  const configured = hostedPublicOrigin();
+  if (!configured) return requestUrl.origin;
+
+  let publicUrl: URL;
+  try {
+    publicUrl = new URL(configured);
+  } catch {
+    return null;
+  }
+  if (
+    !/^https?:$/.test(publicUrl.protocol)
+    || publicUrl.username
+    || publicUrl.password
+    || publicUrl.pathname !== "/"
+    || publicUrl.search
+    || publicUrl.hash
+  ) return null;
+  return publicUrl.origin;
+}
+
 export async function loadScoutOwnerId(
   getOwner: ScoutOwnerLoader = defaultOwnerLoader,
 ): Promise<string | null> {
@@ -55,6 +84,9 @@ export async function requireScoutPageOwner(
 
 export function requireSameOriginMutation(request: Request): Response | null {
   const requestUrl = new URL(request.url);
+  const expectedOrigin = canonicalMutationOrigin(requestUrl);
+  if (!expectedOrigin) return scoutPublicError(SCOUT_CROSS_ORIGIN_ERROR, 403);
+
   const origin = request.headers.get("origin");
   if (origin) {
     let originUrl: URL;
@@ -63,7 +95,7 @@ export function requireSameOriginMutation(request: Request): Response | null {
     } catch {
       return scoutPublicError(SCOUT_CROSS_ORIGIN_ERROR, 403);
     }
-    if (originUrl.origin !== requestUrl.origin) return scoutPublicError(SCOUT_CROSS_ORIGIN_ERROR, 403);
+    if (originUrl.origin !== expectedOrigin) return scoutPublicError(SCOUT_CROSS_ORIGIN_ERROR, 403);
   }
 
   const fetchSite = request.headers.get("sec-fetch-site");

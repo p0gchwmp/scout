@@ -16,7 +16,10 @@ test("owner auth fails closed and browser mutations enforce same origin", () => 
     'SCOUT_OWNER_CONFIGURATION_ERROR = "Scout owner is not configured"',
     'if (!ownerId) return scoutPublicError(SCOUT_OWNER_CONFIGURATION_ERROR, 503)',
     'if (user.userId !== ownerId) return scoutPublicError("Forbidden", 403)',
-    'originUrl.origin !== requestUrl.origin',
+    'SCOUT_PUBLIC_ORIGIN',
+    'const expectedOrigin = canonicalMutationOrigin(requestUrl)',
+    'if (!expectedOrigin) return scoutPublicError(SCOUT_CROSS_ORIGIN_ERROR, 403)',
+    'originUrl.origin !== expectedOrigin',
     'fetchSite.toLowerCase() !== "same-origin"',
   ]);
 });
