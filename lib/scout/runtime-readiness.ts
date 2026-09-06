@@ -41,6 +41,19 @@ function validEndpoint(raw: string, allowLoopback: boolean, originOnly = false) 
   return Boolean(allowLoopback && loopback && url.protocol === "http:");
 }
 
+function exactPrivateNodeLoopback(raw: string) {
+  let url: URL;
+  try { url = new URL(raw); } catch { return false; }
+  return url.protocol === "http:"
+    && url.hostname === "127.0.0.1"
+    && Boolean(url.port)
+    && url.pathname === "/"
+    && !url.username
+    && !url.password
+    && !url.search
+    && !url.hash;
+}
+
 function searchReadiness(bindings: RuntimeBindings) {
   const provider = value(bindings, "SCOUT_SEARCH_PROVIDER").toLowerCase();
   const persistence = value(bindings, "SCOUT_SEARCH_RESULT_PERSISTENCE_ALLOWED") === "1" ? "enabled" as const : "disabled" as const;
@@ -143,7 +156,12 @@ function agentReadiness(bindings: RuntimeBindings): RuntimeReadinessItem {
   const secret = value(bindings, "SCOUT_AGENT_SHARED_SECRET");
   if (!base && !secret) return { state: "disabled", configured: false, required: false, detail: "Cloud agent is optional and not configured." };
   if (!base || !secret) return { state: "incomplete", configured: true, required: false, detail: "Cloud agent configuration is incomplete." };
-  if (!HEX_64.test(secret) || !validEndpoint(base, value(bindings, "SCOUT_AGENT_ALLOW_LOOPBACK_DEV") === "1", true)) return { state: "invalid", configured: true, required: false, detail: "Cloud agent URL or shared-secret format is invalid." };
+  const allowLoopbackDev = value(bindings, "SCOUT_AGENT_ALLOW_LOOPBACK_DEV") === "1";
+  const allowLocalRuntime = value(bindings, "SCOUT_AGENT_ALLOW_LOCAL_RUNTIME") === "1";
+  const endpointValid = allowLocalRuntime
+    ? exactPrivateNodeLoopback(base)
+    : validEndpoint(base, allowLoopbackDev, true);
+  if (!HEX_64.test(secret) || !endpointValid) return { state: "invalid", configured: true, required: false, detail: "Cloud agent URL or shared-secret format is invalid." };
   return { state: "ready", configured: true, required: false, detail: "Cloud agent handoff is configured." };
 }
 
