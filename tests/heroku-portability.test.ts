@@ -67,7 +67,7 @@ test("hosted sign-in is owner-oriented and does not expose a Clerk secret", asyn
   assert.doesNotMatch(`${signIn}\n${page}\n${auth}`, /CLERK_SECRET_KEY/);
 });
 
-test("hosted ClerkJS stays mounted across Scout navigation so short-lived session cookies keep refreshing", async () => {
+test("hosted ClerkJS refreshes before resumed navigation and same-origin API work", async () => {
   const [layout, keeper, browser] = await Promise.all([
     source("app/layout.tsx"),
     source("app/clerk-session-keeper.tsx"),
@@ -77,6 +77,15 @@ test("hosted ClerkJS stays mounted across Scout navigation so short-lived sessio
   assert.match(layout, /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY/);
   assert.match(layout, /<ClerkSessionKeeper publishableKey=\{clerkPublishableKey\} \/>/);
   assert.match(keeper, /loadClerkBrowser\(publishableKey\)/);
+  assert.match(keeper, /getToken\(\{ skipCache: true \}\)/);
+  assert.match(keeper, /visibilitychange/);
+  assert.match(keeper, /addEventListener\("focus"/);
+  assert.match(keeper, /addEventListener\("pageshow"/);
+  assert.match(keeper, /window\.setInterval\(refreshWhenActive, SESSION_REFRESH_INTERVAL_MS\)/);
+  assert.match(keeper, /sameOriginRequest\(input\)/);
+  assert.match(keeper, /window\.fetch = guardedFetch/);
+  assert.match(keeper, /window\.fetch === guardedFetch/);
+  assert.match(browser, /getToken\(options\?: \{ skipCache\?: boolean \}\)/);
   assert.match(browser, /await current\.Clerk\.load/);
   assert.doesNotMatch(`${layout}\n${keeper}`, /CLERK_SECRET_KEY/);
   assert.doesNotMatch(keeper, /SCOUT_OWNER_USER_ID/);
