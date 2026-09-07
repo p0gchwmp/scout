@@ -18,7 +18,9 @@ const EXPLICIT_RECRUITING_ACTION_PATTERN = /\b(?:apply|application|submit (?:you
 const MAX_FIRST_PARTY_PAGES = 12;
 const MAX_PAGE_BYTES = 750_000;
 const FETCH_TIMEOUT_MS = 8_000;
+const MIN_FETCH_TIMEOUT_MS = 250;
 const CONSUMER_EMAIL_HOSTS = new Set(["gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "hotmail.com", "outlook.com", "live.com", "icloud.com", "me.com", "proton.me", "protonmail.com", "aol.com"]);
+const DEADLINE_ERROR = "Contact research deadline reached";
 
 export const CONTACT_RESEARCH_CAPABILITIES = Object.freeze({
   officialCompanyPagesFirst: true,
@@ -56,7 +58,7 @@ export type PublishedContactResearchCandidate = {
 
 export type PublicSearchProvider = {
   provider: string;
-  searchFixedQuery(query: string): Promise<BraveSearchResult[]>;
+  searchFixedQuery(query: string, options?: { timeoutMs?: number }): Promise<BraveSearchResult[]>;
 };
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -153,10 +155,24 @@ function extractOfficialLinks(html: string, base: URL, domain: string) {
   return links;
 }
 
-async function fetchTextPage(initial: URL, fetcher: FetchLike, officialDomain: string) {
+function positiveInteger(value: number | undefined, fallback: number, min: number, max: number, label: string) {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} is invalid`);
+  return value;
+}
+
+function fetchTimeout(deadlineAt: number, now: () => number, capMs: number) {
+  if (!Number.isFinite(deadlineAt)) return capMs;
+  const remaining = Math.floor(deadlineAt - now());
+  if (remaining < MIN_FETCH_TIMEOUT_MS) throw new Error(DEADLINE_ERROR);
+  return Math.min(capMs, remaining);
+}
+
+async function fetchTextPage(initial: URL, fetcher: FetchLike, officialDomain: string, deadlineAt: number, now: () => number, pageTimeoutMs: number) {
   let current = initial;
   for (let redirect = 0; redirect <= 3; redirect += 1) {
-    const response = await fetcher(current, { redirect: "manual", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: { accept: "text/html,text/plain;q=0.9" } });
+    const timeoutMs = fetchTimeout(deadlineAt, now, pageTimeoutMs);
+    const response = await fetcher(current, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: { accept: "text/html,text/plain;q=0.9" } });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error("Official page redirect was missing a location");
@@ -180,26 +196,41 @@ export async function researchPublishedCompanyContacts(input: {
   careersUrl?: string | null;
   searchProvider?: PublicSearchProvider | null;
   fetcher?: FetchLike;
+  deadlineAt?: number;
+  maxPages?: number;
+  pageTimeoutMs?: number;
+  now?: () => number;
 }) {
   const domain = normalizeDomain(input.companyDomain);
   const jobSnapshotId = input.jobSnapshotId.trim();
   if (!/^[A-Za-z0-9._:-]{3,200}$/.test(jobSnapshotId)) throw new Error("Job snapshot id is invalid");
   const fetcher = input.fetcher ?? fetch;
+  const now = input.now ?? Date.now;
+  const maxPages = positiveInteger(input.maxPages, MAX_FIRST_PARTY_PAGES, 1, MAX_FIRST_PARTY_PAGES, "Contact research page limit");
+  const pageTimeoutMs = positiveInteger(input.pageTimeoutMs, FETCH_TIMEOUT_MS, MIN_FETCH_TIMEOUT_MS, FETCH_TIMEOUT_MS, "Contact research page timeout");
+  const deadlineAt = input.deadlineAt ?? Number.POSITIVE_INFINITY;
+  if (Number.isNaN(deadlineAt) || deadlineAt <= 0) throw new Error("Contact research deadline is invalid");
+
   const queue: URL[] = [];
   if (input.careersUrl) queue.push(safeOfficialUrl(input.careersUrl, domain));
   queue.push(...OFFICIAL_CONTACT_CRAWL_SEEDS.map((path) => new URL(path, `https://${domain}`)));
   const visited = new Set<string>();
   const failures: Array<{ sourceUrl: string; reason: string }> = [];
   const candidates = new Map<string, PublishedContactResearchCandidate>();
+  let deferredDueToTime = false;
 
-  while (queue.length && visited.size < MAX_FIRST_PARTY_PAGES) {
+  while (queue.length && visited.size < maxPages) {
+    if (Number.isFinite(deadlineAt) && deadlineAt - now() < MIN_FETCH_TIMEOUT_MS) {
+      deferredDueToTime = true;
+      break;
+    }
     const proposed = queue.shift()!;
     let safe: URL;
     try { safe = safeOfficialUrl(proposed.toString(), domain); } catch { continue; }
     if (visited.has(safe.href)) continue;
     visited.add(safe.href);
     try {
-      const page = await fetchTextPage(safe, fetcher, domain);
+      const page = await fetchTextPage(safe, fetcher, domain, deadlineAt, now, pageTimeoutMs);
       const text = decodeText(page.html);
       for (const email of extractEmails(text)) {
         const emailDomain = email.split("@")[1]?.replace(/^www\./, "") ?? "";
@@ -211,10 +242,15 @@ export async function researchPublishedCompanyContacts(input: {
         candidates.set(`${email}|${sourceUrl}`, { id, email, sourceUrl, excerpt, sourceType: classifyOfficialContactSource(page.url), sourceContext: "first_party" });
       }
       for (const link of extractOfficialLinks(page.html, page.url, domain)) {
-        if (!visited.has(link.href) && queue.length + visited.size < MAX_FIRST_PARTY_PAGES * 3) queue.push(link);
+        if (!visited.has(link.href) && queue.length + visited.size < maxPages * 3) queue.push(link);
       }
     } catch (error) {
-      failures.push({ sourceUrl: safe.href, reason: error instanceof Error ? error.message.slice(0, 180) : "Official page fetch failed" });
+      const message = error instanceof Error ? error.message : "Official page fetch failed";
+      if (message === DEADLINE_ERROR || (Number.isFinite(deadlineAt) && deadlineAt - now() < MIN_FETCH_TIMEOUT_MS)) {
+        deferredDueToTime = true;
+        break;
+      }
+      failures.push({ sourceUrl: safe.href, reason: message.slice(0, 180) });
     }
   }
 
@@ -227,7 +263,8 @@ export async function researchPublishedCompanyContacts(input: {
     firstPartyPagesAttempted: visited.size,
     publicPagesAttempted: 0,
     searchQueriesAttempted: 0,
+    deferredDueToTime,
     candidates: rankPublishedContacts([...candidates.values()]).slice(0, 50),
-    failures: failures.slice(0, MAX_FIRST_PARTY_PAGES),
+    failures: failures.slice(0, maxPages),
   };
 }

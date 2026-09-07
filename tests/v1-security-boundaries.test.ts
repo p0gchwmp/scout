@@ -68,13 +68,14 @@ test("one-run orchestration preserves human trust decisions", () => {
     "requireScoutApiUser",
     "requireSameOriginMutation",
     "persistedSearchResults: false",
-    'reviewState: "needs_review"',
+    "deferredToDedicatedResearch: true",
     "autoPromotePortfolioLead: false",
     "autoAcceptContact: false",
     "createGmailDraft: false",
     "sendEmail: false",
     "submitApplication: false",
   ]);
+  assert.doesNotMatch(text, /researchPublishedCompanyContacts|insert\(companyOutreachContacts\)/);
 });
 
 test("ecosystem discovery does not convert search snippets or guessed/private contacts into trusted evidence", () => {

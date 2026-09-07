@@ -1,9 +1,10 @@
-import type { BraveSearchResult, SearchCostClass } from "./brave-search.ts";
+import type { BraveSearchResult, SearchCallOptions, SearchCostClass } from "./brave-search.ts";
 
 const TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search";
 const MAX_RESULTS = 20;
 const MAX_RESPONSE_BYTES = 1_500_000;
 const SEARCH_TIMEOUT_MS = 15_000;
+const MIN_SEARCH_TIMEOUT_MS = 250;
 
 export const TAVILY_SEARCH_CAPABILITIES = Object.freeze({
   webSearch: true,
@@ -38,6 +39,14 @@ function cleanQuery(value: string) {
 function cleanText(value: unknown, max: number) {
   if (typeof value !== "string") return "";
   return value.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function searchTimeout(options?: SearchCallOptions) {
+  const timeoutMs = options?.timeoutMs ?? SEARCH_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < MIN_SEARCH_TIMEOUT_MS || timeoutMs > SEARCH_TIMEOUT_MS) {
+    throw new Error("Search timeout override is invalid");
+  }
+  return timeoutMs;
 }
 
 function parseResponse(value: unknown): BraveSearchResult[] {
@@ -75,7 +84,7 @@ export function createTavilySearchProvider(options: TavilySearchProviderOptions)
   return Object.freeze({
     provider: "tavily" as const,
     allowResultPersistence,
-    async searchFixedQuery(query: string): Promise<BraveSearchResult[]> {
+    async searchFixedQuery(query: string, callOptions?: SearchCallOptions): Promise<BraveSearchResult[]> {
       const response = await fetcher(TAVILY_SEARCH_ENDPOINT, {
         method: "POST",
         headers: {
@@ -92,7 +101,7 @@ export function createTavilySearchProvider(options: TavilySearchProviderOptions)
           include_images: false,
         }),
         redirect: "error",
-        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+        signal: AbortSignal.timeout(searchTimeout(callOptions)),
       });
       if (!response.ok) throw new Error(`Tavily Search request failed (${response.status})`);
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
