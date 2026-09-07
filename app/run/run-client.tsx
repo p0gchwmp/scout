@@ -16,11 +16,20 @@ type RunPayload = {
       directInstitutionLeads?: number;
       portfolioLeads?: number;
       sourceReviewLeads?: number;
-      curatedContactResearch?: { createdTargets?: number; researchedTargets?: number; candidatesStored?: number; rejectedWrongPurpose?: number };
+      curatedContactResearch?: {
+        createdTargets?: number;
+        researchedTargets?: number;
+        candidatesStored?: number;
+        rejectedWrongPurpose?: number;
+        deferredTargets?: number;
+        deferredToDedicatedResearch?: boolean;
+        reason?: string;
+      };
     };
     outcomes?: { submitted?: number; awaitingReply?: number; activeResponses?: number; terminal?: number; followUpsDue?: number };
-    outreachPreparation?: { acceptedContactsReadyForDraft?: number; autoDrafted?: number; reason?: string };
+    outreachPreparation?: { acceptedContactsReadyForDraft?: number; autoDrafted?: number; reason?: string; summaryDeferredDueToTime?: boolean };
     reviewQueue?: Record<string, number>;
+    orchestrationBudget?: { limitMs?: number; elapsedMs?: number; remainingMs?: number; summaryDeferredDueToTime?: boolean };
     safety?: Record<string, boolean>;
   };
   error?: string;
@@ -39,6 +48,23 @@ type LocalResolutionPayload = {
   pending?: number;
   error?: string;
 };
+
+type ErrorPayload = { error?: string };
+
+async function requestJson<T extends ErrorPayload>(endpoint: string, init: RequestInit | undefined, failureLabel: string): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("accept", "application/json");
+  const response = await fetch(endpoint, { ...init, headers });
+  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  const text = await response.text();
+  if (!contentType.includes("json")) throw new Error(`${failureLabel}: ${endpoint} returned HTTP ${response.status} without JSON`);
+  if (!text.trim()) throw new Error(`${failureLabel}: ${endpoint} returned HTTP ${response.status} with an empty JSON response`);
+  let payload: T;
+  try { payload = JSON.parse(text) as T; }
+  catch { throw new Error(`${failureLabel}: ${endpoint} returned invalid JSON (HTTP ${response.status})`); }
+  if (!response.ok) throw new Error(`${failureLabel}: ${payload.error ?? `HTTP ${response.status}`} (${endpoint}, HTTP ${response.status})`);
+  return payload;
+}
 
 function metric(value: number | undefined) { return value ?? 0; }
 
@@ -104,9 +130,12 @@ export function RunScoutWorkspace() {
         return;
       }
 
-      const response = await fetch("/api/agent/orchestrate", { method: "POST" });
-      const payload = await response.json() as RunPayload;
-      if (!response.ok || !payload.run) throw new Error(payload.error ?? "One-run Scout failed");
+      const payload = await requestJson<RunPayload>(
+        "/api/agent/orchestrate",
+        { method: "POST" },
+        "One-run Scout failed",
+      );
+      if (!payload.run) throw new Error(payload.error ?? "One-run Scout failed");
       setResult(payload.run);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "One-run Scout failed");
@@ -117,7 +146,7 @@ export function RunScoutWorkspace() {
 
   return <main className={styles.shell}>
     <header className={styles.header}>
-      <div><p className={styles.kicker}>SCOUT / ONE-RUN ORCHESTRATION</p><h1>Discover broadly. Persist only verified evidence. Stop at human decisions.</h1><p>One run covers the existing internship pipeline plus VC/startup/ecosystem discovery, curated public-contact research and explicit outcome/follow-up accounting.</p></div>
+      <div><p className={styles.kicker}>SCOUT / ONE-RUN ORCHESTRATION</p><h1>Discover broadly. Persist only verified evidence. Stop at human decisions.</h1><p>One run covers the existing internship pipeline plus VC/startup/ecosystem discovery, curated target seeding and explicit outcome/follow-up accounting. Long public-contact crawls stay in their own bounded routes instead of being stacked onto this request.</p></div>
       <nav><Link href="/command-center">Command Center</Link><Link href="/outcomes">Outcomes</Link><Link href="/">Dashboard</Link></nav>
     </header>
 
@@ -125,7 +154,7 @@ export function RunScoutWorkspace() {
     {error && <div className={styles.error}>{error}</div>}
     {localFallback && <section className={styles.boundary}><strong>Local safe run completed</strong><span>Discovery ran through Scout&apos;s signed loopback browser bridge and official posting resolution ran inside Scout. Cloud-agent-only ecosystem, AI/contact research and automatic application-preparation stages were deliberately not represented as completed; use the Shortlist, Applications and Contacts workspaces for reviewed follow-up.</span></section>}
 
-    <section className={styles.runPanel}><div><p className={styles.kicker}>RUN</p><h2>One deliberate pass through every safe stage</h2><p>Broad ecosystem search stays ephemeral. Curated official recruiting targets can be seeded automatically; any contact found still requires your review. Local development uses Scout&apos;s signed browser bridge rather than weakening workerd&apos;s loopback protections.</p></div><button disabled={busy} onClick={() => void runScout()}>{busy ? "Scout is working…" : "Run Scout safely"}</button></section>
+    <section className={styles.runPanel}><div><p className={styles.kicker}>RUN</p><h2>One deliberate pass through every safe stage</h2><p>Broad ecosystem search stays ephemeral. Curated official recruiting targets can be seeded automatically; any contact found still requires your review. Long public-contact research is resumable in dedicated bounded routes. Local development uses Scout&apos;s signed browser bridge rather than weakening workerd&apos;s loopback protections.</p></div><button disabled={busy} onClick={() => void runScout()}>{busy ? "Scout is working…" : "Run Scout safely"}</button></section>
 
     {result && <>
       <section className={styles.metrics}>
@@ -138,7 +167,7 @@ export function RunScoutWorkspace() {
       </section>
 
       {!localFallback && <section className={styles.grid}>
-        <article><p className={styles.kicker}>ECOSYSTEM</p><h2>Capital + startup surface</h2><p>{metric(result.ecosystem?.directInstitutionLeads)} direct institution lead(s), {metric(result.ecosystem?.portfolioLeads)} portfolio lead(s), {metric(result.ecosystem?.sourceReviewLeads)} source-review lead(s).</p><p>Curated research stored {metric(result.ecosystem?.curatedContactResearch?.candidatesStored)} public contact candidate(s) as <strong>needs_review</strong>.</p><Link href="/ecosystem">Triage ecosystem leads →</Link></article>
+        <article><p className={styles.kicker}>ECOSYSTEM</p><h2>Capital + startup surface</h2><p>{metric(result.ecosystem?.directInstitutionLeads)} direct institution lead(s), {metric(result.ecosystem?.portfolioLeads)} portfolio lead(s), {metric(result.ecosystem?.sourceReviewLeads)} source-review lead(s).</p><p>Curated research stored {metric(result.ecosystem?.curatedContactResearch?.candidatesStored)} public contact candidate(s) as <strong>needs_review</strong>. {result.ecosystem?.curatedContactResearch?.deferredToDedicatedResearch ? `${metric(result.ecosystem?.curatedContactResearch?.deferredTargets)} target(s) remain for the bounded research route.` : ""}</p><Link href="/ecosystem">Triage ecosystem leads →</Link></article>
         <article><p className={styles.kicker}>OUTCOMES</p><h2>What happened after action</h2><p>{metric(result.outcomes?.submitted)} submitted application(s), {metric(result.outcomes?.awaitingReply)} awaiting reply, {metric(result.outcomes?.activeResponses)} active response/interview stage(s), {metric(result.outcomes?.terminal)} terminal outcome(s).</p><Link href="/outcomes">Review outcomes →</Link></article>
         <article><p className={styles.kicker}>REVIEW QUEUE</p><h2>Human decisions remain explicit</h2><div className={styles.queue}>{Object.entries(result.reviewQueue ?? {}).map(([key, value]) => <span key={key}><strong>{value}</strong>{key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase())}</span>)}</div><Link href="/command-center">Open Command Center →</Link></article>
       </section>}
