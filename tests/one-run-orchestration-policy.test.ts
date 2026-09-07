@@ -12,11 +12,20 @@ test("M17 reuses the green core runner instead of duplicating its pipeline", () 
   assert.match(route, /await runCoreScout\(request\)/);
 });
 
-test("M17 ecosystem search remains ephemeral while curated official targets may be seeded", () => {
+test("M17 ecosystem search remains ephemeral while long contact crawling is deferred to bounded routes", () => {
   assert.match(route, /persistedSearchResults: false/);
   assert.match(route, /buildEcosystemOutreachSeeds/);
   assert.match(route, /normalizeEcosystemSearchResult/);
-  assert.match(route, /reviewState: "needs_review"/);
+  assert.match(route, /deferredToDedicatedResearch: true/);
+  assert.match(route, /Long public-contact crawling is intentionally deferred/);
+  assert.doesNotMatch(route, /researchPublishedCompanyContacts/);
+});
+
+test("M17 starts bounded ecosystem discovery alongside the core run instead of stacking it afterward", () => {
+  assert.match(route, /const runBudget = createRunBudget\(\)/);
+  assert.match(route, /const ecosystemPromise = discoverEcosystem\(runBudget\);[\s\S]*const coreResponse = await runCoreScout\(request\);[\s\S]*const ecosystem = await ecosystemPromise/);
+  assert.match(route, /provider\.searchFixedQuery\(query\.query, \{ timeoutMs \}\)/);
+  assert.match(route, /orchestrationBudget/);
 });
 
 test("M17 never auto-promotes portfolio leads or performs outbound execution", () => {
@@ -34,10 +43,14 @@ test("M17 surfaces accepted contacts for drafting without automatically drafting
   assert.match(route, /does not spend AI drafting capacity or create Gmail drafts automatically/);
 });
 
-test("M17 Run Scout workspace is owner-only and keeps hosted orchestration", () => {
+test("M17 Run Scout workspace is owner-only, keeps hosted orchestration and guards non-JSON platform errors", () => {
   assert.match(page, /requireChatGPTUser\("\/run"\)/);
   assert.match(page, /requireScoutPageOwner/);
-  assert.match(client, /fetch\("\/api\/agent\/orchestrate", \{ method: "POST" \}\)/);
+  assert.match(client, /requestJson<RunPayload>\(/);
+  assert.match(client, /"\/api\/agent\/orchestrate"/);
+  assert.match(client, /response\.text\(\)/);
+  assert.match(client, /returned HTTP \$\{response\.status\} without JSON/);
+  assert.doesNotMatch(client, /const payload = await response\.json\(\) as RunPayload/);
 });
 
 test("local Run Scout reuses the signed browser discovery bridge instead of weakening workerd loopback protections", () => {
