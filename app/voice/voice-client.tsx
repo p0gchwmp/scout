@@ -69,9 +69,13 @@ export function WritingVoice() {
       const response = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: field.id, action }),
+        body: JSON.stringify({ id: field.id, action, expectedUpdatedAt: field.updatedAt }),
       });
       const payload = await response.json() as { error?: string };
+      if (response.status === 409) {
+        await load();
+        throw new Error(payload.error ?? "Writing input changed elsewhere. Latest value reloaded; review it before retrying.");
+      }
       if (!response.ok) throw new Error(payload.error ?? "Unable to update writing input");
       await load();
       setNotice(action === "verify" ? "Verified. Scout may now use this input for outreach and non-sensitive application-answer style." : "Unverified. Scout will stop using this input until you verify it again.");
