@@ -47,10 +47,12 @@ test("Clerk proxy rebuilds owner identity only after verified session", async ()
   assert.doesNotMatch(proxy, /SCOUT_LOCAL_DEV_AUTH/);
 });
 
-test("Clerk proxy uses a Vinext-safe broad matcher while ownerProtected remains the auth boundary", async () => {
+test("Clerk proxy uses a Vinext-safe broad matcher while hosted route policy remains the auth boundary", async () => {
   const proxy = await source("proxy.ts");
   assert.match(proxy, /matcher:\s*\["\/:path\*"\]/);
-  assert.match(proxy, /if \(!ownerProtected\(request\.nextUrl\.pathname\)\) return NextResponse\.next\(\)/);
+  assert.match(proxy, /isHostedOwnerProtectedPath\(request\.nextUrl\.pathname\)/);
+  assert.match(proxy, /hostedAuthFailureUsesJson\(request\.nextUrl\.pathname\)/);
+  assert.doesNotMatch(proxy, /OWNER_PAGE_PATHS/);
   assert.doesNotMatch(proxy, /\(\?!_next/);
   assert.doesNotMatch(proxy, /webmanifest\)\.\*\)/);
 });
