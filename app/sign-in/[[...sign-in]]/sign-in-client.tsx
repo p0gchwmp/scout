@@ -3,6 +3,42 @@
 import { useEffect, useRef, useState } from "react";
 import { loadClerkBrowser, safeClerkReturnTo } from "../../../lib/scout/clerk-browser";
 
+const REDIRECT_MARKER_KEY = "scout-clerk-sign-in-redirect";
+const REDIRECT_LOOP_WINDOW_MS = 15_000;
+
+type RedirectMarker = { returnTo: string; at: number };
+
+function recentRedirectMarker(returnTo: string) {
+  try {
+    const raw = window.sessionStorage.getItem(REDIRECT_MARKER_KEY);
+    if (!raw) return false;
+    const marker = JSON.parse(raw) as Partial<RedirectMarker>;
+    return marker.returnTo === returnTo
+      && typeof marker.at === "number"
+      && Date.now() - marker.at >= 0
+      && Date.now() - marker.at < REDIRECT_LOOP_WINDOW_MS;
+  } catch {
+    return false;
+  }
+}
+
+function rememberRedirect(returnTo: string) {
+  try {
+    window.sessionStorage.setItem(REDIRECT_MARKER_KEY, JSON.stringify({ returnTo, at: Date.now() } satisfies RedirectMarker));
+  } catch {
+    // Storage can be unavailable in hardened/private browser contexts. The
+    // primary owner-route policy still prevents the known hosted loop.
+  }
+}
+
+function clearRedirectMarker() {
+  try {
+    window.sessionStorage.removeItem(REDIRECT_MARKER_KEY);
+  } catch {
+    // Ignore unavailable storage.
+  }
+}
+
 export function ScoutSignIn({ publishableKey }: { publishableKey: string }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
@@ -16,9 +52,15 @@ export function ScoutSignIn({ publishableKey }: { publishableKey: string }) {
     void loadClerkBrowser(publishableKey).then((clerk) => {
       if (!active) return;
       if (clerk.isSignedIn) {
+        if (recentRedirectMarker(returnTo)) {
+          setError("Scout detected a repeated sign-in redirect. Your browser session exists, but the server did not accept it for this page. Reload once; if it continues, sign out and sign back in.");
+          return;
+        }
+        rememberRedirect(returnTo);
         window.location.replace(returnTo);
         return;
       }
+      clearRedirectMarker();
       clerk.mountSignIn(node, {
         path: "/sign-in",
         routing: "path",
