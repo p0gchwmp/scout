@@ -19,10 +19,11 @@ import {
   renderCompanyFirstOutreach,
   selectCompanyOutreachClaimIds,
 } from "../../../../lib/scout/company-outreach";
+import { combineOutreachAndCoverLetter, renderCoverLetter } from "../../../../lib/scout/cover-letter";
 import { hashDraftBody } from "../../../../lib/scout/outreach";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
-const COMPANY_OUTREACH_TEMPLATE_VERSION = 2;
+const COMPANY_OUTREACH_TEMPLATE_VERSION = 3;
 
 async function listDrafts() {
   const db = getDb();
@@ -87,6 +88,15 @@ export async function POST(request: Request) {
     const candidateName = verifiedProfile.find((field) => field.kind === "full_name")?.claim?.trim();
     if (!candidateName) return Response.json({ error: "Verified full_name profile evidence is required" }, { status: 409 });
 
+    const coverProfile = {
+      university: verifiedProfile.find((field) => field.kind === "university")?.claim ?? null,
+      program: verifiedProfile.find((field) => field.kind === "program")?.claim ?? null,
+      graduationYear: verifiedProfile.find((field) => field.kind === "graduation_year")?.claim ?? null,
+      currentLocation: verifiedProfile.find((field) => field.kind === "current_location")?.claim ?? null,
+    };
+    const roleLabel = companyOutreachRoleLabel(target.track);
+    const opportunityContext = target.interestNote ?? target.researchFocus ?? null;
+
     let rendered = renderCompanyFirstOutreach({
       candidateName,
       companyName: target.companyName,
@@ -102,7 +112,7 @@ export async function POST(request: Request) {
       const envelope = buildAiOutreachEnvelope({
         jobSnapshotId: `company-target:${target.id}`,
         companyName: target.companyName,
-        roleTitle: companyOutreachRoleLabel(target.track),
+        roleTitle: roleLabel,
         candidateName,
         contact: {
           id: contact.id,
@@ -118,12 +128,37 @@ export async function POST(request: Request) {
         },
       });
       const ai = await createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>).draftOutreach(envelope);
-      const candidateBody = [`To: ${contact.email}`, `Subject: ${ai.subject}`, "", ai.body.trim()].join("\n");
+      const aiClaims = usableClaims.filter((claim) => ai.usedClaimIds.includes(claim.id));
+      const coverLetter = renderCoverLetter({
+        candidateName,
+        companyName: target.companyName,
+        roleTitle: roleLabel,
+        purpose: "speculative_company",
+        opportunityContext,
+        profile: coverProfile,
+        claims: (aiClaims.length ? aiClaims : usableClaims).map((claim) => ({ id: claim.id, statement: claim.statement })),
+      });
+      const candidateEmail = [`To: ${contact.email}`, `Subject: ${ai.subject}`, "", ai.body.trim()].join("\n");
+      const candidateBody = combineOutreachAndCoverLetter(candidateEmail, coverLetter.body);
       assertSpeculativeCompanyOutreach(candidateBody);
-      rendered = { body: candidateBody, claimIds: ai.usedClaimIds };
+      rendered = { body: candidateBody, claimIds: [...new Set([...ai.usedClaimIds, ...coverLetter.claimIds])].sort() };
       model = ai.model ?? "cloud-ai";
       deterministicFallback = false;
     } catch {
+      const coverLetter = renderCoverLetter({
+        candidateName,
+        companyName: target.companyName,
+        roleTitle: roleLabel,
+        purpose: "speculative_company",
+        opportunityContext,
+        profile: coverProfile,
+        claims: usableClaims.map((claim) => ({ id: claim.id, statement: claim.statement })),
+      });
+      rendered = {
+        body: combineOutreachAndCoverLetter(rendered.body, coverLetter.body),
+        claimIds: [...new Set([...rendered.claimIds, ...coverLetter.claimIds])].sort(),
+      };
+      assertSpeculativeCompanyOutreach(rendered.body);
       // Company-first outreach remains usable when cloud AI is absent or returns unsupported/speculative-invalid copy.
     }
 
@@ -156,6 +191,7 @@ export async function POST(request: Request) {
         model,
         deterministicFallback,
         claimSelection: payload.claimIds ? "manual_override" : "automatic",
+        includesCoverLetter: true,
       },
     }, { status: 201 });
   } catch (error) {
