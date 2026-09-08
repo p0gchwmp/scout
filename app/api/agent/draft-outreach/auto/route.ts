@@ -4,11 +4,12 @@ import { getDb } from "../../../../../db";
 import { candidateClaims, contactEvidence, jobs, outreachDraftRevisions, outreachDrafts, profileEvidence } from "../../../../../db/schema";
 import { buildAiOutreachEnvelope } from "../../../../../lib/scout/ai-agent";
 import { createScoutAgentClientFromBindings } from "../../../../../lib/scout/agent-runtime";
+import { combineOutreachAndCoverLetter, renderCoverLetter } from "../../../../../lib/scout/cover-letter";
 import { hashDraftBody, OUTREACH_TEMPLATE_VERSION, renderOutreachDraft } from "../../../../../lib/scout/outreach";
 import { evaluateResumeAlignment } from "../../../../../lib/scout/resume-alignment";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../../scout-api";
 
-const AI_OUTREACH_TEMPLATE_VERSION = 4;
+const AI_OUTREACH_TEMPLATE_VERSION = 5;
 
 function contactId(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("A JSON object is required");
@@ -64,6 +65,13 @@ export async function POST(request: Request) {
     const claims = approvedClaims.filter((claim) => relevantClaimIds.includes(claim.id));
     if (!claims.length) return Response.json({ error: "No approved role-relevant claims are available for outreach" }, { status: 409 });
 
+    const coverProfile = {
+      university: verifiedProfile.find((field) => field.kind === "university")?.claim ?? null,
+      program: verifiedProfile.find((field) => field.kind === "program")?.claim ?? null,
+      graduationYear: verifiedProfile.find((field) => field.kind === "graduation_year")?.claim ?? null,
+      currentLocation: verifiedProfile.find((field) => field.kind === "current_location")?.claim ?? null,
+    };
+
     const envelope = buildAiOutreachEnvelope({
       jobSnapshotId: job.currentSnapshotId,
       companyName: job.company,
@@ -92,8 +100,19 @@ export async function POST(request: Request) {
 
     try {
       const ai = await createScoutAgentClientFromBindings(env as unknown as Record<string, unknown>).draftOutreach(envelope);
-      body = [`To: ${contact.email}`, `Subject: ${ai.subject}`, "", ai.body.trim()].join("\n");
-      usedClaimIds = ai.usedClaimIds;
+      const aiClaims = claims.filter((claim) => ai.usedClaimIds.includes(claim.id));
+      const coverLetter = renderCoverLetter({
+        candidateName,
+        companyName: job.company,
+        roleTitle: job.title,
+        purpose: "formal_role",
+        opportunityContext: job.description,
+        profile: coverProfile,
+        claims: (aiClaims.length ? aiClaims : claims).map((claim) => ({ id: claim.id, statement: claim.statement })),
+      });
+      const emailDraft = [`To: ${contact.email}`, `Subject: ${ai.subject}`, "", ai.body.trim()].join("\n");
+      body = combineOutreachAndCoverLetter(emailDraft, coverLetter.body);
+      usedClaimIds = [...new Set([...ai.usedClaimIds, ...coverLetter.claimIds])].sort();
       model = ai.model;
       templateVersion = AI_OUTREACH_TEMPLATE_VERSION;
       voiceSampleUsed = Boolean(envelope.voice.sample);
@@ -107,8 +126,17 @@ export async function POST(request: Request) {
         contactId: contact.id,
         claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement })),
       });
-      body = rendered.body;
-      usedClaimIds = rendered.claimIds;
+      const coverLetter = renderCoverLetter({
+        candidateName,
+        companyName: job.company,
+        roleTitle: job.title,
+        purpose: "formal_role",
+        opportunityContext: job.description,
+        profile: coverProfile,
+        claims: claims.map((claim) => ({ id: claim.id, statement: claim.statement })),
+      });
+      body = combineOutreachAndCoverLetter(rendered.body, coverLetter.body);
+      usedClaimIds = [...new Set([...rendered.claimIds, ...coverLetter.claimIds])].sort();
       model = "deterministic-fallback";
       templateVersion = OUTREACH_TEMPLATE_VERSION;
       deterministicFallback = true;
@@ -147,6 +175,7 @@ export async function POST(request: Request) {
         model,
         voiceSampleUsed,
         deterministicFallback,
+        includesCoverLetter: true,
       },
       safety: { sendEmail: false, submitApplication: false },
     }, { status: 201 });

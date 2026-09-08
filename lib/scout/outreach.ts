@@ -1,5 +1,5 @@
 export const OUTREACH_CAPABILITIES = Object.freeze({ draft: true, send: false, apply: false } as const);
-export const OUTREACH_TEMPLATE_VERSION = 2;
+export const OUTREACH_TEMPLATE_VERSION = 3;
 
 export async function hashDraftBody(body: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));

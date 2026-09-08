@@ -7,6 +7,7 @@ import {
   PayloadValidationError,
 } from "../../../lib/scout/api-validation";
 import { selectUsableApprovedClaims } from "../../../lib/scout/claims";
+import { combineOutreachAndCoverLetter, renderCoverLetter } from "../../../lib/scout/cover-letter";
 import {
   OUTREACH_TEMPLATE_VERSION,
   approveDraft,
@@ -107,7 +108,10 @@ export async function POST(request: Request) {
       eq(contactEvidence.reviewState, "accepted"),
     )).limit(1);
     if (!contact) return Response.json({ error: "An accepted contact pinned to the current job snapshot is required" }, { status: 409 });
-    const claims = await db.select().from(candidateClaims).where(inArray(candidateClaims.id, payload.claimIds));
+    const [claims, verifiedProfile] = await Promise.all([
+      db.select().from(candidateClaims).where(inArray(candidateClaims.id, payload.claimIds)),
+      db.select().from(profileEvidence).where(eq(profileEvidence.verified, true)),
+    ]);
     const usableClaims = selectUsableApprovedClaims(claims, { allowSyntheticDemo: job.id.startsWith("demo_job_") });
     if (claims.length !== payload.claimIds.length || usableClaims.length !== payload.claimIds.length) {
       return Response.json({ error: "Every pinned claim must exist, be approved, non-synthetic for live roles, and have any numbers anchored in its evidence" }, { status: 409 });
@@ -122,6 +126,22 @@ export async function POST(request: Request) {
       contactId: contact.id,
       claims: usableClaims.map((claim) => ({ id: claim.id, statement: claim.statement })),
     });
+    const coverLetter = renderCoverLetter({
+      candidateName: payload.candidateName,
+      companyName: job.company,
+      roleTitle: job.title,
+      purpose: "formal_role",
+      opportunityContext: job.description,
+      profile: {
+        university: verifiedProfile.find((field) => field.kind === "university")?.claim ?? null,
+        program: verifiedProfile.find((field) => field.kind === "program")?.claim ?? null,
+        graduationYear: verifiedProfile.find((field) => field.kind === "graduation_year")?.claim ?? null,
+        currentLocation: verifiedProfile.find((field) => field.kind === "current_location")?.claim ?? null,
+      },
+      claims: usableClaims.map((claim) => ({ id: claim.id, statement: claim.statement })),
+    });
+    const combinedBody = combineOutreachAndCoverLetter(rendered.body, coverLetter.body);
+    const pinnedClaimIds = [...new Set([...rendered.claimIds, ...coverLetter.claimIds])].sort();
     const now = new Date().toISOString();
     const draftId = crypto.randomUUID();
     const revisionId = crypto.randomUUID();
@@ -134,13 +154,13 @@ export async function POST(request: Request) {
         templateVersion: OUTREACH_TEMPLATE_VERSION,
         jobSnapshotId: rendered.jobSnapshotId,
         contactId: rendered.contactId,
-        claimIds: rendered.claimIds,
-        body: rendered.body,
-        bodyHash: await hashDraftBody(rendered.body),
+        claimIds: pinnedClaimIds,
+        body: combinedBody,
+        bodyHash: await hashDraftBody(combinedBody),
         createdAt: now,
       }),
     ]);
-    return Response.json({ draft: await loadDraft(db, draftId) }, { status: 201 });
+    return Response.json({ draft: await loadDraft(db, draftId), includesCoverLetter: true }, { status: 201 });
   } catch (error) {
     logScoutError("outreach.create", error);
     return Response.json({ error: "Unable to create draft from current accepted evidence" }, { status: 409 });
