@@ -71,7 +71,7 @@ test("complete local demo workflow is deterministic and review-only", () => {
     const accepted = database.prepare("SELECT review_state FROM contact_evidence WHERE id = ?").get(revision.contact_id);
     assert.equal(accepted.review_state, "accepted");
     assert.equal(revision.job_snapshot_id, "demo_snapshot_health");
-    assert.equal(revision.template_version, 2);
+    assert.equal(revision.template_version, 3);
     assert.deepEqual(JSON.parse(String(revision.claim_ids)), ["demo_claim_clinic_ops", "demo_claim_scout", "demo_claim_skills"]);
     assert.match(String(revision.body), /internships@demo-health\.example/);
     assert.equal(String(revision.body_hash).length, 64);
