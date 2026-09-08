@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { evaluateResumeAlignment, type ResumeAlignment } from "../lib/scout/resume-alignment";
-import { gmailComposeUrl } from "../lib/scout/gmail-compose";
 
 type Job = {
   id: string;
@@ -63,7 +62,7 @@ type PreparedApplication = {
 };
 type ContactEvidence = { id: string; jobId: string; jobSnapshotId: string; email: string; sourceUrl: string; excerpt: string; suitability: string; suitabilityReason: string; reviewState: "needs_review" | "accepted" | "rejected" };
 type OutreachRevision = { id: string; version: number; body: string; claimIds: string[]; contactId: string; jobSnapshotId: string };
-type OutreachDraft = { id: string; jobId: string; state: "draft" | "approved" | "rejected"; revisions: OutreachRevision[] };
+type OutreachDraft = { id: string; jobId: string; state: "draft" | "approved" | "rejected"; approvedRevisionId: string | null; revisions: OutreachRevision[] };
 
 const profileOptions = [
   "full_name", "email", "phone", "current_location", "university", "program", "graduation_year",
@@ -266,6 +265,47 @@ export function Dashboard() {
     finally { setBusy(null); }
   }
 
+  async function reviewDraft(draft: OutreachDraft, action: "approve" | "reject") {
+    const revision = draft.revisions.at(-1);
+    if (!revision) { setError("Draft has no reviewable revision"); return; }
+    setBusy(`outreach-review:${draft.id}`); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/outreach", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: draft.id, revisionId: revision.id, action }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Outreach review failed");
+      setNotice(action === "approve"
+        ? "Exact outreach revision approved. Gmail draft creation is now allowed, but nothing was sent."
+        : "Outreach draft rejected. It cannot create a Gmail draft.");
+      await loadData();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Outreach review failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function createApprovedGmailDraft(draft: OutreachDraft) {
+    if (draft.state !== "approved" || !draft.approvedRevisionId) {
+      setError("Approve the exact outreach revision before creating a Gmail draft");
+      return;
+    }
+    setBusy(`gmail-draft:${draft.id}`); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/agent/create-gmail-draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ draftId: draft.id }),
+      });
+      const payload = await response.json() as { gmailDraft?: { draftId?: string; reused?: boolean }; error?: string };
+      if (!response.ok || !payload.gmailDraft) throw new Error(payload.error ?? "Unable to create Gmail draft");
+      setNotice(payload.gmailDraft.reused
+        ? `Existing reviewed Gmail draft reused (${payload.gmailDraft.draftId ?? "unknown"}). Nothing was sent.`
+        : `Reviewed Gmail draft created (${payload.gmailDraft.draftId ?? "unknown"}). Nothing was sent.`);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to create Gmail draft"); }
+    finally { setBusy(null); }
+  }
+
   if (loading) return <main className="dashboard"><p>Loading Scout…</p></main>;
 
   return <main className="dashboard">
@@ -298,7 +338,7 @@ export function Dashboard() {
 
     {activeTab === "Apply" && <section><h2>Application action queue</h2><p className="section-intro">Scout prepares a conservative review packet from verified reusable profile fields and approved role-relevant claims. It never submits.</p><div className="grid">{applications.map((application) => <article className="card" key={application.id}><div className="card-head"><span>{String((application.submittedFields as Record<string, unknown>).platformLabel ?? "Application")}</span><strong className={`status ${application.status}`}>{application.status.replace(/_/g, " ")}</strong></div><h3>{application.job?.company} — {application.job?.title}</h3><p>{String((application.submittedFields as Record<string, unknown>).channelNote ?? "")}</p><p><strong>Verified fields:</strong> {Object.keys(((application.submittedFields as Record<string, unknown>).fields ?? {}) as object).join(", ") || "none"}</p><p><strong>Supporting claim IDs:</strong> {(((application.submittedFields as Record<string, unknown>).claimIds ?? []) as string[]).join(", ") || "none"}</p>{application.blockers.length > 0 && <div className="chips">{application.blockers.map((item) => <span className="chip risk" key={item}>{item}</span>)}</div>}<p><strong>Confirm manually:</strong> {(((application.submittedFields as Record<string, unknown>).confirmations ?? []) as string[]).join(" · ")}</p><div className="actions"><button disabled={busy === `application:${application.id}`} onClick={() => void refreshApplication(application.id)}>Refresh packet</button>{application.job?.canonicalUrl && <a href={application.job.canonicalUrl} target="_blank" rel="noreferrer">Open application</a>}</div><small>Artifact version {application.artifactVersion} · submission capability disabled</small></article>)}</div></section>}
 
-    {activeTab === "Outreach" && <section><h2>Contact evidence + outreach drafts</h2><p className="section-intro">Accept only published business/recruiting evidence you trust. Drafts are then pinned to that evidence, the current job snapshot, and approved claim IDs.</p><div className="grid">{contacts.map((contact) => <article className="card" key={contact.id}><div className="card-head"><span>{contact.suitability}</span><strong className={`status ${contact.reviewState}`}>{contact.reviewState.replace(/_/g, " ")}</strong></div><h3>{contact.email}</h3><p>{contact.excerpt}</p><a href={contact.sourceUrl} target="_blank" rel="noreferrer">Evidence source</a><p>{contact.suitabilityReason}</p>{contact.reviewState === "needs_review" && <div className="actions"><button disabled={busy === `contact:${contact.id}`} onClick={() => void reviewContact(contact.id, "accepted")}>Accept evidence</button><button disabled={busy === `contact:${contact.id}`} onClick={() => void reviewContact(contact.id, "rejected")}>Reject</button></div>}{contact.reviewState === "accepted" && <button disabled={busy === `draft:${contact.jobId}`} onClick={() => void generateDraft(contact.jobId, contact.id)}>Create custom draft</button>}</article>)}</div>{drafts.map((draft) => { const revision = draft.revisions.at(-1); const parsed = revision ? gmailComposeUrl({ to: contacts.find((item) => item.id === revision.contactId)?.email ?? "", subject: revision.body.match(/^Subject:\s*(.+)$/m)?.[1] ?? "", body: revision.body.replace(/^To:.*\nSubject:.*\n\n/s, "") }) : "#"; return <article className="card draft" key={draft.id}><div className="card-head"><span>Draft</span><strong className={`status ${draft.state}`}>{draft.state}</strong></div><pre>{revision?.body ?? "No revision"}</pre><p><strong>Claim IDs:</strong> {revision?.claimIds.join(", ")}</p><div className="actions"><a href={parsed} target="_blank" rel="noreferrer">Open in Gmail</a></div></article>; })}</section>}
+    {activeTab === "Outreach" && <section><h2>Contact evidence + outreach drafts</h2><p className="section-intro">Accept only published business/recruiting evidence you trust. Drafts are pinned to that evidence, the current job snapshot, and approved claim IDs. Gmail draft creation stays locked until you approve the exact saved revision.</p><div className="grid">{contacts.map((contact) => <article className="card" key={contact.id}><div className="card-head"><span>{contact.suitability}</span><strong className={`status ${contact.reviewState}`}>{contact.reviewState.replace(/_/g, " ")}</strong></div><h3>{contact.email}</h3><p>{contact.excerpt}</p><a href={contact.sourceUrl} target="_blank" rel="noreferrer">Evidence source</a><p>{contact.suitabilityReason}</p>{contact.reviewState === "needs_review" && <div className="actions"><button disabled={busy === `contact:${contact.id}`} onClick={() => void reviewContact(contact.id, "accepted")}>Accept evidence</button><button disabled={busy === `contact:${contact.id}`} onClick={() => void reviewContact(contact.id, "rejected")}>Reject</button></div>}{contact.reviewState === "accepted" && <button disabled={busy === `draft:${contact.jobId}`} onClick={() => void generateDraft(contact.jobId, contact.id)}>Create custom draft</button>}</article>)}</div>{drafts.map((draft) => { const latest = draft.revisions.at(-1); const displayed = draft.state === "approved" && draft.approvedRevisionId ? draft.revisions.find((revision) => revision.id === draft.approvedRevisionId) ?? latest : latest; const approvedExactRevision = draft.state === "approved" && Boolean(draft.approvedRevisionId && displayed?.id === draft.approvedRevisionId); return <article className="card draft" key={draft.id}><div className="card-head"><span>Draft</span><strong className={`status ${draft.state}`}>{draft.state}</strong></div><pre>{displayed?.body ?? "No revision"}</pre><p><strong>Claim IDs:</strong> {displayed?.claimIds.join(", ") || "none"}</p>{draft.state === "draft" && latest && <div className="actions"><button disabled={busy === `outreach-review:${draft.id}`} onClick={() => void reviewDraft(draft, "approve")}>Approve exact revision</button><button disabled={busy === `outreach-review:${draft.id}`} onClick={() => void reviewDraft(draft, "reject")}>Reject</button></div>}{approvedExactRevision && <div className="actions"><button disabled={busy === `gmail-draft:${draft.id}`} onClick={() => void createApprovedGmailDraft(draft)}>Create Gmail draft</button><small>Creates a Gmail draft only. Scout still cannot send it.</small></div>}{draft.state === "approved" && !approvedExactRevision && <small>Approved revision is unavailable or stale; reload before any Gmail action.</small>}{draft.state === "rejected" && <small>Rejected — no Gmail action is available.</small>}</article>; })}</section>}
 
     {activeTab === "Profile" && <section><h2>Application profile evidence</h2><p className="section-intro">These are reusable form values, not inferred facts. New values stay unverified until you explicitly verify them.</p><div className="editor"><select value={newProfile.kind} onChange={(event) => setNewProfile((value) => ({ ...value, kind: event.target.value }))}>{profileOptions.map((kind) => <option key={kind}>{kind}</option>)}</select><input placeholder="Exact value" value={newProfile.claim} onChange={(event) => setNewProfile((value) => ({ ...value, claim: event.target.value }))} /><input placeholder="Evidence / where verified" value={newProfile.evidence} onChange={(event) => setNewProfile((value) => ({ ...value, evidence: event.target.value }))} /><button disabled={busy === "profile:new"} onClick={() => void saveProfileField()}>Save unverified</button></div><div className="grid">{profileFields.map((field) => <article className="card" key={field.id}><div className="card-head"><span>{field.kind}</span><strong className={`status ${field.verified ? "approved" : "draft"}`}>{field.verified ? "verified" : "unverified"}</strong></div><h3>{field.claim}</h3><p>{field.evidence}</p><button disabled={busy === `profile:${field.id}`} onClick={() => void verifyProfileField(field.id, !field.verified)}>{field.verified ? "Mark unverified" : "Verify"}</button></article>)}</div></section>}
 
