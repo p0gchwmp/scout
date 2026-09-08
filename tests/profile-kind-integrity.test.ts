@@ -17,6 +17,13 @@ test("profile upsert fails closed if duplicate evidence already exists", async (
   assert.match(route, /status: 409/);
 });
 
+test("profile review also fails closed when a kind is ambiguous", async () => {
+  const route = await readFile(new URL("../app/api/profile/route.ts", import.meta.url), "utf8");
+  assert.match(route, /where\(eq\(profileEvidence\.kind, current\.kind\)\)\.limit\(2\)/);
+  assert.match(route, /sameKindRows\.length > 1/);
+  assert.match(route, /return duplicateProfileError\(\)/);
+});
+
 test("concurrent creation cannot silently produce a second profile row", async () => {
   const route = await readFile(new URL("../app/api/profile/route.ts", import.meta.url), "utf8");
   assert.match(route, /Profile field was created concurrently; reload the current evidence before editing/);
