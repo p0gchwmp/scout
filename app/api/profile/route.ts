@@ -18,6 +18,16 @@ function expectedUpdatedAt(value: unknown) {
   return normalized;
 }
 
+function profileRecordId(kind: string) {
+  return `profile:${kind}`;
+}
+
+function duplicateProfileError() {
+  return Response.json({
+    error: "Multiple profile evidence rows exist for this field; repair the duplicate evidence before editing or verifying it",
+  }, { status: 409 });
+}
+
 function dashboardReviewPayload(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as { id?: unknown; action?: unknown; verified?: unknown; expectedUpdatedAt?: unknown };
@@ -40,6 +50,11 @@ async function reviewProfile(raw: unknown) {
   }
   try {
     const db = getDb();
+    const [current] = await db.select().from(profileEvidence).where(eq(profileEvidence.id, payload.id)).limit(1);
+    if (!current) return Response.json({ error: "Profile field not found" }, { status: 404 });
+    const sameKindRows = await db.select().from(profileEvidence).where(eq(profileEvidence.kind, current.kind)).limit(2);
+    if (sameKindRows.length > 1) return duplicateProfileError();
+
     const now = new Date().toISOString();
     const [field] = await db.update(profileEvidence)
       .set({ verified: payload.action === "verify", updatedAt: now })
@@ -49,9 +64,6 @@ async function reviewProfile(raw: unknown) {
       ))
       .returning();
     if (field) return Response.json({ field });
-
-    const [existing] = await db.select().from(profileEvidence).where(eq(profileEvidence.id, payload.id)).limit(1);
-    if (!existing) return Response.json({ error: "Profile field not found" }, { status: 404 });
     return Response.json({
       error: "Profile field changed; reload and review the exact current value before changing verification",
     }, { status: 409 });
@@ -92,15 +104,31 @@ export async function POST(request: Request) {
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Invalid profile field" }, { status: 400 }); }
   try {
     const db = getDb();
-    const [existing] = await db.select().from(profileEvidence).where(eq(profileEvidence.kind, payload.kind)).limit(1);
+    const existingRows = await db.select().from(profileEvidence).where(eq(profileEvidence.kind, payload.kind)).limit(2);
+    if (existingRows.length > 1) return duplicateProfileError();
+
+    const [existing] = existingRows;
     const now = new Date().toISOString();
     if (existing?.verified) return Response.json({ error: "Verified profile fields must be unverified before editing" }, { status: 409 });
     if (existing) {
-      const [field] = await db.update(profileEvidence).set({ claim: payload.claim, evidence: payload.evidence, verified: false, updatedAt: now }).where(eq(profileEvidence.id, existing.id)).returning();
+      const [field] = await db.update(profileEvidence)
+        .set({ claim: payload.claim, evidence: payload.evidence, verified: false, updatedAt: now })
+        .where(and(eq(profileEvidence.id, existing.id), eq(profileEvidence.verified, false)))
+        .returning();
+      if (!field) return Response.json({ error: "Profile field changed; reload and retry" }, { status: 409 });
       return Response.json({ field });
     }
-    const [field] = await db.insert(profileEvidence).values({ id: crypto.randomUUID(), ...payload, verified: false, updatedAt: now }).returning();
-    return Response.json({ field }, { status: 201 });
+
+    const [field] = await db.insert(profileEvidence).values({
+      id: profileRecordId(payload.kind),
+      ...payload,
+      verified: false,
+      updatedAt: now,
+    }).onConflictDoNothing().returning();
+    if (field) return Response.json({ field }, { status: 201 });
+    return Response.json({
+      error: "Profile field was created concurrently; reload the current evidence before editing",
+    }, { status: 409 });
   } catch (error) {
     return scoutServerError("profile.upsert", error, "Unable to save application profile field");
   }
