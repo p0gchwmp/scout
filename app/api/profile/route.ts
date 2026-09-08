@@ -107,26 +107,12 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     if (existing?.verified) return Response.json({ error: "Verified profile fields must be unverified before editing" }, { status: 409 });
     if (existing) {
-      let expected: string;
-      try { expected = expectedUpdatedAt((raw as Record<string, unknown>)?.expectedUpdatedAt); }
-      catch {
-        return Response.json({
-          error: "Reload this profile field before editing so Scout can bind the change to the exact evidence version you reviewed",
-        }, { status: 409 });
-      }
-
       const [field] = await db.update(profileEvidence)
         .set({ claim: payload.claim, evidence: payload.evidence, verified: false, updatedAt: now })
-        .where(and(
-          eq(profileEvidence.id, existing.id),
-          eq(profileEvidence.updatedAt, expected),
-          eq(profileEvidence.verified, false),
-        ))
+        .where(and(eq(profileEvidence.id, existing.id), eq(profileEvidence.verified, false)))
         .returning();
-      if (field) return Response.json({ field });
-      return Response.json({
-        error: "Profile field changed; reload the current evidence before editing",
-      }, { status: 409 });
+      if (!field) return Response.json({ error: "Profile field changed; reload and retry" }, { status: 409 });
+      return Response.json({ field });
     }
 
     const [field] = await db.insert(profileEvidence).values({
