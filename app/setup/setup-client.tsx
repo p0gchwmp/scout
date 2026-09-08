@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./setup.module.css";
 
-type ProfileField = { id: string; kind: string; claim: string; evidence: string; verified: boolean };
+type ProfileField = { id: string; kind: string; claim: string; evidence: string; verified: boolean; updatedAt: string };
 type Claim = { id: string; statement: string; evidence: string; status: "draft" | "approved" | "rejected"; version: number };
 type Job = { id: string; state: string; lifecycleState: string };
 type Application = { id: string; status: string };
@@ -189,9 +189,14 @@ export function SetupWorkspace() {
       const response = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: field.id, action: field.verified ? "unverify" : "verify" }),
+        body: JSON.stringify({ id: field.id, action: field.verified ? "unverify" : "verify", expectedUpdatedAt: field.updatedAt }),
       });
-      await jsonResponse(response, "Unable to update profile verification");
+      const payload = await response.json() as { error?: string };
+      if (response.status === 409) {
+        await load();
+        throw new Error(payload.error ?? "Profile field changed elsewhere. Latest value reloaded; review it before retrying.");
+      }
+      if (!response.ok) throw new Error(payload.error ?? "Unable to update profile verification");
       setNotice(field.verified ? `${humanize(field.kind)} marked unverified.` : `${humanize(field.kind)} verified for reusable application fields.`);
       await load();
     } catch (caught) {
@@ -295,7 +300,7 @@ export function SetupWorkspace() {
     <section className={styles.panel}>
       <div className={styles.panelHead}>
         <div><p className={styles.kicker}>2 · RESUME EVIDENCE</p><h2>Load the known boundaries as drafts, not claims of fact</h2></div>
-        <Link href="/?tab=Claims">Open Claims →</Link>
+        <Link href="/claims">Open Claims →</Link>
       </div>
       <p className={styles.muted}>The starter wording preserves the project boundaries already defined for Scout. Clicking below only creates draft claims. It never approves them and never invents metrics, outcomes, work authorization, referrals, or credentials.</p>
       <button className={styles.primary} disabled={busy === "claims"} onClick={() => void addStarterClaims()}>Add missing starter claims as drafts</button>

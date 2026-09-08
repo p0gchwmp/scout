@@ -204,9 +204,20 @@ export function Dashboard() {
 
   async function verifyProfileField(id: string, verified: boolean) {
     setBusy(`profile:${id}`);
+    setError("");
     try {
-      const response = await fetch("/api/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "verify", id, verified }) });
+      const field = profileFields.find((item) => item.id === id);
+      if (!field) throw new Error("Profile field not found; reload and retry");
+      const response = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "verify", id, verified, expectedUpdatedAt: field.updatedAt }),
+      });
       const payload = await response.json() as { error?: string };
+      if (response.status === 409) {
+        await loadData();
+        throw new Error(payload.error ?? "Profile field changed elsewhere. Latest value reloaded; review it before retrying.");
+      }
       if (!response.ok) throw new Error(payload.error ?? "Profile verification failed");
       await loadData();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Profile verification failed"); }
