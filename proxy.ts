@@ -1,17 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { clerkSessionToken, verifyClerkSession } from "./lib/scout/clerk-auth";
-
-const OWNER_PAGE_PATHS = new Set([
-  "/", "/inbox", "/assist", "/voice", "/review", "/shortlist", "/readiness",
-  "/applications", "/sources", "/setup", "/evidence", "/preferences", "/quality", "/roles",
-]);
-
-function ownerProtected(pathname: string) {
-  return OWNER_PAGE_PATHS.has(pathname)
-    || pathname.startsWith("/roles/")
-    || pathname.startsWith("/api/")
-    || pathname === "/health";
-}
+import { hostedAuthFailureUsesJson, isHostedOwnerProtectedPath } from "./lib/scout/hosted-route-policy";
 
 function signInRedirect(request: NextRequest) {
   const returnTo = `${request.nextUrl.pathname}${request.nextUrl.search}`;
@@ -29,14 +18,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!ownerProtected(request.nextUrl.pathname)) return NextResponse.next();
+  // Hosted Scout is private and owner-only. Protect application routes by
+  // default so newly added workspaces cannot silently fall outside the Clerk
+  // identity-injection boundary. Only explicit auth/framework/static paths are
+  // public; APIs and health remain protected and fail with JSON errors.
+  if (!isHostedOwnerProtectedPath(request.nextUrl.pathname)) return NextResponse.next();
 
   const ownerId = process.env.SCOUT_OWNER_USER_ID?.trim();
   if (!ownerId) return jsonError("Scout owner is not configured", 503);
 
   const token = clerkSessionToken(request);
   if (!token) {
-    return request.nextUrl.pathname.startsWith("/api/") || request.nextUrl.pathname === "/health"
+    return hostedAuthFailureUsesJson(request.nextUrl.pathname)
       ? jsonError("Authentication required", 401)
       : signInRedirect(request);
   }
@@ -50,7 +43,7 @@ export async function proxy(request: NextRequest) {
   try {
     session = await verifyClerkSession(token, { jwtKey, issuer, publicOrigin });
   } catch {
-    return request.nextUrl.pathname.startsWith("/api/") || request.nextUrl.pathname === "/health"
+    return hostedAuthFailureUsesJson(request.nextUrl.pathname)
       ? jsonError("Authentication required", 401)
       : signInRedirect(request);
   }
@@ -75,8 +68,8 @@ export async function proxy(request: NextRequest) {
 export default proxy;
 
 // Keep the matcher syntax deliberately simple for Vinext's middleware parser.
-// The proxy may be invoked for non-Scout/static paths, but ownerProtected()
-// remains the authorization boundary and immediately passes those requests on.
+// The proxy may be invoked for framework/static paths, but the hosted route
+// policy explicitly exempts only the paths required before owner auth.
 export const config = {
   matcher: ["/:path*"],
 };
