@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { normalizeScoutApiResponse } from "../lib/scout/browser-api-response";
 import { loadClerkBrowser } from "../lib/scout/clerk-browser";
 
 const SESSION_REFRESH_INTERVAL_MS = 45_000;
@@ -47,7 +48,8 @@ export function ClerkSessionKeeper({ publishableKey }: { publishableKey: string 
       // fetches. When a tab wakes after browser timer throttling, wait for Clerk
       // to mint a fresh short-lived session token before those requests leave.
       if (active && sameOriginRequest(input)) await refreshSession(false);
-      return originalFetch.call(window, input, init);
+      const response = await originalFetch.call(window, input, init);
+      return normalizeScoutApiResponse(input, response, window.location.href);
     };
 
     window.fetch = guardedFetch;
