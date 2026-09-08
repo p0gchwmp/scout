@@ -22,6 +22,12 @@ function profileRecordId(kind: string) {
   return `profile:${kind}`;
 }
 
+function duplicateProfileError() {
+  return Response.json({
+    error: "Multiple profile evidence rows exist for this field; repair the duplicate evidence before editing or verifying it",
+  }, { status: 409 });
+}
+
 function dashboardReviewPayload(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as { id?: unknown; action?: unknown; verified?: unknown; expectedUpdatedAt?: unknown };
@@ -44,6 +50,11 @@ async function reviewProfile(raw: unknown) {
   }
   try {
     const db = getDb();
+    const [current] = await db.select().from(profileEvidence).where(eq(profileEvidence.id, payload.id)).limit(1);
+    if (!current) return Response.json({ error: "Profile field not found" }, { status: 404 });
+    const sameKindRows = await db.select().from(profileEvidence).where(eq(profileEvidence.kind, current.kind)).limit(2);
+    if (sameKindRows.length > 1) return duplicateProfileError();
+
     const now = new Date().toISOString();
     const [field] = await db.update(profileEvidence)
       .set({ verified: payload.action === "verify", updatedAt: now })
@@ -53,9 +64,6 @@ async function reviewProfile(raw: unknown) {
       ))
       .returning();
     if (field) return Response.json({ field });
-
-    const [existing] = await db.select().from(profileEvidence).where(eq(profileEvidence.id, payload.id)).limit(1);
-    if (!existing) return Response.json({ error: "Profile field not found" }, { status: 404 });
     return Response.json({
       error: "Profile field changed; reload and review the exact current value before changing verification",
     }, { status: 409 });
@@ -97,11 +105,7 @@ export async function POST(request: Request) {
   try {
     const db = getDb();
     const existingRows = await db.select().from(profileEvidence).where(eq(profileEvidence.kind, payload.kind)).limit(2);
-    if (existingRows.length > 1) {
-      return Response.json({
-        error: "Multiple profile evidence rows exist for this field; repair the duplicate evidence before editing or verifying it",
-      }, { status: 409 });
-    }
+    if (existingRows.length > 1) return duplicateProfileError();
 
     const [existing] = existingRows;
     const now = new Date().toISOString();
