@@ -28,11 +28,6 @@ const starterProfile = [
     evidence: "Ryan-provided Scout profile. Verify this exact reusable value before application use.",
   },
   {
-    kind: "current_location",
-    claim: "Jammu, India",
-    evidence: "Ryan-provided Scout profile. Verify this exact reusable value before application use.",
-  },
-  {
     kind: "university",
     claim: "Indian Institute of Management Sambalpur",
     evidence: "Ryan-provided Scout profile. Verify the official institution wording before application use.",
@@ -40,19 +35,19 @@ const starterProfile = [
   {
     kind: "program",
     claim: "Bachelor of Science (B.S.) in Management and Public Policy",
-    evidence: "Ryan-confirmed official degree wording for Scout application use.",
+    evidence: "Starter value from Ryan-provided project context. Verify the exact official degree wording before application use.",
   },
   {
     kind: "graduation_year",
     claim: "2028 (B.S. exit) / 2029 (B.S. Honours with Research)",
-    evidence: "Ryan-confirmed degree path. Graduation year must be confirmed per application and is never a universal Safe Fill fact.",
+    evidence: "Starter value from Ryan-provided project context. Confirm the applicable graduation path against official academic documentation for each application.",
   },
 ] as const;
 
 const starterClaims = [
   {
     statement: "I am pursuing the Bachelor of Science (B.S.) in Management and Public Policy at IIM Sambalpur; the B.S. exit award is available in 2028, with B.S. (Honours with Research) in 2029.",
-    evidence: "Ryan-confirmed degree path: B.S. exit award in 2028 and B.S. (Honours with Research) in 2029. Verify against official academic documentation before approval.",
+    evidence: "Ryan-provided degree-path context. Verify against official academic documentation before approval.",
   },
   {
     statement: "At GMC Jammu, I worked on adverse-drug-reaction data review, technical documentation, and antibiotic price desk research.",
@@ -98,6 +93,7 @@ export function SetupWorkspace() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [email, setEmail] = useState("");
+  const [currentLocation, setCurrentLocation] = useState("");
   const [resumeReference, setResumeReference] = useState("");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
@@ -150,13 +146,13 @@ export function SetupWorkspace() {
   async function saveStarterProfile() {
     setBusy("profile"); setError(""); setNotice("");
     try {
-      const candidates = [
-        ...starterProfile,
-        ...(email.trim() ? [{ kind: "email", claim: email.trim(), evidence: "Entered by Ryan in Scout Start Here. Verify before reuse." }] : []),
+      const explicitInputs = [
+        ...(email.trim() ? [{ kind: "email", claim: email.trim(), evidence: "Entered by Ryan in Scout Start Here. Verify this exact application email before reuse." }] : []),
+        ...(currentLocation.trim() ? [{ kind: "current_location", claim: currentLocation.trim(), evidence: "Entered by Ryan in Scout Start Here. Verify this exact current location before reuse." }] : []),
         ...(resumeReference.trim() ? [{ kind: "resume_reference", claim: resumeReference.trim(), evidence: "Entered by Ryan in Scout Start Here. Verify that this points to the approved current resume before reuse." }] : []),
       ];
-      let created = 0;
-      for (const field of candidates) {
+      let changed = 0;
+      for (const field of starterProfile) {
         if (profileByKind.has(field.kind)) continue;
         const response = await fetch("/api/profile", {
           method: "POST",
@@ -164,11 +160,23 @@ export function SetupWorkspace() {
           body: JSON.stringify(field),
         });
         await jsonResponse(response, `Unable to save ${field.kind}`);
-        created += 1;
+        changed += 1;
       }
-      setNotice(created
-        ? `${created} profile field${created === 1 ? "" : "s"} saved as unverified. Verify each exact reusable value before Scout reuses it.`
-        : "No missing starter profile fields were changed. Existing evidence was left untouched.");
+      for (const field of explicitInputs) {
+        const existing = profileByKind.get(field.kind);
+        if (existing?.verified) continue;
+        if (existing?.claim === field.claim && existing.evidence === field.evidence) continue;
+        const response = await fetch("/api/profile", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(field),
+        });
+        await jsonResponse(response, `Unable to save ${field.kind}`);
+        changed += 1;
+      }
+      setNotice(changed
+        ? `${changed} profile field${changed === 1 ? "" : "s"} saved or updated as unverified. Verify each exact reusable value before Scout reuses it.`
+        : "No profile values were changed. Existing verified evidence was left untouched.");
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save starter profile");
@@ -264,9 +272,10 @@ export function SetupWorkspace() {
         <div><p className={styles.kicker}>1 · REUSABLE APPLICATION FACTS</p><h2>Verify only facts you want Safe Fill to reuse</h2></div>
         <span>{missingRequired.length ? `${missingRequired.length} still missing/unverified` : "Required profile complete"}</span>
       </div>
-      <p className={styles.muted}>Starter values are saved unverified. Scout will not reuse them until you click Verify. Email and the approved resume reference are intentionally not guessed. Graduation year stays manual because the B.S. exit award is available in 2028 while B.S. (Honours with Research) is in 2029.</p>
+      <p className={styles.muted}>Starter values are saved unverified. Scout will not reuse them until you click Verify. Current location, email, and the approved resume reference are intentionally not guessed; enter them yourself if you want Scout to store them. Graduation year stays manual because the degree path can differ by application.</p>
       <div className={styles.inputs}>
         <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Your application email" /></label>
+        <label>Current location<input value={currentLocation} onChange={(event) => setCurrentLocation(event.target.value)} placeholder="Your current location" /></label>
         <label>Approved resume reference<input value={resumeReference} onChange={(event) => setResumeReference(event.target.value)} placeholder="e.g. Ryan_Mahajan_Resume_Aug_2026.pdf" /></label>
         <button disabled={busy === "profile"} onClick={() => void saveStarterProfile()}>Save missing profile basics</button>
       </div>
