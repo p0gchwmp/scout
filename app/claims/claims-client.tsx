@@ -26,6 +26,10 @@ function formatTimestamp(value: string | null | undefined) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
+function isRetiredClaim(claim: Claim) {
+  return claim.status === "rejected" && Boolean(claim.approvedAt);
+}
+
 export function ClaimsWorkspace() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [edits, setEdits] = useState<Record<string, ClaimEdit>>({});
@@ -116,13 +120,36 @@ export function ClaimsWorkspace() {
       if (!response.ok) throw new Error(payload.error ?? "Claim update failed");
       const next = payload.claim;
       setNotice(action === "approve"
-        ? `Approved ${claim.id} at version ${next?.version ?? claim.version + 1}. Approved claims are immutable.`
+        ? `Approved ${claim.id} at version ${next?.version ?? claim.version + 1}. Approved claims are immutable unless you explicitly retire them.`
         : action === "reject"
           ? `Rejected ${claim.id}. It will not support fit, applications, or outreach.`
           : `Saved ${claim.id} as version ${next?.version ?? claim.version + 1}. Review the saved version before approving.`);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Claim update failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function retireClaim(claim: Claim) {
+    setBusy(`claim:${claim.id}`); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/claims/retire", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: claim.id, expectedVersion: claim.version }),
+      });
+      const payload = await response.json() as { claim?: Claim; error?: string };
+      if (response.status === 409) {
+        await load();
+        throw new Error(payload.error ?? "Claim changed elsewhere. Latest version reloaded; review it before retrying.");
+      }
+      if (!response.ok) throw new Error(payload.error ?? "Claim retirement failed");
+      setNotice(`Retired ${claim.id}. Its statement and original approval timestamp remain in history, but it will no longer support fit, applications, or outreach.`);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Claim retirement failed");
     } finally {
       setBusy(null);
     }
@@ -135,7 +162,7 @@ export function ClaimsWorkspace() {
       <div>
         <p className={styles.kicker}>SCOUT / CLAIM GOVERNANCE</p>
         <h1>Approve facts, not vibes.</h1>
-        <p>Claims are the evidence boundary for resume fit, application preparation, and outreach drafting. Draft and rejected claims stay out of those workflows.</p>
+        <p>Claims are the evidence boundary for resume fit, application preparation, and outreach drafting. Draft, rejected, and retired claims stay out of those workflows.</p>
       </div>
       <nav className={styles.headerLinks} aria-label="Scout claim navigation">
         <Link href="/shortlist">Shortlist</Link>
@@ -194,13 +221,14 @@ export function ClaimsWorkspace() {
         const edit = edits[claim.id] ?? { statement: claim.statement, evidence: claim.evidence };
         const dirty = claim.status === "draft" && (edit.statement !== claim.statement || edit.evidence !== claim.evidence);
         const claimBusy = busy === `claim:${claim.id}`;
+        const retired = isRetiredClaim(claim);
         return <article className={styles.card} key={claim.id}>
           <div className={styles.cardHeader}>
             <div>
               <code>{claim.id}</code>
               <span>Version {claim.version}</span>
             </div>
-            <strong className={`${styles.status} ${styles[claim.status]}`}>{claim.status}</strong>
+            <strong className={`${styles.status} ${styles[claim.status]}`}>{retired ? "retired" : claim.status}</strong>
           </div>
 
           {claim.status === "draft" ? <>
@@ -243,8 +271,17 @@ export function ClaimsWorkspace() {
             <div className={styles.readOnlyBlock}><strong>Statement</strong><p>{claim.statement}</p></div>
             <div className={styles.readOnlyBlock}><strong>Evidence</strong><p>{claim.evidence}</p></div>
             <p className={styles.readOnlyNote}>{claim.status === "approved"
-              ? "Immutable approved evidence. Create a new draft rather than rewriting history."
-              : "Rejected evidence is retained for review history and ignored by downstream fit/drafting."}</p>
+              ? "Approved evidence is immutable. Retire it if a newer claim should replace it; retirement preserves history but removes it from downstream use."
+              : retired
+                ? "Retired approved evidence is retained with its original approval timestamp and ignored by downstream fit, applications, and drafting."
+                : "Rejected evidence is retained for review history and ignored by downstream fit/drafting."}</p>
+            {claim.status === "approved" && <div className={styles.actions}>
+              <button
+                className={styles.rejectButton}
+                disabled={claimBusy}
+                onClick={() => void retireClaim(claim)}
+              >Retire approved claim</button>
+            </div>}
           </>}
 
           <footer className={styles.meta}>
@@ -256,6 +293,6 @@ export function ClaimsWorkspace() {
       })}
     </section>
 
-    <footer className={styles.boundary}>Only approved, usable claims may support Scout decisions. This page changes local evidence state only; it does not contact employers, send email, or submit applications.</footer>
+    <footer className={styles.boundary}>Only approved, usable claims may support Scout decisions. Retiring a claim changes evidence state only; it does not delete history, contact employers, send email, or submit applications.</footer>
   </main>;
 }
