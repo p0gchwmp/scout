@@ -58,3 +58,8 @@ export function rejectClaim(claim: CandidateClaim): CandidateClaim {
   if (claim.status !== "draft") throw new Error("Only draft claims can be rejected");
   return { ...claim, status: "rejected", approvedAt: null };
 }
+
+export function retireApprovedClaim(claim: CandidateClaim): CandidateClaim {
+  if (claim.status !== "approved") throw new Error("Only approved claims can be retired");
+  return { ...claim, status: "rejected" };
+}
