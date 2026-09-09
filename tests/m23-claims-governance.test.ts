@@ -50,5 +50,5 @@ test("approved and rejected claims are immutable or excluded", () => {
 test("M23 keeps external side effects out of claim review", () => {
   assert.doesNotMatch(client, /\/api\/(send|submit)/i);
   assert.doesNotMatch(route, /\/api\/(send|submit)/i);
-  assert.match(client, /does not contact employers, send email, or submit applications/);
+  assert.match(client, /does not delete history, contact employers, send email, or submit applications/);
 });
