@@ -1,8 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { candidateClaims, profileEvidence } from "../../../db/schema";
 import { parseResumeImportPayload } from "../../../lib/scout/resume-import";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
+
+function profileRecordId(kind: string) {
+  return `profile:${kind}`;
+}
 
 export async function POST(request: Request) {
   const unauthorized = await requireScoutApiUser();
@@ -24,6 +28,17 @@ export async function POST(request: Request) {
       db.select().from(candidateClaims),
     ]);
 
+    const incomingKinds = new Set(payload.profile.map((field) => field.kind));
+    const duplicateKinds = [...incomingKinds].filter((kind) => (
+      currentProfile.filter((field) => field.kind === kind).length > 1
+    ));
+    if (duplicateKinds.length) {
+      return Response.json({
+        error: "Multiple profile evidence rows exist for one or more resume fields; repair the duplicate evidence before importing",
+        conflictingKinds: duplicateKinds,
+      }, { status: 409 });
+    }
+
     const profileByKind = new Map(currentProfile.map((field) => [field.kind, field]));
     const verifiedConflicts = payload.profile.filter((incoming) => {
       const existing = profileByKind.get(incoming.kind);
@@ -38,7 +53,7 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
     const newProfileRows = payload.profile.filter((incoming) => !profileByKind.has(incoming.kind)).map((incoming) => ({
-      id: crypto.randomUUID(),
+      id: profileRecordId(incoming.kind),
       ...incoming,
       verified: false,
       updatedAt: now,
@@ -49,15 +64,38 @@ export async function POST(request: Request) {
     });
     const keptVerifiedProfile = payload.profile.filter((incoming) => profileByKind.get(incoming.kind)?.verified).length;
 
-    if (newProfileRows.length) await db.insert(profileEvidence).values(newProfileRows);
+    let createdProfile = 0;
+    if (newProfileRows.length) {
+      const insertedProfileRows = await db.insert(profileEvidence)
+        .values(newProfileRows)
+        .onConflictDoNothing()
+        .returning();
+      if (insertedProfileRows.length !== newProfileRows.length) {
+        return Response.json({
+          error: "Profile evidence changed concurrently; reload and review the current profile evidence before retrying resume import",
+        }, { status: 409 });
+      }
+      createdProfile = insertedProfileRows.length;
+    }
+
+    let updatedProfile = 0;
     for (const incoming of profileUpdates) {
       const existing = profileByKind.get(incoming.kind)!;
-      await db.update(profileEvidence).set({
+      const [field] = await db.update(profileEvidence).set({
         claim: incoming.claim,
         evidence: incoming.evidence,
         verified: false,
         updatedAt: now,
-      }).where(eq(profileEvidence.id, existing.id));
+      }).where(and(
+        eq(profileEvidence.id, existing.id),
+        eq(profileEvidence.verified, false),
+      )).returning();
+      if (!field) {
+        return Response.json({
+          error: "Profile evidence changed concurrently; reload and review the current profile evidence before retrying resume import",
+        }, { status: 409 });
+      }
+      updatedProfile += 1;
     }
 
     const existingClaimKeys = new Set(currentClaims.map((claim) => `${claim.statement.toLowerCase()}\n${claim.evidence.toLowerCase()}`));
@@ -82,8 +120,6 @@ export async function POST(request: Request) {
     });
     if (newClaimRows.length) await db.insert(candidateClaims).values(newClaimRows);
 
-    const createdProfile = newProfileRows.length;
-    const updatedProfile = profileUpdates.length;
     const createdClaims = newClaimRows.length;
 
     return Response.json({
