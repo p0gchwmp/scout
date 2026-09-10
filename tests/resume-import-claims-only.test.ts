@@ -38,7 +38,7 @@ test("resume import still caps optional profile evidence at the supported kinds"
   );
 });
 
-test("claims-only import route gates every profile mutation on payload.profile and creates claims as drafts", async () => {
+test("claims-only import route gates every profile mutation on payload.profile and batches claim inserts", async () => {
   const route = await readFile(new URL("../app/api/resume-import/route.ts", import.meta.url), "utf8");
 
   assert.match(route, /const newProfileRows = payload\.profile\.filter/);
@@ -47,5 +47,6 @@ test("claims-only import route gates every profile mutation on payload.profile a
   assert.match(route, /for \(const incoming of profileUpdates\)/);
   assert.match(route, /const newClaimRows = payload\.claims\.flatMap/);
   assert.match(route, /status: "draft" as const/);
-  assert.match(route, /if \(newClaimRows\.length\) await db\.insert\(candidateClaims\)\.values\(newClaimRows\)/);
+  assert.match(route, /await db\.batch\(newClaimRows\.map/);
+  assert.doesNotMatch(route, /db\.insert\(candidateClaims\)\.values\(newClaimRows\)/);
 });
