@@ -64,8 +64,8 @@ export function parseResumeImportPayload(value: unknown): ResumeImportPayload {
   }
 
   const resumeReference = cleanLine(raw.resumeReference, "Resume reference", 240);
-  if (!Array.isArray(raw.profile) || raw.profile.length < 1 || raw.profile.length > RESUME_IMPORT_PROFILE_KINDS.length) {
-    throw new Error(`Resume import profile must contain 1-${RESUME_IMPORT_PROFILE_KINDS.length} fields`);
+  if (!Array.isArray(raw.profile) || raw.profile.length > RESUME_IMPORT_PROFILE_KINDS.length) {
+    throw new Error(`Resume import profile must contain 0-${RESUME_IMPORT_PROFILE_KINDS.length} fields`);
   }
   if (!Array.isArray(raw.claims) || raw.claims.length < 1 || raw.claims.length > 30) {
     throw new Error("Resume import claims must contain 1-30 draft claims");
