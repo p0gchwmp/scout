@@ -44,10 +44,9 @@ test("legacy approved-claim trigger blocks the retirement transition", () => {
     `).run(),
     /approved candidate claims are immutable/,
   );
-  assert.deepEqual(
-    database.prepare("SELECT status, version FROM candidate_claims WHERE id = 'legacy'").get(),
-    { status: "approved", version: 2 },
-  );
+  const unchanged = database.prepare("SELECT status, version FROM candidate_claims WHERE id = 'legacy'").get() as { status: string; version: number };
+  assert.equal(unchanged.status, "approved");
+  assert.equal(unchanged.version, 2);
   database.close();
 });
 
@@ -61,20 +60,24 @@ test("retirement trigger migration permits only the history-preserving approved-
   approved(database, "retire-me");
   const before = database.prepare(`
     SELECT statement, evidence, approved_at, created_at FROM candidate_claims WHERE id = 'retire-me'
-  `).get();
+  `).get() as { statement: string; evidence: string; approved_at: string; created_at: string };
   const result = database.prepare(`
     UPDATE candidate_claims
     SET status = 'rejected', version = version + 1, updated_at = '2026-09-10T00:00:00.000Z'
     WHERE id = 'retire-me' AND status = 'approved' AND version = 2
   `).run();
   assert.equal(result.changes, 1);
-  assert.deepEqual(
-    database.prepare(`
-      SELECT statement, evidence, status, version, approved_at, created_at
-      FROM candidate_claims WHERE id = 'retire-me'
-    `).get(),
-    { ...before, status: "rejected", version: 3 },
-  );
+
+  const retired = database.prepare(`
+    SELECT statement, evidence, status, version, approved_at, created_at
+    FROM candidate_claims WHERE id = 'retire-me'
+  `).get() as { statement: string; evidence: string; status: string; version: number; approved_at: string; created_at: string };
+  assert.equal(retired.status, "rejected");
+  assert.equal(retired.version, 3);
+  assert.equal(retired.statement, before.statement);
+  assert.equal(retired.evidence, before.evidence);
+  assert.equal(retired.approved_at, before.approved_at);
+  assert.equal(retired.created_at, before.created_at);
 
   approved(database, "immutable-still");
   assert.throws(
