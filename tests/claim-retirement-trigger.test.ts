@@ -11,10 +11,13 @@ WHEN OLD.status = 'approved'
 BEGIN SELECT RAISE(ABORT, 'approved candidate claims are immutable'); END`;
 
 class FakePreparedStatement {
-  constructor(
-    readonly sql: string,
-    private readonly database: FakeDatabase,
-  ) {}
+  sql: string;
+  database: FakeDatabase;
+
+  constructor(sql: string, database: FakeDatabase) {
+    this.sql = sql;
+    this.database = database;
+  }
 
   bind() { return this; }
 
@@ -26,8 +29,11 @@ class FakePreparedStatement {
 
 class FakeDatabase {
   batches = 0;
+  triggerSql: string;
 
-  constructor(public triggerSql: string) {}
+  constructor(triggerSql: string) {
+    this.triggerSql = triggerSql;
+  }
 
   prepare(sql: string) {
     return new FakePreparedStatement(sql, this);
