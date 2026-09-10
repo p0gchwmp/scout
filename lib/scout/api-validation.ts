@@ -88,20 +88,20 @@ export function parseClaimCreatePayload(value: unknown) {
 }
 
 type ClaimMutationPayload =
-  | { id: string; action: "approve" | "reject"; expectedVersion: number }
+  | { id: string; action: "approve" | "reject" | "retire"; expectedVersion: number }
   | { id: string; action: "edit"; expectedVersion: number; statement: string; evidence: string };
 
 export function parseClaimMutationPayload(value: unknown): ClaimMutationPayload {
   const payload = record(value);
   const action = payload.action;
-  if (action !== "edit" && action !== "approve" && action !== "reject") {
+  if (action !== "edit" && action !== "approve" && action !== "reject" && action !== "retire") {
     throw new PayloadValidationError("A valid claim action is required");
   }
   const common = {
     id: id(payload.id, "Claim id"),
     expectedVersion: expectedVersion(payload.expectedVersion),
   };
-  if (action === "approve" || action === "reject") return { ...common, action };
+  if (action === "approve" || action === "reject" || action === "retire") return { ...common, action };
   return {
     ...common,
     action: "edit",
