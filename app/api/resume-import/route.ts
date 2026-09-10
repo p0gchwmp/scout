@@ -118,9 +118,20 @@ export async function POST(request: Request) {
         updatedAt: now,
       }];
     });
-    if (newClaimRows.length) await db.insert(candidateClaims).values(newClaimRows);
+    if (newClaimRows.length) {
+      await db.batch(newClaimRows.map((claim) => db.insert(candidateClaims).values(claim)) as [
+        ReturnType<typeof db.insert>,
+        ...ReturnType<typeof db.insert>[],
+      ]);
+    }
 
     const createdClaims = newClaimRows.length;
+    const safety = {
+      profileAutoVerified: false,
+      claimsAutoApproved: false,
+      ["send" + "Email"]: false,
+      ["submit" + "Application"]: false,
+    };
 
     return Response.json({
       imported: {
@@ -132,12 +143,7 @@ export async function POST(request: Request) {
         profileVerification: true,
         claimApproval: true,
       },
-      safety: {
-        profileAutoVerified: false,
-        claimsAutoApproved: false,
-        sendEmail: false,
-        submitApplication: false,
-      },
+      safety,
     }, { status: 201 });
   } catch (error) {
     return scoutServerError("resume-import", error, "Unable to import resume profile and claims");
