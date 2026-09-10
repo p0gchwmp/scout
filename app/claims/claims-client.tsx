@@ -135,10 +135,10 @@ export function ClaimsWorkspace() {
   async function retireClaim(claim: Claim) {
     setBusy(`claim:${claim.id}`); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/claims/retire", {
-        method: "POST",
+      const response = await fetch("/api/claims", {
+        method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: claim.id, expectedVersion: claim.version }),
+        body: JSON.stringify({ id: claim.id, action: "retire", expectedVersion: claim.version }),
       });
       const payload = await response.json() as { claim?: Claim; error?: string };
       if (response.status === 409) {

@@ -6,7 +6,7 @@ import {
   parseClaimMutationPayload,
   PayloadValidationError,
 } from "../../../lib/scout/api-validation";
-import { approveClaim, editClaim, rejectClaim, type CandidateClaim } from "../../../lib/scout/claims";
+import { approveClaim, editClaim, rejectClaim, retireApprovedClaim, type CandidateClaim } from "../../../lib/scout/claims";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
 const asClaim = (row: typeof candidateClaims.$inferSelect): CandidateClaim => ({
@@ -30,7 +30,7 @@ async function readJson(request: Request): Promise<unknown> {
 function isMutation(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const action = (value as { action?: unknown }).action;
-  return action === "edit" || action === "approve" || action === "reject";
+  return action === "edit" || action === "approve" || action === "reject" || action === "retire";
 }
 
 async function mutateClaim(raw: unknown) {
@@ -56,7 +56,9 @@ async function mutateClaim(raw: unknown) {
       ? approveClaim(current, now)
       : payload.action === "reject"
         ? rejectClaim(current)
-        : editClaim(current, { statement: payload.statement, evidence: payload.evidence });
+        : payload.action === "retire"
+          ? retireApprovedClaim(current)
+          : editClaim(current, { statement: payload.statement, evidence: payload.evidence });
     const [claim] = await db.update(candidateClaims)
       .set({
         statement: next.statement,
@@ -75,7 +77,7 @@ async function mutateClaim(raw: unknown) {
     if (!claim) return Response.json({ error: "Claim changed; reload and retry" }, { status: 409 });
     return Response.json({ claim });
   } catch (error) {
-    if (error instanceof Error && /immutable|Only draft|Rejected/i.test(error.message)) {
+    if (error instanceof Error && /immutable|Only draft|Only approved|Rejected/i.test(error.message)) {
       return Response.json({ error: "Claim state changed; reload and retry" }, { status: 409 });
     }
     return scoutServerError("claims.update", error, "Unable to update claim");
