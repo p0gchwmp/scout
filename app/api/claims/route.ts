@@ -6,8 +6,10 @@ import {
   parseClaimMutationPayload,
   PayloadValidationError,
 } from "../../../lib/scout/api-validation";
-import { approveClaim, editClaim, rejectClaim, retireApprovedClaim, type CandidateClaim } from "../../../lib/scout/claims";
+import { approveClaim, editClaim, rejectClaim, type CandidateClaim } from "../../../lib/scout/claims";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
+
+const NO_STORE_HEADERS = { "cache-control": "private, no-store, max-age=0, must-revalidate" };
 
 const asClaim = (row: typeof candidateClaims.$inferSelect): CandidateClaim => ({
   id: row.id,
@@ -38,27 +40,61 @@ async function mutateClaim(raw: unknown) {
   try {
     payload = parseClaimMutationPayload(raw);
   } catch (error) {
-    if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400 });
-    return Response.json({ error: "Invalid request" }, { status: 400 });
+    if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400, headers: NO_STORE_HEADERS });
+    return Response.json({ error: "Invalid request" }, { status: 400, headers: NO_STORE_HEADERS });
   }
 
   try {
     const db = getDb();
     const [row] = await db.select().from(candidateClaims).where(eq(candidateClaims.id, payload.id)).limit(1);
-    if (!row) return Response.json({ error: "Claim not found" }, { status: 404 });
-    if (row.version !== payload.expectedVersion) {
-      return Response.json({ error: "Claim changed; reload and retry" }, { status: 409 });
-    }
+    if (!row) return Response.json({ error: "Claim not found" }, { status: 404, headers: NO_STORE_HEADERS });
 
     const current = asClaim(row);
+
+    // Retirement is a monotonic state transition. If the database already says
+    // this approved claim is retired, return the current row as a successful
+    // idempotent no-op instead of trapping a stale client in a 409 loop.
+    if (payload.action === "retire") {
+      const alreadyRetired = current.status === "rejected" && Boolean(current.approvedAt);
+      if (alreadyRetired) {
+        return Response.json({ claim: row, alreadyRetired: true }, { headers: NO_STORE_HEADERS });
+      }
+      if (current.status !== "approved") {
+        return Response.json({ error: "Only currently approved claims can be retired" }, { status: 409, headers: NO_STORE_HEADERS });
+      }
+      if (current.version !== payload.expectedVersion) {
+        return Response.json({ error: "Claim changed; reload and retry" }, { status: 409, headers: NO_STORE_HEADERS });
+      }
+
+      const now = new Date().toISOString();
+      const [claim] = await db.update(candidateClaims)
+        .set({
+          status: "rejected",
+          version: current.version + 1,
+          approvedAt: current.approvedAt,
+          updatedAt: now,
+        })
+        .where(and(
+          eq(candidateClaims.id, current.id),
+          eq(candidateClaims.status, "approved"),
+          eq(candidateClaims.version, current.version),
+        ))
+        .returning();
+
+      if (!claim) return Response.json({ error: "Claim changed; reload and retry" }, { status: 409, headers: NO_STORE_HEADERS });
+      return Response.json({ claim }, { headers: NO_STORE_HEADERS });
+    }
+
+    if (row.version !== payload.expectedVersion) {
+      return Response.json({ error: "Claim changed; reload and retry" }, { status: 409, headers: NO_STORE_HEADERS });
+    }
+
     const now = new Date().toISOString();
     const next = payload.action === "approve"
       ? approveClaim(current, now)
       : payload.action === "reject"
         ? rejectClaim(current)
-        : payload.action === "retire"
-          ? retireApprovedClaim(current)
-          : editClaim(current, { statement: payload.statement, evidence: payload.evidence });
+        : editClaim(current, { statement: payload.statement, evidence: payload.evidence });
     const [claim] = await db.update(candidateClaims)
       .set({
         statement: next.statement,
@@ -74,11 +110,11 @@ async function mutateClaim(raw: unknown) {
         eq(candidateClaims.version, current.version),
       ))
       .returning();
-    if (!claim) return Response.json({ error: "Claim changed; reload and retry" }, { status: 409 });
-    return Response.json({ claim });
+    if (!claim) return Response.json({ error: "Claim changed; reload and retry" }, { status: 409, headers: NO_STORE_HEADERS });
+    return Response.json({ claim }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    if (error instanceof Error && /immutable|Only draft|Only approved|Rejected/i.test(error.message)) {
-      return Response.json({ error: "Claim state changed; reload and retry" }, { status: 409 });
+    if (error instanceof Error && /immutable|Only draft|Rejected/i.test(error.message)) {
+      return Response.json({ error: "Claim state changed; reload and retry" }, { status: 409, headers: NO_STORE_HEADERS });
     }
     return scoutServerError("claims.update", error, "Unable to update claim");
   }
@@ -89,7 +125,7 @@ export async function GET() {
   if (unauthorized) return unauthorized;
   try {
     const claims = await getDb().select().from(candidateClaims).orderBy(desc(candidateClaims.createdAt));
-    return Response.json({ claims });
+    return Response.json({ claims }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     return scoutServerError("claims.list", error, "Unable to load claims");
   }
@@ -105,7 +141,7 @@ export async function POST(request: Request) {
   try {
     raw = await readJson(request);
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: 400 });
+    return Response.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: 400, headers: NO_STORE_HEADERS });
   }
 
   // Compatibility for the existing Dashboard: mutations remain fully validated
@@ -116,8 +152,8 @@ export async function POST(request: Request) {
   try {
     payload = parseClaimCreatePayload(raw);
   } catch (error) {
-    if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400 });
-    return Response.json({ error: "Invalid request" }, { status: 400 });
+    if (error instanceof PayloadValidationError) return Response.json({ error: error.message }, { status: 400, headers: NO_STORE_HEADERS });
+    return Response.json({ error: "Invalid request" }, { status: 400, headers: NO_STORE_HEADERS });
   }
 
   try {
@@ -127,7 +163,7 @@ export async function POST(request: Request) {
       status: "draft",
       version: 1,
     }).returning();
-    return Response.json({ claim }, { status: 201 });
+    return Response.json({ claim }, { status: 201, headers: NO_STORE_HEADERS });
   } catch (error) {
     return scoutServerError("claims.create", error, "Unable to create claim");
   }
@@ -143,7 +179,7 @@ export async function PATCH(request: Request) {
   try {
     raw = await readJson(request);
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: 400 });
+    return Response.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: 400, headers: NO_STORE_HEADERS });
   }
   return mutateClaim(raw);
 }

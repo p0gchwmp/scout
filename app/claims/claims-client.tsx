@@ -43,7 +43,7 @@ export function ClaimsWorkspace() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const response = await fetch("/api/claims");
+      const response = await fetch("/api/claims", { cache: "no-store" });
       const payload = await response.json() as { claims?: Claim[]; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to load claims");
       const nextClaims = payload.claims ?? [];
@@ -140,14 +140,21 @@ export function ClaimsWorkspace() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: claim.id, action: "retire", expectedVersion: claim.version }),
       });
-      const payload = await response.json() as { claim?: Claim; error?: string };
+      const payload = await response.json() as { claim?: Claim; error?: string; alreadyRetired?: boolean };
       if (response.status === 409) {
         await load();
         throw new Error(payload.error ?? "Claim changed elsewhere. Latest version reloaded; review it before retrying.");
       }
       if (!response.ok) throw new Error(payload.error ?? "Claim retirement failed");
-      setNotice(`Retired ${claim.id}. Its statement and original approval timestamp remain in history, but it will no longer support fit, applications, or outreach.`);
-      await load();
+      const retiredClaim = payload.claim;
+      if (!retiredClaim) throw new Error("Claim retirement did not return the updated claim");
+
+      // Use the mutation response immediately instead of depending on a follow-up
+      // GET that may be stale in an intermediary cache.
+      setClaims((current) => current.map((item) => item.id === retiredClaim.id ? retiredClaim : item));
+      setNotice(payload.alreadyRetired
+        ? `Claim ${claim.id} was already retired. The latest retired state is now shown.`
+        : `Retired ${claim.id}. Its statement and original approval timestamp remain in history, but it will no longer support fit, applications, or outreach.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Claim retirement failed");
     } finally {
@@ -277,10 +284,11 @@ export function ClaimsWorkspace() {
                 : "Rejected evidence is retained for review history and ignored by downstream fit/drafting."}</p>
             {claim.status === "approved" && <div className={styles.actions}>
               <button
-                className={styles.rejectButton}
+                className={`${styles.rejectButton} ${styles.retireButton}`}
                 disabled={claimBusy}
+                aria-label={`Retire approved claim ${claim.id}`}
                 onClick={() => void retireClaim(claim)}
-              >Retire approved claim</button>
+              >{claimBusy ? "Retiring…" : "Retire approved claim"}</button>
             </div>}
           </>}
 

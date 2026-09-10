@@ -50,25 +50,47 @@ test("claim mutation validation accepts retirement only with a pinned version", 
   assert.throws(() => parseClaimMutationPayload({ id: "claim-old", action: "retire", expectedVersion: 0 }));
 });
 
-test("retirement reuses the owner-only, same-origin, conflict-safe claims mutation path", async () => {
+test("retirement uses a direct approved-only CAS transition and preserves approval history", async () => {
   const route = await readFile(new URL("../app/api/claims/route.ts", import.meta.url), "utf8");
   assert.match(route, /requireScoutApiUser\(\)/);
   assert.match(route, /requireSameOriginMutation\(request\)/);
-  assert.match(route, /row\.version !== payload\.expectedVersion/);
-  assert.match(route, /payload\.action === "retire"/);
-  assert.match(route, /retireApprovedClaim\(current\)/);
-  assert.match(route, /eq\(candidateClaims\.status, current\.status\)/);
+  assert.match(route, /if \(payload\.action === "retire"\)/);
+  assert.match(route, /current\.status !== "approved"/);
+  assert.match(route, /current\.version !== payload\.expectedVersion/);
+  assert.match(route, /status: "rejected"/);
+  assert.match(route, /version: current\.version \+ 1/);
+  assert.match(route, /approvedAt: current\.approvedAt/);
+  assert.match(route, /eq\(candidateClaims\.status, "approved"\)/);
   assert.match(route, /eq\(candidateClaims\.version, current\.version\)/);
-  assert.match(route, /approvedAt: next\.approvedAt/);
 });
 
-test("claim governance UI retires approved claims through the existing PATCH endpoint", async () => {
-  const client = await readFile(new URL("../app/claims/claims-client.tsx", import.meta.url), "utf8");
-  assert.match(client, /fetch\("\/api\/claims"/);
-  assert.match(client, /method: "PATCH"/);
+test("already-retired claims are an idempotent success instead of a stale-client 409 loop", async () => {
+  const route = await readFile(new URL("../app/api/claims/route.ts", import.meta.url), "utf8");
+  assert.match(route, /alreadyRetired = current\.status === "rejected" && Boolean\(current\.approvedAt\)/);
+  assert.match(route, /if \(alreadyRetired\)/);
+  assert.match(route, /alreadyRetired: true/);
+});
+
+test("claim governance reads bypass caches and retirement updates local state from the mutation response", async () => {
+  const [route, client] = await Promise.all([
+    readFile(new URL("../app/api/claims/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/claims/claims-client.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(route, /cache-control/);
+  assert.match(route, /private, no-store, max-age=0, must-revalidate/);
+  assert.match(client, /fetch\("\/api\/claims", \{ cache: "no-store" \}\)/);
+  assert.match(client, /setClaims\(\(current\) => current\.map/);
+});
+
+test("claim governance UI exposes retirement as an unmistakable button", async () => {
+  const [client, styles] = await Promise.all([
+    readFile(new URL("../app/claims/claims-client.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/claims/claims.module.css", import.meta.url), "utf8"),
+  ]);
   assert.match(client, /action: "retire"/);
-  assert.doesNotMatch(client, /\/api\/claims\/retire/);
-  assert.match(client, /claim\.status === "approved"/);
+  assert.match(client, /styles\.retireButton/);
   assert.match(client, /Retire approved claim/);
-  assert.match(client, /retired approved evidence/i);
+  assert.match(styles, /\.retireButton/);
+  assert.match(styles, /border: 1px solid currentColor/);
+  assert.match(styles, /cursor: pointer/);
 });
