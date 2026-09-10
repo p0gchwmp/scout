@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { candidateClaims } from "../../../db/schema";
@@ -6,6 +7,7 @@ import {
   parseClaimMutationPayload,
   PayloadValidationError,
 } from "../../../lib/scout/api-validation";
+import { ensureClaimRetirementTrigger } from "../../../lib/scout/claim-retirement-trigger";
 import { approveClaim, editClaim, rejectClaim, type CandidateClaim } from "../../../lib/scout/claims";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
@@ -62,9 +64,18 @@ async function mutateClaim(raw: unknown) {
       if (current.status !== "approved") {
         return Response.json({ error: "Only currently approved claims can be retired" }, { status: 409, headers: NO_STORE_HEADERS });
       }
+      if (!current.approvedAt) {
+        return Response.json({ error: "Approved claim is missing its approval timestamp; refusing retirement" }, { status: 409, headers: NO_STORE_HEADERS });
+      }
       if (current.version !== payload.expectedVersion) {
         return Response.json({ error: "Claim changed; reload and retry" }, { status: 409, headers: NO_STORE_HEADERS });
       }
+
+      // The original schema trigger blocked every update whose OLD status was
+      // approved, including the deliberately constrained retirement transition.
+      // Upgrade only that known legacy trigger, fail closed on unknown trigger
+      // definitions, then execute the version-pinned retirement update.
+      await ensureClaimRetirementTrigger(env.DB);
 
       const now = new Date().toISOString();
       const [claim] = await db.update(candidateClaims)
