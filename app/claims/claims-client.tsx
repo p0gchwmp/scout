@@ -146,11 +146,12 @@ export function ClaimsWorkspace() {
         throw new Error(payload.error ?? "Claim changed elsewhere. Latest version reloaded; review it before retrying.");
       }
       if (!response.ok) throw new Error(payload.error ?? "Claim retirement failed");
-      if (!payload.claim) throw new Error("Claim retirement did not return the updated claim");
+      const retiredClaim = payload.claim;
+      if (!retiredClaim) throw new Error("Claim retirement did not return the updated claim");
 
       // Use the mutation response immediately instead of depending on a follow-up
       // GET that may be stale in an intermediary cache.
-      setClaims((current) => current.map((item) => item.id === payload.claim?.id ? payload.claim : item));
+      setClaims((current) => current.map((item) => item.id === retiredClaim.id ? retiredClaim : item));
       setNotice(payload.alreadyRetired
         ? `Claim ${claim.id} was already retired. The latest retired state is now shown.`
         : `Retired ${claim.id}. Its statement and original approval timestamp remain in history, but it will no longer support fit, applications, or outreach.`);
