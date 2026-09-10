@@ -94,6 +94,15 @@
 }
 .primary { font-weight: 800; }
 .rejectButton { font-weight: 700; }
+.retireButton {
+  border: 1px solid currentColor;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 800;
+  text-decoration: none;
+}
+.retireButton:hover:not(:disabled) { outline: 2px solid currentColor; outline-offset: 2px; }
+.retireButton:disabled { cursor: not-allowed; opacity: 0.6; }
 .warning { margin: 0; font-weight: 700; }
 
 .readOnlyBlock {
