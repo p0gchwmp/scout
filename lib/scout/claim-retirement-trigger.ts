@@ -19,7 +19,7 @@ BEGIN SELECT RAISE(ABORT, '${IMMUTABILITY_MESSAGE}'); END;`;
 function normalizeTriggerSql(value: string) {
   return value
     .toLowerCase()
-    .replace(/[`"\[\]]/g, "")
+    .replace(/[`"[\]]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
