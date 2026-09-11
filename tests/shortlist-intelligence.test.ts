@@ -10,7 +10,7 @@ const claims = [
 
 const now = new Date("2026-08-25T00:00:00Z");
 
-test("shortlist intelligence ranks evidence and freshness without geography bias", () => {
+test("shortlist intelligence transparently prefers India over a scoped foreign posting", () => {
   const india = evaluateShortlist({
     title: "Product Operations Intern",
     description: "Support product workflows, research, documentation and operations.",
@@ -34,11 +34,14 @@ test("shortlist intelligence ranks evidence and freshness without geography bias
   }, claims, now);
 
   assert.equal(india.locationContext, "India");
+  assert.equal(india.targetGeographyLane, "india");
   assert.equal(london.locationContext, "Global");
-  assert.equal(india.score, london.score);
-  assert.equal(india.priority, london.priority);
+  assert.equal(london.targetGeographyLane, "scoped_elsewhere");
+  assert.ok(india.score > london.score);
+  assert.ok(london.priority === "consider" || london.priority === "low");
   assert.ok(india.supportingClaimIds.includes("claim-product"));
   assert.ok(!india.supportingClaimIds.includes("claim-draft"));
+  assert.match(london.whyWorthYourTime, /target-geography preference/i);
 });
 
 test("shortlist intelligence lowers priority for explicit gaps and stale postings", () => {
@@ -66,6 +69,7 @@ test("shortlist intelligence lowers priority for explicit gaps and stale posting
   assert.ok(risky.gaps.some((gap) => /Driver's licence/.test(gap)));
   assert.ok(risky.gaps.includes("Local work authorization may be required"));
   assert.equal(strong.locationContext, "Remote");
+  assert.equal(strong.targetGeographyLane, "open_remote");
 });
 
 test("shortlist intelligence stays unranked without approved claims", () => {
