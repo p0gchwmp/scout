@@ -139,6 +139,19 @@ const NOT_CHECKED = [
   "Recruiter preference",
 ] as const;
 
+const TECHNICAL_PRIMARY_TITLE = /\b(?:software|engineer(?:ing)?|infrastructure|platform|site reliability|sre|hardware|robotics)\b|\bit intern\b|\b(?:it|information technology)\s+(?:support|systems?|infrastructure|network)\b|\b(?:gadget|tech(?:nical)?)\s+support\b/i;
+const EXPLICIT_TARGET_FUNCTION_TITLE = /\b(?:product (?:management|ops|operations|strategy)|strategy\s*(?:&|and)\s*operations|gtm|go[- ]?to[- ]?market|business development|business operations|revenue operations|customer operations|talent operations|admin(?:istration)?\s*(?:&|and)\s*operations|operations analyst|operations management|data operations|public finance|public policy|policy analysis|research analyst|finance|financial)\b/i;
+const MARKETING_OR_COMMS_TITLE = /\b(?:marketing|communications?)\b/i;
+const MARKETING_TARGET_OVERRIDE = /\b(?:analytics?|operations?)\b/i;
+
+function isTechnicalPrimaryTitle(title: string) {
+  return TECHNICAL_PRIMARY_TITLE.test(title) && !EXPLICIT_TARGET_FUNCTION_TITLE.test(title);
+}
+
+function isOutsideTargetMarketingTitle(title: string) {
+  return MARKETING_OR_COMMS_TITLE.test(title) && !MARKETING_TARGET_OVERRIDE.test(title);
+}
+
 function tokens(value: string) {
   return [...new Set((value.toLowerCase().match(/[a-z0-9][a-z0-9.+#-]{2,}/g) ?? [])
     .filter((token) => !STOP_WORDS.has(token)))];
@@ -208,8 +221,9 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
   const primaryThemeSupported = titleHasPrimarySignal && supportingClaims.some((support) => (
     THEME_BY_LABEL.get(support.theme)?.families.includes(titleFamilyId) === true
   ));
+  const titleOutsideTargetLane = isTechnicalPrimaryTitle(title) || isOutsideTargetMarketingTitle(title);
 
-  const band: ResumeAlignmentBand = taxonomy.preferenceLane === "software_stretch" || titleTaxonomy.preferenceLane === "software_stretch"
+  const band: ResumeAlignmentBand = titleOutsideTargetLane || taxonomy.preferenceLane === "software_stretch" || titleTaxonomy.preferenceLane === "software_stretch"
     ? "stretch"
     : hasBlockingGap || gaps.length >= 2
       ? "stretch"
