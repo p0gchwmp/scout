@@ -230,7 +230,7 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
     matches,
     supportingClaims,
     gaps,
-    eligibilityGaps: gaps,
+    eligibilityGaps: supportingClaims.length ? gaps : ["No relevant approved claim overlap found for this posting"],
     basis: `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}`,
     notChecked: [...NOT_CHECKED],
     caveats: [...NOT_CHECKED],
