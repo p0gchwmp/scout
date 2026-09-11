@@ -39,22 +39,31 @@ test("repeated feedback adds only the bounded family nudge", () => {
 });
 
 test("preference calibration does not introduce geography bias", () => {
-  const india = evaluateShortlist({
+  const indiaJob = {
     title: "Business Analyst Intern",
     description: "Analyze data and workflows.",
     location: "Bengaluru, India",
     postedAt: "2026-08-24T00:00:00Z",
     currentSnapshotId: "india",
-  }, claims, now, calibration);
-  const london = evaluateShortlist({
+  };
+  const londonJob = {
     title: "Business Analyst Intern",
     description: "Analyze data and workflows.",
     location: "London, United Kingdom",
     postedAt: "2026-08-24T00:00:00Z",
     currentSnapshotId: "london",
-  }, claims, now, calibration);
-  assert.equal(india.score, london.score);
-  assert.equal(india.learnedPreferencePoints, london.learnedPreferencePoints);
+  };
+
+  const indiaWithout = evaluateShortlist(indiaJob, claims, now);
+  const londonWithout = evaluateShortlist(londonJob, claims, now);
+  const indiaWith = evaluateShortlist(indiaJob, claims, now, calibration);
+  const londonWith = evaluateShortlist(londonJob, claims, now, calibration);
+
+  assert.equal(indiaWith.learnedPreferencePoints, 4);
+  assert.equal(londonWith.learnedPreferencePoints, 4);
+  assert.equal(indiaWith.score - indiaWithout.score, 4);
+  assert.equal(londonWith.score - londonWithout.score, 4);
+  assert.ok(indiaWith.score > londonWith.score);
 });
 
 test("positive preference cannot erase explicit eligibility gaps", () => {
