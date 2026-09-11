@@ -58,7 +58,7 @@ export function assessTargetGeography(job: { location?: string | null; workplace
       label: remote ? "Location-scoped remote outside explicit India" : "Location-scoped outside explicit India",
       scoreAdjustment: -20,
       sortWeight: 0,
-      tags: [remote ? "Scoped remote" : "Other location"],
+      tags: remote ? ["Remote", "Location-scoped"] : ["Other location"],
     };
   }
 
@@ -67,6 +67,6 @@ export function assessTargetGeography(job: { location?: string | null; workplace
     label: remote ? "Remote scope unclear" : "Location scope unclear",
     scoreAdjustment: 0,
     sortWeight: 1,
-    tags: [remote ? "Remote scope unclear" : "Location unclear"],
+    tags: remote ? ["Remote", "Scope unclear"] : ["Location unclear"],
   };
 }
