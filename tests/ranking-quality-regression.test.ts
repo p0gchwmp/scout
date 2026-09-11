@@ -85,6 +85,34 @@ test("production regression: payroll and benefits does not become strong from ge
   assert.notEqual(alignment.band, "strong");
 });
 
+test("production regression: technical-primary title edges cannot become strong from adjacent evidence", () => {
+  const itSupport = evaluateResumeAlignment(job({
+    title: "IT Intern – Gadget & Tech Support Operations",
+    description: "Support internal operations, workflows, systems, documentation and stakeholder requests.",
+  }), claims);
+  assert.equal(itSupport.band, "stretch");
+
+  const analyticsEngineer = evaluateResumeAlignment(job({
+    title: "Analytics Engineer Intern",
+    description: "Build analytics workflows, data reporting, systems integrations and automated quality checks.",
+  }), claims);
+  assert.equal(analyticsEngineer.band, "stretch");
+});
+
+test("production regression: pure marketing and communications stays outside the target lane", () => {
+  const marketingComms = evaluateResumeAlignment(job({
+    title: "Marketing Growth & Communications Intern",
+    description: "Support growth strategy, market research, campaign analysis, operations and stakeholder coordination.",
+  }), claims);
+  assert.equal(marketingComms.band, "stretch");
+
+  const marketingAnalyticsOps = evaluateResumeAlignment(job({
+    title: "Marketing Growth Analytics & Operations Intern",
+    description: "Own operations analytics, market reporting, workflow analysis and growth strategy.",
+  }), claims);
+  assert.notEqual(marketingAnalyticsOps.band, "stretch");
+});
+
 test("production regression: product ops and strategy ops retain strong title-led evidence overlap", () => {
   const product = evaluateResumeAlignment(job(), claims);
   assert.equal(product.band, "strong");
