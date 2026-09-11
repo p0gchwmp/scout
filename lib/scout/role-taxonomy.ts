@@ -1,3 +1,5 @@
+import { cleanJobText } from "./job-text.ts";
+
 export const ROLE_TAXONOMY_CAPABILITIES = Object.freeze({
   broadFunctionalCoverage: true,
   separatesFunctionFromSector: true,
@@ -66,7 +68,7 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   },
   {
     id: "analytics",
-    title: /\b(?:(?:business|data|product|operations?|growth|revenue|commercial|marketing|risk|strategy)\s+)?analyst\b|\banalytics?\b|\bbusiness intelligence\b/i,
+    title: /\b(?:(?:business|data|product|operations?|growth|revenue|commercial|marketing|risk|strategy)\s+)?analyst\b|\b(?:product\s+data|data|analytics?|business intelligence)\s+intern\b|\bbusiness intelligence\b/i,
     text: /\b(?:analytics?|analysis|data|sql|excel|spreadsheets?|dashboard|metrics?|insights?|business intelligence|reporting|forecasting)\b/i,
   },
   {
@@ -86,7 +88,7 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   },
   {
     id: "software_development",
-    title: /\b(?:software (?:engineer|engineering|developer|development)|backend (?:engineer|engineering|developer|development)|front[- ]?end (?:engineer|engineering|developer|development)|full[- ]?stack (?:engineer|engineering|developer|development)|mobile (?:engineer|developer)|ios (?:engineer|developer)|android (?:engineer|developer)|sde(?:\s*[1-3])?|machine learning engineer|ml engineer|data engineer|devops engineer)\b/i,
+    title: /\b(?:software (?:engineer|engineering|developer|development)|backend (?:engineer|engineering|developer|development)|front[- ]?end (?:engineer|engineering|developer|development)|full[- ]?stack (?:engineer|engineering|developer|development)|mobile (?:engineer|developer)|ios (?:engineer|developer)|android (?:engineer|developer)|sde(?:\s*[1-3])?|machine learning engineer|ml engineer|data engineer|devops engineer|(?:security|infrastructure|platform|site reliability|cloud) (?:engineer|engineering)|sre)\b/i,
     text: /\b(?:production software|software engineering|backend development|frontend development|full[- ]?stack development|distributed systems|microservices|coding interview|data structures|algorithms)\b/i,
   },
 ] as const;
@@ -113,8 +115,9 @@ function scoreFamily(rule: FamilyRule, title: string, text: string) {
 }
 
 export function classifyRoleTaxonomy(job: { title: string; description?: string | null }): RoleTaxonomyAssessment {
-  const title = job.title.replace(/<[^>]+>/g, " ");
-  const text = `${title} ${job.description ?? ""}`.replace(/<[^>]+>/g, " ");
+  const title = cleanJobText(job.title);
+  const description = cleanJobText(job.description ?? "");
+  const text = `${title} ${description}`.trim();
   const scored = FAMILY_RULES
     .map((rule, order) => ({ id: rule.id, score: scoreFamily(rule, title, text), order }))
     .filter((item) => item.score > 0)
