@@ -231,7 +231,7 @@ export function evaluateResumeAlignment(job: JobText, claims: ResumeClaimText[])
     supportingClaims,
     gaps,
     eligibilityGaps: gaps,
-    basis: `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}; title-led role family ${titleTaxonomy.primaryFamily.label}`,
+    basis: `${approvedClaims.length} approved resume claim${approvedClaims.length === 1 ? "" : "s"}`,
     notChecked: [...NOT_CHECKED],
     caveats: [...NOT_CHECKED],
   };
