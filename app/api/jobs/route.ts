@@ -2,7 +2,9 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { jobs } from "../../../db/schema";
 import { parseJobMutationPayload } from "../../../lib/scout/api-validation";
+import { isLikelySpecificJobTitle } from "../../../lib/scout/job-quality";
 import { cleanJobText } from "../../../lib/scout/job-text";
+import { assessTargetGeography } from "../../../lib/scout/target-geography";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
 function presentJob<T extends { description: string }>(job: T): T {
@@ -14,7 +16,10 @@ export async function GET() {
   if (unauthorized) return unauthorized;
   try {
     const rows = await getDb().select().from(jobs).orderBy(desc(jobs.lastSeenAt), desc(jobs.score)).limit(100);
-    return Response.json({ jobs: rows.map(presentJob) });
+    const rankedRows = rows
+      .filter((job) => isLikelySpecificJobTitle(job.title))
+      .sort((left, right) => assessTargetGeography(right).sortWeight - assessTargetGeography(left).sortWeight);
+    return Response.json({ jobs: rankedRows.map(presentJob) });
   } catch (error) {
     return scoutServerError("jobs.list", error, "Unable to load jobs");
   }
