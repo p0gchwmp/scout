@@ -6,7 +6,7 @@ import { cleanJobText } from "../../../lib/scout/job-text";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../scout-api";
 
 function presentJob<T extends { description: string }>(job: T): T {
-  return { ...job, description: cleanJobText(job.description) };
+  return { ...job, description: cleanJobText(job.description) } as T;
 }
 
 export async function GET() {
