@@ -18,7 +18,7 @@ function hasSpecificScope(value: string) {
     .replace(REMOTE_PATTERN, " ")
     .replace(OPEN_REMOTE_SCOPE_PATTERN, " ")
     .replace(UNSPECIFIED_PATTERN, " ")
-    .replace(/[·,/|()\-]+/g, " ")
+    .replace(/[·,/|()-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   return residual.length > 2;
