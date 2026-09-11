@@ -1,6 +1,7 @@
 import { evaluateResumeAlignment, type ResumeAlignment, type ResumeClaimText } from "./resume-alignment.ts";
 import { preferenceForFamily, type PreferenceCalibration } from "./preference-calibration.ts";
 import { classifyRoleTaxonomy, type RoleFamilyId, type RolePreferenceLane, type RoleSectorTag } from "./role-taxonomy.ts";
+import { assessTargetGeography, type TargetGeographyLane } from "./target-geography.ts";
 
 export type ShortlistJob = {
   title: string;
@@ -21,6 +22,8 @@ export type ShortlistAssessment = {
   label: string;
   locationContext: "India" | "Remote" | "Global";
   locationTags: string[];
+  targetGeographyLane: TargetGeographyLane;
+  targetGeographyLabel: string;
   freshnessLabel: string;
   freshnessDays: number | null;
   roleFamilyId: RoleFamilyId;
@@ -38,9 +41,6 @@ export type ShortlistAssessment = {
   whyWorthYourTime: string;
   alignment: ResumeAlignment;
 };
-
-const INDIA_PATTERN = /\b(india|bharat|bengaluru|bangalore|chennai|hyderabad|noida|gurugram|gurgaon|mumbai|delhi|new delhi|pune|kolkata|jammu|ahmedabad|jaipur|kochi|cochin|thiruvananthapuram|trivandrum|chandigarh|mohali|bhubaneswar|indore|lucknow|goa)\b/i;
-const REMOTE_PATTERN = /\b(remote|work from home|wfh|distributed)\b/i;
 
 function daysSince(value: string | null | undefined, now: Date) {
   if (!value) return null;
@@ -67,20 +67,12 @@ function freshness(job: ShortlistJob, now: Date) {
   return { days: null, label: "Posting date unavailable", points: 0 };
 }
 
-function locationContext(job: ShortlistJob) {
-  const text = `${job.location ?? ""} ${job.workplaceType ?? ""}`;
-  const india = INDIA_PATTERN.test(text);
-  const remote = String(job.workplaceType ?? "").toLowerCase() === "remote" || REMOTE_PATTERN.test(text);
-  const tags = [india ? "India" : null, remote ? "Remote" : null].filter((item): item is string => Boolean(item));
-  if (!tags.length) tags.push("Global / other location");
-  return {
-    context: india ? "India" as const : remote ? "Remote" as const : "Global" as const,
-    tags,
-  };
-}
-
-function priorityFor(score: number, alignment: ResumeAlignment): Pick<ShortlistAssessment, "priority" | "label"> {
+function priorityFor(score: number, alignment: ResumeAlignment, geographyLane: TargetGeographyLane): Pick<ShortlistAssessment, "priority" | "label"> {
   if (alignment.band === "unranked") return { priority: "unranked", label: "Needs approved claims" };
+  if (geographyLane === "scoped_elsewhere") {
+    if (score >= 40) return { priority: "consider", label: "Location review" };
+    return { priority: "low", label: "Lower geography priority" };
+  }
   if (score >= 80) return { priority: "high", label: "High priority" };
   if (score >= 60) return { priority: "review", label: "Worth reviewing" };
   if (score >= 40) return { priority: "consider", label: "Consider" };
@@ -98,7 +90,12 @@ export function evaluateShortlist(
   const learnedPreference = preferenceForFamily(calibration, taxonomy.primaryFamily.id);
   const learnedPreferencePoints = learnedPreference?.adjustment ?? 0;
   const fresh = freshness(job, now);
-  const place = locationContext(job);
+  const geography = assessTargetGeography(job);
+  const locationContext: ShortlistAssessment["locationContext"] = geography.lane === "india"
+    ? "India"
+    : geography.tags.includes("Remote")
+      ? "Remote"
+      : "Global";
   const claimIds = [...new Set(alignment.supportingClaims.flatMap((support) => support.claimIds))].sort();
   const storedRisks = (job.eligibilityRisks ?? []).filter((risk) => risk && !/snapshot required/i.test(risk));
   const gaps = [...new Set([...alignment.gaps, ...storedRisks])];
@@ -113,13 +110,14 @@ export function evaluateShortlist(
   const gapPoints = gaps.length === 0 ? 8 : gaps.length === 1 ? 3 : 0;
   const snapshotPoints = job.currentSnapshotId ? 5 : 0;
   const lanePoints = taxonomy.preferenceLane === "software_stretch" ? -8 : 5;
-  const score = Math.max(0, Math.min(100, base[alignment.band] + themePoints + gapPoints + snapshotPoints + fresh.points + lanePoints + learnedPreferencePoints));
-  const priority = priorityFor(score, alignment);
+  const score = Math.max(0, Math.min(100, base[alignment.band] + themePoints + gapPoints + snapshotPoints + fresh.points + lanePoints + geography.scoreAdjustment + learnedPreferencePoints));
+  const priority = priorityFor(score, alignment, geography.lane);
 
   const reasons = [
     alignment.label,
     `Role family: ${taxonomy.primaryFamily.label}`,
     taxonomy.preferenceLabel,
+    `Target geography: ${geography.label}${geography.scoreAdjustment ? ` (${geography.scoreAdjustment > 0 ? "+" : ""}${geography.scoreAdjustment})` : ""}`,
     learnedPreferencePoints
       ? `Repeated explicit feedback adds ${learnedPreferencePoints > 0 ? "+" : ""}${learnedPreferencePoints} soft preference points`
       : learnedPreference?.signalCount
@@ -131,7 +129,7 @@ export function evaluateShortlist(
     fresh.label,
     job.currentSnapshotId ? "Official immutable snapshot captured" : "Official snapshot still required",
     ...taxonomy.sectorTags.map((tag) => `${tag} sector context`),
-    ...place.tags.map((tag) => `${tag} context`),
+    ...geography.tags.map((tag) => `${tag} context`),
   ];
 
   let whyWorthYourTime: string;
@@ -154,6 +152,11 @@ export function evaluateShortlist(
   } else {
     whyWorthYourTime = "Keep this behind stronger matches unless the company or role is unusually interesting to you.";
   }
+  if (geography.lane === "scoped_elsewhere") {
+    whyWorthYourTime += " Scout downranks it because the posting is location-scoped outside explicit India; this is a target-geography preference, not a work-authorization conclusion.";
+  } else if (geography.lane === "open_remote") {
+    whyWorthYourTime += " The posting appears openly remote from the persisted location evidence, which fits Scout's India/remote target lane.";
+  }
   if (learnedPreferencePoints) {
     whyWorthYourTime += ` Your repeated Shortlist/Reject feedback currently applies a small ${learnedPreferencePoints > 0 ? "+" : ""}${learnedPreferencePoints}-point preference nudge; evidence and eligibility still control the decision.`;
   }
@@ -162,8 +165,10 @@ export function evaluateShortlist(
     score,
     priority: priority.priority,
     label: priority.label,
-    locationContext: place.context,
-    locationTags: place.tags,
+    locationContext,
+    locationTags: geography.tags,
+    targetGeographyLane: geography.lane,
+    targetGeographyLabel: geography.label,
     freshnessLabel: fresh.label,
     freshnessDays: fresh.days,
     roleFamilyId: taxonomy.primaryFamily.id,
