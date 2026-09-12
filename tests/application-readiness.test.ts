@@ -7,8 +7,9 @@ const job = {
   id: "job-1",
   company: "Example",
   title: "Product Operations Intern",
-  description: "Support product workflows, research and documentation.",
-  location: "London, UK",
+  description: "Part-time internship with flexible hours. Support product workflows, research and documentation.",
+  location: "Remote",
+  workplaceType: "remote",
   canonicalUrl: "https://job-boards.greenhouse.io/example/jobs/123",
   currentSnapshotId: "snapshot-1",
 };
@@ -34,6 +35,7 @@ test("readiness becomes ready only with official evidence, required profile fiel
   const result = assessApplicationReadiness({ job, profileFields: verifiedProfile(), claims });
   assert.equal(result.status, "ready");
   assert.equal(result.preparationStatus, "ready_for_review");
+  assert.equal(result.availability?.lane, "compatible_now");
   assert.equal(result.missingRequiredKeys.length, 0);
   assert.ok(result.claimIds.includes("claim-product"));
   assert.equal(result.score, 100);
