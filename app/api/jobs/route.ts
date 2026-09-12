@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { jobs } from "../../../db/schema";
 import { parseJobMutationPayload } from "../../../lib/scout/api-validation";
+import { assessAvailability } from "../../../lib/scout/availability-eligibility";
 import { ensureDiscoverySavedStateBackfill } from "../../../lib/scout/discovery-saved-state";
 import { isLikelySpecificJobTitle } from "../../../lib/scout/job-quality";
 import { cleanJobText } from "../../../lib/scout/job-text";
@@ -18,9 +19,14 @@ export async function GET() {
   try {
     await ensureDiscoverySavedStateBackfill();
     const rows = await getDb().select().from(jobs).orderBy(desc(jobs.lastSeenAt), desc(jobs.score)).limit(100);
+    const now = new Date();
     const rankedRows = rows
       .filter((job) => isLikelySpecificJobTitle(job.title))
-      .sort((left, right) => assessTargetGeography(right).sortWeight - assessTargetGeography(left).sortWeight);
+      .sort((left, right) => {
+        const availabilityDifference = assessAvailability(right, now).sortWeight - assessAvailability(left, now).sortWeight;
+        if (availabilityDifference) return availabilityDifference;
+        return assessTargetGeography(right).sortWeight - assessTargetGeography(left).sortWeight;
+      });
     return Response.json({ jobs: rankedRows.map(presentJob) });
   } catch (error) {
     return scoutServerError("jobs.list", error, "Unable to load jobs");
