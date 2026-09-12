@@ -127,9 +127,9 @@ export function buildDemoFixture() {
       company: "Demo HealthTech",
       externalId: "9000001",
       title: "Product Operations Intern",
-      location: "Bengaluru — hybrid demo",
-      workplaceType: "hybrid",
-      description: "Demo fixture only. Support product and clinic operations workflows, map edge cases, document requirements, analyse spreadsheet data, coordinate stakeholder feedback, and help QA internal tools. This is not a live vacancy.",
+      location: "India — remote demo",
+      workplaceType: "remote",
+      description: "Demo fixture only. Part-time role with flexible hours and remote collaboration. Support product and clinic operations workflows, map edge cases, document requirements, analyse spreadsheet data, coordinate stakeholder feedback, and help QA internal tools. This is not a live vacancy.",
     },
     {
       slug: "policy",
