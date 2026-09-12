@@ -1,6 +1,7 @@
 import { classifyApplicationUrl } from "./application-sites.ts";
-import { selectUsableApprovedClaims } from "./claims.ts";
 import { buildApplicationProfileBindings } from "./application-profile-bindings.ts";
+import { assessAvailability, type AvailabilityAssessment } from "./availability-eligibility.ts";
+import { selectUsableApprovedClaims } from "./claims.ts";
 
 export const APPLICATION_PREP_CAPABILITIES = Object.freeze({ prepare: true, submit: false, browserMutation: false } as const);
 
@@ -15,7 +16,16 @@ export const APPLICATION_PROFILE_KEYS = [
 
 export type ApplicationProfileKey = (typeof APPLICATION_PROFILE_KEYS)[number];
 export type ApplicationProfileField = { id: string; kind: string; claim: string; evidence: string; verified: boolean; updatedAt?: string };
-export type PrepJob = { id: string; company: string; title: string; canonicalUrl: string; currentSnapshotId: string | null };
+export type PrepJob = {
+  id: string;
+  company: string;
+  title: string;
+  canonicalUrl: string;
+  currentSnapshotId: string | null;
+  description?: string | null;
+  location?: string | null;
+  workplaceType?: string | null;
+};
 export type PrepClaim = { id: string; statement: string; evidence?: string; status: "draft" | "approved" | "rejected" };
 
 export const REQUIRED_APPLICATION_PROFILE_KEYS: readonly ApplicationProfileKey[] = Object.freeze([
@@ -27,13 +37,29 @@ export const ALWAYS_CONFIRM_APPLICATION_FIELDS = Object.freeze([
   "demographic_questions", "consent_or_signature",
 ] as const);
 
+function availabilityForPreparation(job: PrepJob, now: Date): AvailabilityAssessment | null {
+  const hasPostingAvailabilityEvidence = Boolean(
+    job.description?.trim()
+      || job.location?.trim()
+      || job.workplaceType?.trim(),
+  );
+  return hasPostingAvailabilityEvidence ? assessAvailability({
+    title: job.title,
+    description: job.description ?? "",
+    location: job.location,
+    workplaceType: job.workplaceType,
+  }, now) : null;
+}
+
 export function buildApplicationPreparation(input: {
   job: PrepJob;
   profileFields: ApplicationProfileField[];
   claims: PrepClaim[];
   relevantClaimIds?: string[];
+  now?: Date;
 }) {
   const channel = classifyApplicationUrl(input.job.canonicalUrl);
+  const availability = availabilityForPreparation(input.job, input.now ?? new Date());
   const verified = new Map(input.profileFields
     .filter((field) => field.verified && field.kind !== "graduation_year")
     .map((field) => [field.kind, field.claim.trim()]));
@@ -44,6 +70,13 @@ export function buildApplicationPreparation(input: {
   for (const key of missingProfileKeys) blockers.push(`Missing verified profile field: ${key}`);
   if (channel.requiresOfficialResolution) blockers.push("Prefer the official company or ATS application URL before automation");
   if (channel.id === "unknown") blockers.push("Application portal is not recognized");
+  if (availability?.lane === "hard_mismatch") {
+    blockers.push(`Availability mismatch: ${availability.reasons[0]}`);
+  } else if (availability?.lane === "break_only") {
+    blockers.push("Availability: this role is break-window only under the current semester schedule; reconsider it in Dec–Jan or May–Jul");
+  } else if (availability?.lane === "needs_verification") {
+    blockers.push("Availability must be verified from the posting or recruiter before application preparation can be ready for review");
+  }
 
   const approved = selectUsableApprovedClaims(input.claims, {
     allowSyntheticDemo: input.job.id.startsWith("demo_job_"),
@@ -66,6 +99,7 @@ export function buildApplicationPreparation(input: {
       jobSnapshotId: input.job.currentSnapshotId,
       applicationUrl: input.job.canonicalUrl,
       channel,
+      availability,
       safeFields,
       profileBindings,
       requiredProfileKeys: [...REQUIRED_APPLICATION_PROFILE_KEYS],
