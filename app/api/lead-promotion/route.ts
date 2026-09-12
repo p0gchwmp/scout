@@ -97,7 +97,7 @@ async function persistResolvedLead(resolved: Awaited<ReturnType<typeof resolveSe
       score: resolved.snapshot.score,
       scoreExplanation: resolved.snapshot.scoreExplanation,
       eligibilityRisks: resolved.snapshot.eligibilityRisks,
-      state: "saved",
+      state: "shortlisted",
       lifecycleState: "active",
       fingerprint: `${source.id}|${resolved.snapshot.externalId}`,
       postedAt: resolved.snapshot.postedAt,

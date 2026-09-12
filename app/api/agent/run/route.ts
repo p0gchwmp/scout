@@ -137,7 +137,7 @@ export async function POST(request: Request) {
           `Resolution policy: ${lead.nextStep}`.slice(0, 1000),
         ],
         eligibilityRisks: ["Official immutable posting snapshot required before application preparation"],
-        state: "saved",
+        state: "shortlisted",
         lifecycleState: "active",
         fingerprint: `agent-lead|${lead.canonicalUrl}`,
         postedAt: lead.postedAt,

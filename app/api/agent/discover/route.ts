@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         score: 0,
         scoreExplanation: [`Discovered by signed Scout cloud agent from controlled public ${lead.provider} source`],
         eligibilityRisks: ["Official immutable posting snapshot required before application preparation"],
-        state: "saved",
+        state: "shortlisted",
         lifecycleState: "active",
         fingerprint: `agent-lead|${lead.canonicalUrl}`,
         postedAt: lead.postedAt,

@@ -38,7 +38,7 @@ export async function POST(request: Request) {
         score: 0,
         scoreExplanation: [`Discovered from controlled public ${lead.provider} source; official posting snapshot still required`],
         eligibilityRisks: ["Official posting snapshot required before application preparation"],
-        state: "saved",
+        state: "shortlisted",
         lifecycleState: "active",
         fingerprint: `lead|${lead.canonicalUrl}`,
         postedAt: lead.postedAt,

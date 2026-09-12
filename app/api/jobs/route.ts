@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { jobs } from "../../../db/schema";
 import { parseJobMutationPayload } from "../../../lib/scout/api-validation";
+import { ensureDiscoverySavedStateBackfill } from "../../../lib/scout/discovery-saved-state";
 import { isLikelySpecificJobTitle } from "../../../lib/scout/job-quality";
 import { cleanJobText } from "../../../lib/scout/job-text";
 import { assessTargetGeography } from "../../../lib/scout/target-geography";
@@ -15,6 +16,7 @@ export async function GET() {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
   try {
+    await ensureDiscoverySavedStateBackfill();
     const rows = await getDb().select().from(jobs).orderBy(desc(jobs.lastSeenAt), desc(jobs.score)).limit(100);
     const rankedRows = rows
       .filter((job) => isLikelySpecificJobTitle(job.title))
