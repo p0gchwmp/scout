@@ -16,6 +16,7 @@ export type ReadinessJob = {
   title: string;
   description: string;
   location: string;
+  workplaceType?: string | null;
   canonicalUrl: string;
   currentSnapshotId: string | null;
 };
@@ -59,6 +60,7 @@ export function assessApplicationReadiness(input: {
     blocker.includes("immutable job snapshot")
     || blocker.includes("official company or ATS")
     || blocker.includes("portal is not recognized")
+    || blocker.startsWith("Availability mismatch:")
   ));
 
   let score = 0;
@@ -91,6 +93,9 @@ export function assessApplicationReadiness(input: {
   if (!relevantClaimIds.length) nextActions.push("Approve at least one role-relevant resume claim");
   if (channel.requiresOfficialResolution) nextActions.push("Resolve this lead to the official company or ATS application URL");
   if (channel.id === "unknown") nextActions.push("Review the application portal before using browser assistance");
+  if (prepared.packet.availability?.lane === "hard_mismatch") nextActions.push("Do not prepare this role under the current owner availability policy");
+  if (prepared.packet.availability?.lane === "break_only") nextActions.push("Revisit this role during the Dec–Jan or May–Jul break window");
+  if (prepared.packet.availability?.lane === "needs_verification") nextActions.push("Verify weekly hours, duration and attendance requirements before preparing the application");
   if (!nextActions.length) nextActions.push("Review the packet, then create a short-lived Safe Fill handoff");
 
   return {
@@ -99,6 +104,7 @@ export function assessApplicationReadiness(input: {
     label: labels[status],
     preparationStatus: prepared.status,
     channel,
+    availability: prepared.packet.availability,
     blockers: prepared.blockers,
     criticalBlockers,
     verifiedRequiredKeys,
