@@ -76,7 +76,7 @@ export async function POST(request: Request) {
         canonicalUrl: lead.canonicalUrl, company: lead.company, title: lead.title, description: lead.description,
         location: lead.location, workplaceType: lead.workplaceType, score: 0,
         scoreExplanation: official.snapshot.scoreExplanation, eligibilityRisks: official.snapshot.eligibilityRisks,
-        state: "saved", lifecycleState: "active", fingerprint: `${source.id}|${lead.externalId}`,
+        state: "shortlisted", lifecycleState: "active", fingerprint: `${source.id}|${lead.externalId}`,
         postedAt: lead.postedAt, firstSeenAt: now, lastSeenAt: now, missingCount: 0,
         currentSnapshotId: snapshotId, lastSeenRunId: runId,
       }));
