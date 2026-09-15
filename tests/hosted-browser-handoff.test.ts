@@ -39,12 +39,11 @@ test("Heroku creates the browser handoff key internally and refuses external inj
   assert.match(launcher, /"SCOUT_BROWSER_HANDOFF_SECRET"/);
   assert.match(launcher, /"SCOUT_BROWSER_HANDOFF_RUNTIME_SECRET"/);
   assert.match(launcher, /SCOUT_BROWSER_HANDOFF_RUNTIME_SECRET: browserHandoffSecret/);
-  assert.match(launcher, /SCOUT_BROWSER_HANDOFF_SECRET: browserHandoffSecret/);
+  assert.doesNotMatch(launcher, /SCOUT_BROWSER_HANDOFF_SECRET: browserHandoffSecret/);
   assert.match(launcher, /delete agentEnv\.SCOUT_BROWSER_HANDOFF_RUNTIME_SECRET/);
-  assert.match(launcher, /delete agentEnv\.SCOUT_BROWSER_HANDOFF_SECRET/);
 
   assert.match(route, /resolveBrowserHandoffSecret/);
-  assert.match(exchange, /SCOUT_BROWSER_HANDOFF_SECRET/);
+  assert.match(exchange, /resolveBrowserHandoffSecret/);
   assert.match(doctor, /SCOUT_BROWSER_HANDOFF_SECRET/);
   assert.doesNotMatch(launcher, /submitApplication\s*:\s*true|sendOutreach\s*:\s*true/);
 });
