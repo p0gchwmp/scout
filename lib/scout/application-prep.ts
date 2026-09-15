@@ -29,7 +29,7 @@ export type PrepJob = {
 export type PrepClaim = { id: string; statement: string; evidence?: string; status: "draft" | "approved" | "rejected" };
 
 export const REQUIRED_APPLICATION_PROFILE_KEYS: readonly ApplicationProfileKey[] = Object.freeze([
-  "full_name", "email", "current_location", "university", "program", "resume_reference",
+  "full_name", "email", "university", "program", "resume_reference",
 ]);
 
 export const ALWAYS_CONFIRM_APPLICATION_FIELDS = Object.freeze([
@@ -74,8 +74,6 @@ export function buildApplicationPreparation(input: {
     blockers.push(`Availability mismatch: ${availability.reasons[0]}`);
   } else if (availability?.lane === "break_only") {
     blockers.push("Availability: this role is break-window only under the current semester schedule; reconsider it in Dec–Jan or May–Jul");
-  } else if (availability?.lane === "needs_verification") {
-    blockers.push("Availability must be verified from the posting or recruiter before application preparation can be ready for review");
   }
 
   const approved = selectUsableApprovedClaims(input.claims, {
@@ -100,6 +98,7 @@ export function buildApplicationPreparation(input: {
       applicationUrl: input.job.canonicalUrl,
       channel,
       availability,
+      availabilityReviewRequired: availability?.lane === "needs_verification",
       safeFields,
       profileBindings,
       requiredProfileKeys: [...REQUIRED_APPLICATION_PROFILE_KEYS],
