@@ -5,6 +5,7 @@ import { applications, jobs, profileEvidence } from "../../../../db/schema";
 import { applicationPacketProfileBindingIssues } from "../../../../lib/scout/application-profile-bindings";
 import { applicationPacketMatchesCurrentSnapshot } from "../../../../lib/scout/application-review-packet";
 import { createBrowserHandoffToken } from "../../../../lib/scout/browser-handoff";
+import { resolveBrowserHandoffSecret } from "../../../../lib/scout/browser-handoff-runtime";
 import { buildBrowserAssistTask } from "../../../../lib/scout/browser-task";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
@@ -13,13 +14,6 @@ function applicationId(value: unknown) {
   const id = (value as Record<string, unknown>).applicationId;
   if (typeof id !== "string" || !/^[A-Za-z0-9._:-]{3,160}$/.test(id.trim())) throw new Error("A valid application id is required");
   return id.trim();
-}
-
-function handoffSecret() {
-  const bindings = env as unknown as Record<string, unknown>;
-  const secret = typeof bindings.SCOUT_BROWSER_HANDOFF_SECRET === "string" ? bindings.SCOUT_BROWSER_HANDOFF_SECRET.trim() : "";
-  if (!/^[a-f0-9]{64}$/i.test(secret)) throw new Error("SCOUT_BROWSER_HANDOFF_SECRET is not configured");
-  return secret;
 }
 
 export async function POST(request: Request) {
@@ -62,7 +56,7 @@ export async function POST(request: Request) {
       applicationId: task.applicationId,
       artifactVersion: task.artifactVersion,
       allowedUrl: task.allowedUrl,
-      secret: handoffSecret(),
+      secret: resolveBrowserHandoffSecret(env as unknown as Record<string, unknown>),
     });
     return Response.json({
       task,
