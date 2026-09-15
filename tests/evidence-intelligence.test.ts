@@ -108,8 +108,8 @@ test("claim usage counts only exact approved claim ids used by active role align
 
 test("profile intelligence keeps conditional graduation year outside required reusable fields", () => {
   const result = buildEvidenceIntelligence({ claims, profileFields, jobs: [] });
-  assert.equal(result.summary.verifiedRequiredProfileCount, 5);
-  assert.equal(result.summary.requiredProfileCount, 6);
+  assert.equal(result.summary.verifiedRequiredProfileCount, 4);
+  assert.equal(result.summary.requiredProfileCount, 5);
   assert.deepEqual(result.missingRequiredProfileKeys, ["resume_reference"]);
   const graduation = result.profileCoverage.find((field) => field.kind === "graduation_year")!;
   assert.equal(graduation.required, false);

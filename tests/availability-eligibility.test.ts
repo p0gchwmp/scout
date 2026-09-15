@@ -119,7 +119,7 @@ test("shortlist priority is capped by availability separately from resume overla
   assert.ok(breakOnly.score > mismatch.score);
 });
 
-test("application preparation blocks hard mismatches and makes unknown availability needs-input", () => {
+test("application preparation blocks hard mismatches but keeps unknown availability as manual review", () => {
   const hardMismatch = buildApplicationPreparation({
     job: {
       id: "paytm-like",
@@ -154,7 +154,9 @@ test("application preparation blocks hard mismatches and makes unknown availabil
     claims,
     now: semester,
   });
-  assert.equal(unknown.status, "needs_input");
+  assert.equal(unknown.status, "ready_for_review");
   assert.equal(unknown.packet.availability?.lane, "needs_verification");
-  assert.ok(unknown.blockers.some((blocker) => /Availability must be verified/i.test(blocker)));
+  assert.equal(unknown.packet.availabilityReviewRequired, true);
+  assert.ok(unknown.packet.alwaysConfirmPerApplication.includes("availability"));
+  assert.ok(!unknown.blockers.some((blocker) => /Availability/i.test(blocker)));
 });

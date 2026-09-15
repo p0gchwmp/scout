@@ -64,7 +64,7 @@ test("missing verified profile evidence is visible and keeps Safe Fill locked", 
   assert.equal(result.status, "almost_ready");
   assert.equal(result.preparationStatus, "needs_input");
   assert.deepEqual(result.missingRequiredKeys, ["resume_reference"]);
-  assert.match(result.profileSummary, /^5\/6 required/);
+  assert.match(result.profileSummary, /^4\/5 required/);
 });
 
 test("draft or rejected claims cannot make an application ready", () => {
