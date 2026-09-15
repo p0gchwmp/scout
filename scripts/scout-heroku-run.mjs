@@ -112,6 +112,8 @@ const agentEnv = {
   SCOUT_AGENT_HOST: LOOPBACK,
   SCOUT_AGENT_PORT: String(agentPort),
 };
+delete agentEnv.SCOUT_BROWSER_HANDOFF_RUNTIME_SECRET;
+delete agentEnv.SCOUT_BROWSER_HANDOFF_SECRET;
 const agentServer = resolve(root, "agent", "server.ts");
 const agentChild = spawn(process.execPath, ["--experimental-strip-types", agentServer], {
   cwd: root,
