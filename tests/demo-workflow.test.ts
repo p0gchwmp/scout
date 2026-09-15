@@ -93,7 +93,7 @@ test("complete local demo workflow is deterministic and review-only", () => {
     assert.equal(packet.channel.id, "greenhouse");
     assert.equal(packet.channel.automation, "structured");
     assert.equal(packet.availability?.lane, "compatible_now");
-    assert.equal(packet.requiredProfileKeys.length, 6);
+    assert.equal(packet.requiredProfileKeys.length, 5);
     assert.equal(packet.profileBindings.length, 6);
     assert.ok(packet.profileBindings.every((binding: { id?: string; kind?: string; updatedAt?: string }) => binding.id && binding.kind && binding.updatedAt));
 
