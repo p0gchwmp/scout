@@ -32,6 +32,19 @@ function safeFields(value: unknown) {
   return fields;
 }
 
+function exactBrowserAssistUrl(url: URL, platformId: string) {
+  const exact = new URL(url.href);
+  exact.search = "";
+  exact.hash = "";
+  if (platformId === "lever") {
+    const parts = exact.pathname.split("/").filter(Boolean);
+    const alreadyApply = parts.at(-1) === "apply";
+    if (!alreadyApply && parts.length < 2) throw new Error("Lever application URL must identify an exact posting");
+    if (!alreadyApply) exact.pathname = `${exact.pathname.replace(/\/+$/, "")}/apply`;
+  }
+  return `${exact.origin}${exact.pathname}`;
+}
+
 export function buildBrowserAssistTask(input: {
   applicationId: string;
   artifactVersion: number;
@@ -43,7 +56,9 @@ export function buildBrowserAssistTask(input: {
   const url = new URL(packet.applicationUrl);
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Application URL is unsupported");
   const channel = classifyApplicationUrl(url.href);
-  if (channel.automation === "structured") throw new Error("Structured ATS applications do not need browser fill assistance");
+  // Structured ATS classification describes Scout's discovery/resolution path. It must not
+  // prevent reviewed browser-side Safe Fill on the visible candidate form. Submission,
+  // CAPTCHA solving, file upload and sensitive answers remain unavailable below.
   if (channel.automation === "manual_lead" && !channel.easyApplyAssist) throw new Error("This channel is not approved for browser fill assistance yet");
 
   const fields = safeFields(packet.safeFields);
@@ -62,7 +77,7 @@ export function buildBrowserAssistTask(input: {
     applicationId: input.applicationId,
     artifactVersion: input.artifactVersion,
     allowedDomain: url.hostname,
-    allowedUrl: `${url.origin}${url.pathname}`,
+    allowedUrl: exactBrowserAssistUrl(url, channel.id),
     platformId: channel.id,
     answers,
     issuedAt: now,

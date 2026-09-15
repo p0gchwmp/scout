@@ -33,9 +33,35 @@ test("browser task expands verified profile keys into conservative visible form-
   assert.equal(task.constraints.captchaManualOnly, true);
 });
 
-test("browser task refuses structured and unresolved manual-lead channels", () => {
-  assert.throws(() => buildBrowserAssistTask({ applicationId: "app-1", artifactVersion: 1, packet: { applicationUrl: "https://job-boards.greenhouse.io/fourkites/jobs/123", safeFields: { email: "a@b.com" } } }), /do not need browser fill/i);
-  assert.throws(() => buildBrowserAssistTask({ applicationId: "app-2", artifactVersion: 1, packet: { applicationUrl: "https://www.glassdoor.com/job-listing/test", safeFields: { email: "a@b.com" } } }), /not approved for browser fill/i);
+test("browser task allows reviewed Safe Fill on structured ATS while refusing unresolved manual-lead channels", () => {
+  const greenhouse = buildBrowserAssistTask({
+    applicationId: "app-greenhouse",
+    artifactVersion: 1,
+    packet: {
+      applicationUrl: "https://job-boards.greenhouse.io/fourkites/jobs/123",
+      safeFields: { email: "ryan@example.com" },
+    },
+  });
+  assert.equal(greenhouse.platformId, "greenhouse");
+  assert.equal(greenhouse.constraints.submitAvailable, false);
+  assert.equal(greenhouse.constraints.fileUploadAvailable, false);
+
+  const lever = buildBrowserAssistTask({
+    applicationId: "app-lever",
+    artifactVersion: 1,
+    packet: {
+      applicationUrl: "https://jobs.lever.co/Sprinto/example-role?utm_source=scout",
+      safeFields: { email: "ryan@example.com" },
+    },
+  });
+  assert.equal(lever.platformId, "lever");
+  assert.equal(lever.allowedDomain, "jobs.lever.co");
+  assert.equal(lever.allowedUrl, "https://jobs.lever.co/Sprinto/example-role/apply");
+  assert.equal(lever.constraints.submitAvailable, false);
+  assert.equal(lever.constraints.captchaManualOnly, true);
+
+  assert.throws(() => buildBrowserAssistTask({ applicationId: "app-lever-board", artifactVersion: 1, packet: { applicationUrl: "https://jobs.lever.co/Sprinto", safeFields: { email: "a@b.com" } } }), /exact posting/i);
+  assert.throws(() => buildBrowserAssistTask({ applicationId: "app-manual", artifactVersion: 1, packet: { applicationUrl: "https://www.glassdoor.com/job-listing/test", safeFields: { email: "a@b.com" } } }), /not approved for browser fill/i);
 });
 
 test("browser assist capability surface has no submit/captcha/file automation", () => {
