@@ -50,15 +50,17 @@ test("browser task allows reviewed Safe Fill on structured ATS while refusing un
     applicationId: "app-lever",
     artifactVersion: 1,
     packet: {
-      applicationUrl: "https://jobs.lever.co/Sprinto/example-role/apply",
+      applicationUrl: "https://jobs.lever.co/Sprinto/example-role?utm_source=scout",
       safeFields: { email: "ryan@example.com" },
     },
   });
   assert.equal(lever.platformId, "lever");
   assert.equal(lever.allowedDomain, "jobs.lever.co");
+  assert.equal(lever.allowedUrl, "https://jobs.lever.co/Sprinto/example-role/apply");
   assert.equal(lever.constraints.submitAvailable, false);
   assert.equal(lever.constraints.captchaManualOnly, true);
 
+  assert.throws(() => buildBrowserAssistTask({ applicationId: "app-lever-board", artifactVersion: 1, packet: { applicationUrl: "https://jobs.lever.co/Sprinto", safeFields: { email: "a@b.com" } } }), /exact posting/i);
   assert.throws(() => buildBrowserAssistTask({ applicationId: "app-manual", artifactVersion: 1, packet: { applicationUrl: "https://www.glassdoor.com/job-listing/test", safeFields: { email: "a@b.com" } } }), /not approved for browser fill/i);
 });
 
