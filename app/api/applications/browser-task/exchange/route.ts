@@ -8,6 +8,7 @@ import { draftApplicationAnswersViaAgent } from "../../../../../lib/scout/applic
 import { applicationPacketProfileBindingIssues } from "../../../../../lib/scout/application-profile-bindings";
 import { applicationPacketMatchesCurrentSnapshot, applicationPacketSnapshotId } from "../../../../../lib/scout/application-review-packet";
 import { verifyBrowserHandoffToken } from "../../../../../lib/scout/browser-handoff";
+import { resolveBrowserHandoffSecret } from "../../../../../lib/scout/browser-handoff-runtime";
 import { buildBrowserAssistTask } from "../../../../../lib/scout/browser-task";
 import { analyzeFormFields, draftableApplicationQuestions, reviewApplicationFormConstraints, summarizeFormFields } from "../../../../../lib/scout/form-intelligence";
 
@@ -23,10 +24,7 @@ function json(value: unknown, status = 200) {
 }
 
 function handoffSecret() {
-  const bindings = env as unknown as Record<string, unknown>;
-  const secret = typeof bindings.SCOUT_BROWSER_HANDOFF_SECRET === "string" ? bindings.SCOUT_BROWSER_HANDOFF_SECRET.trim() : "";
-  if (!/^[a-f0-9]{64}$/i.test(secret)) throw new Error("Browser handoff is not configured");
-  return secret;
+  return resolveBrowserHandoffSecret(env as unknown as Record<string, unknown>);
 }
 
 function cleanQuestions(value: unknown): ApplicationQuestion[] {
