@@ -21,6 +21,7 @@ const forbidden = [
   "SCOUT_LOCAL_DEV_USER_ID",
   "SCOUT_LOCAL_DISCOVERY_SECRET",
   "SCOUT_BROWSER_HANDOFF_SECRET",
+  "SCOUT_BROWSER_HANDOFF_RUNTIME_SECRET",
   "SCOUT_AGENT_ALLOW_LOOPBACK_DEV",
 ];
 
@@ -91,12 +92,17 @@ async function waitForAgent(baseUrl, child) {
 
 const agentPort = await freeLoopbackPort();
 const sharedSecret = randomBytes(32).toString("hex");
+const browserHandoffSecret = randomBytes(32).toString("hex");
 const runtimeEnv = {
   ...process.env,
   SCOUT_RUNTIME_TARGET: "node",
   SCOUT_AGENT_BASE_URL: `http://${LOOPBACK}:${agentPort}`,
   SCOUT_AGENT_SHARED_SECRET: sharedSecret,
   SCOUT_AGENT_ALLOW_LOCAL_RUNTIME: "1",
+  SCOUT_BROWSER_HANDOFF_RUNTIME_SECRET: browserHandoffSecret,
+  // Compatibility for the exchange/readiness paths while the externally supplied
+  // SCOUT_BROWSER_HANDOFF_SECRET remains forbidden by the hosted launcher.
+  SCOUT_BROWSER_HANDOFF_SECRET: browserHandoffSecret,
 };
 delete runtimeEnv.SCOUT_AGENT_ALLOW_LOOPBACK_DEV;
 
