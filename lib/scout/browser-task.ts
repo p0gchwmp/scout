@@ -43,7 +43,9 @@ export function buildBrowserAssistTask(input: {
   const url = new URL(packet.applicationUrl);
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Application URL is unsupported");
   const channel = classifyApplicationUrl(url.href);
-  if (channel.automation === "structured") throw new Error("Structured ATS applications do not need browser fill assistance");
+  // Structured ATS classification describes Scout's discovery/resolution path. It must not
+  // prevent reviewed browser-side Safe Fill on the visible candidate form. Submission,
+  // CAPTCHA solving, file upload and sensitive answers remain unavailable below.
   if (channel.automation === "manual_lead" && !channel.easyApplyAssist) throw new Error("This channel is not approved for browser fill assistance yet");
 
   const fields = safeFields(packet.safeFields);
