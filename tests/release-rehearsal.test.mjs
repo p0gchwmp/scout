@@ -111,7 +111,7 @@ async function runBuiltWorkerRehearsal() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        token: "scout1.invalid.invalid",
+        token: `scout1.${"a".repeat(60)}.${"b".repeat(64)}`,
         currentUrl: "https://example.com/jobs/apply",
         fields: [],
       }),
