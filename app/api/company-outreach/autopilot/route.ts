@@ -10,7 +10,7 @@ import { assessPublishedContact } from "../../../../lib/scout/contact-intelligen
 import { createRunBudget, RUN_REQUEST_BUDGET_MS, RUN_RESPONSE_RESERVE_MS } from "../../../../lib/scout/run-budget";
 import { requireSameOriginMutation, requireScoutApiUser, scoutServerError } from "../../../scout-api";
 
-const MAX_TARGETS_PER_RUN = 12;
+const MAX_TARGETS_PER_RUN = 60;
 const MAX_RESEARCH_TARGETS_PER_RUN = 4;
 const CONTACT_MAX_PAGES_PER_TARGET = 6;
 const CONTACT_PAGE_TIMEOUT_MS = 3_000;
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     const db = getDb();
     const [sources, activeJobs, existingTargets] = await Promise.all([
       db.select().from(companySources).where(eq(companySources.enabled, true)),
-      db.select().from(jobs).where(eq(jobs.lifecycleState, "active")).orderBy(desc(jobs.score)).limit(300),
+      db.select().from(jobs).where(eq(jobs.lifecycleState, "active")).orderBy(desc(jobs.score)).limit(1000),
       db.select().from(companyOutreachTargets).where(eq(companyOutreachTargets.state, "active")),
     ]);
 
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       db.select().from(companyOutreachTargets)
         .where(eq(companyOutreachTargets.state, "active"))
         .orderBy(asc(companyOutreachTargets.updatedAt), desc(companyOutreachTargets.priorityScore), desc(companyOutreachTargets.createdAt))
-        .limit(100),
+        .limit(250),
       db.select({ targetId: companyOutreachContacts.targetId }).from(companyOutreachContacts),
     ]);
     const targetIdsWithContacts = new Set(existingContacts.map((contact) => contact.targetId));
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
         elapsedMs: runBudget.elapsedMs(),
         remainingMs: runBudget.remainingMs(),
       },
-      targets: allTargets.slice(0, 20),
+      targets: allTargets,
     });
   } catch (error) {
     return scoutServerError("company-outreach.autopilot", error, "Scout outreach autopilot failed");
