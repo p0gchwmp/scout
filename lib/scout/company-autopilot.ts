@@ -30,7 +30,9 @@ export type CompanyAutopilotCandidate = {
   reasons: string[];
 };
 
-// Bootstrap suggestions only. The normal queue is open-ended over every enabled\n// Scout company source discovered from verified jobs; this list is not a ceiling.\nconst CONTROLLED_WATCHLIST_SEEDS = Object.freeze([
+// Bootstrap suggestions only. The normal queue is open-ended over every enabled
+// Scout company source discovered from verified jobs; this list is not a ceiling.
+const CONTROLLED_WATCHLIST_SEEDS = Object.freeze([
   { companyName: "Roblox", companyDomain: "roblox.com", focus: "consumer product, gaming, creator ecosystem, operations" },
   { companyName: "CRED", companyDomain: "cred.club", focus: "consumer fintech, product, business, operations" },
   { companyName: "Nike", companyDomain: "nike.com", focus: "consumer brand, digital product, business, operations" },
