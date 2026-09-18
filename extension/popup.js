@@ -386,7 +386,9 @@ acknowledgeConstraintsButton.addEventListener("click", async () => {
 });
 
 chrome.storage.local.get(["scoutBaseUrl", "approvedTask", "pendingAnswerReview", "pendingConstraintReview", "constraintReviewAcknowledgement"]).then(({ scoutBaseUrl, approvedTask, pendingAnswerReview, pendingConstraintReview, constraintReviewAcknowledgement }) => {
-  scoutUrlInput.value = scoutBaseUrl || DEFAULT_SCOUT_BASE_URL;
+  const legacyLocalDefault = scoutBaseUrl === "http://localhost:3000" || scoutBaseUrl === "http://127.0.0.1:3000";
+  scoutUrlInput.value = !scoutBaseUrl || legacyLocalDefault ? DEFAULT_SCOUT_BASE_URL : scoutBaseUrl;
+  if (legacyLocalDefault) void chrome.storage.local.set({ scoutBaseUrl: DEFAULT_SCOUT_BASE_URL });
   if (reviewMatchesTask(pendingAnswerReview, approvedTask)) renderAnswerReview(pendingAnswerReview, approvedTask);
   else if (pendingAnswerReview) void chrome.storage.local.remove("pendingAnswerReview");
   if (constraintReviewMatchesTask(pendingConstraintReview, approvedTask)) renderConstraintReview(pendingConstraintReview, approvedTask, constraintReviewAcknowledgement);
