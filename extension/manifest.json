@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Scout Safe Fill",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Classifies application fields, requires explicit review for claim-backed text, fills verified evidence, and never submits.",
   "permissions": ["activeTab", "scripting", "storage"],
   "optional_host_permissions": [
@@ -35,7 +35,7 @@
     "https://*.foundit.in/*"
   ],
   "action": { "default_popup": "popup.html", "default_title": "Scout Safe Fill" },
-  "background": { "service_worker": "background.js", "type": "module" },
+  "background": { "scripts": ["background.js"], "service_worker": "background.js", "type": "module" },
   "content_scripts": [{
     "matches": [
       "https://boards.greenhouse.io/*",
