@@ -44,6 +44,33 @@ type Draft = {
 
 type Claim = { id: string; statement: string; status: "draft" | "approved" | "rejected" };
 
+type AutopilotPayload = {
+  createdTargets?: number;
+  queuedTargets?: number;
+  researchedTargets?: number;
+  candidatesFound?: number;
+  deferredTargets?: number;
+  searchProvider?: string | null;
+  error?: string;
+};
+
+type EcosystemLead = {
+  sourceName: string;
+  institutionType: string;
+  sourceMode: "direct_institution" | "portfolio_board" | "ecosystem_index_lead";
+  title: string;
+  url: string;
+  description: string;
+  requiresOfficialSourceRegistration: boolean;
+};
+
+type EcosystemPayload = {
+  enabled?: boolean;
+  leads?: EcosystemLead[];
+  reason?: string;
+  error?: string;
+};
+
 const emptyTarget = { companyName: "", companyDomain: "", officialUrl: "", track: "now_remote" as const, interestNote: "" };
 
 export function CompanyOutreachWorkspace() {
@@ -53,6 +80,8 @@ export function CompanyOutreachWorkspace() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [targetForm, setTargetForm] = useState(emptyTarget);
   const [targetId, setTargetId] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [ecosystemLeads, setEcosystemLeads] = useState<EcosystemLead[]>([]);
   const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -85,6 +114,13 @@ export function CompanyOutreachWorkspace() {
   }, [load]);
 
   const selectedTarget = targets.find((target) => target.id === targetId) ?? null;
+  const filteredTargets = useMemo(() => {
+    const query = companyFilter.trim().toLowerCase();
+    return targets
+      .filter((target) => target.state === "active")
+      .filter((target) => !query || target.companyName.toLowerCase().includes(query) || target.companyDomain.toLowerCase().includes(query))
+      .sort((left, right) => left.companyName.localeCompare(right.companyName));
+  }, [companyFilter, targets]);
   const selectedContacts = useMemo(() => contacts.filter((contact) => contact.targetId === targetId && contact.reviewState !== "rejected"), [contacts, targetId]);
   const selectedDrafts = useMemo(() => drafts.filter((draft) => draft.targetId === targetId), [drafts, targetId]);
 
@@ -111,6 +147,61 @@ export function CompanyOutreachWorkspace() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create company target");
     } finally { setBusy(null); }
+  }
+
+  async function findMoreCompanies() {
+    setBusy("find-companies"); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/company-outreach/autopilot", { method: "POST" });
+      const payload = await response.json() as AutopilotPayload;
+      if (!response.ok) throw new Error(payload.error ?? "Unable to expand the company outreach queue");
+      await load();
+      setNotice(`Expanded Scout's controlled company queue: ${payload.createdTargets ?? 0} new target(s), ${payload.queuedTargets ?? 0} active target(s), ${payload.researchedTargets ?? 0} bounded contact-research pass(es), ${payload.candidatesFound ?? 0} published contact candidate(s). Nothing was sent.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to expand the company outreach queue");
+    } finally { setBusy(null); }
+  }
+
+  async function discoverBroaderCompanies() {
+    setBusy("discover-companies"); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/ecosystem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "discover" }),
+      });
+      const payload = await response.json() as EcosystemPayload;
+      if (!response.ok) throw new Error(payload.error ?? "Unable to discover broader company leads");
+      const leads = payload.leads ?? [];
+      setEcosystemLeads(leads);
+      setNotice(payload.enabled === false
+        ? payload.reason ?? "Broader web discovery is disabled; controlled Scout company sources are still available."
+        : `Found ${leads.length} broader ecosystem/company lead(s). They stay review-only until you explicitly add an official company target.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to discover broader company leads");
+    } finally { setBusy(null); }
+  }
+
+  function reviewLeadAsTarget(lead: EcosystemLead) {
+    if (lead.sourceMode === "portfolio_board") {
+      setError("Portfolio-board results are lead-only. Resolve the actual employer in Ecosystem before using it for contact research.");
+      return;
+    }
+    try {
+      const url = new URL(lead.url);
+      const companyDomain = url.hostname.toLowerCase().replace(/^www\./, "");
+      setTargetForm({
+        companyName: lead.sourceName,
+        companyDomain,
+        officialUrl: lead.url,
+        track: targetForm.track,
+        interestNote: "",
+      });
+      setNotice("Company lead copied into the reviewed target form. Check the company name, official domain and URL, then create the target before Scout researches contacts.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      setError("That ecosystem lead does not contain a valid official HTTPS company URL.");
+    }
   }
 
   async function research() {
@@ -229,8 +320,22 @@ export function CompanyOutreachWorkspace() {
     </section>
 
     <section className={styles.section}>
+      <div className={styles.sectionHead}><div><p className={styles.kicker}>DISCOVERY</p><h2>Find more companies — the starter list is not the universe.</h2></div><p>Expand from every controlled Scout company source, then optionally surface broader ecosystem leads for explicit review before contact research.</p></div>
+      <div className={styles.actions}>
+        <button disabled={busy !== null} onClick={() => void findMoreCompanies()}>{busy === "find-companies" ? "Expanding company queue…" : "Find more companies"}</button>
+        <button className={styles.secondary} disabled={busy !== null} onClick={() => void discoverBroaderCompanies()}>{busy === "discover-companies" ? "Searching broader ecosystem…" : "Broader ecosystem search"}</button>
+      </div>
+      <p><strong>{targets.filter((target) => target.state === "active").length}</strong> active outreach target(s). Controlled-source expansion is open-ended over registered Scout employers; contact crawling remains bounded and every new email still defaults to <strong>needs_review</strong>.</p>
+      {ecosystemLeads.length > 0 && <div className={styles.list}>{ecosystemLeads.map((lead) => <article className={styles.card} key={`${lead.sourceMode}:${lead.url}`}>
+        <div><div className={styles.meta}>{lead.sourceMode.replaceAll("_", " ")} · {lead.institutionType.replaceAll("_", " ")}</div><h3>{lead.sourceName}</h3><p>{lead.title}</p>{lead.description && <small>{lead.description}</small>}</div>
+        <div className={styles.actions}><a href={lead.url} target="_blank" rel="noreferrer">Open source ↗</a>{lead.sourceMode !== "portfolio_board" ? <button className={styles.secondary} disabled={busy !== null} onClick={() => reviewLeadAsTarget(lead)}>Review as outreach target</button> : <Link href="/ecosystem">Resolve employer first →</Link>}</div>
+      </article>)}</div>}
+    </section>
+
+    <section className={styles.section}>
       <div className={styles.sectionHead}><div><p className={styles.kicker}>TARGETS</p><h2>Relentless about public evidence</h2></div><p>No LinkedIn email scraping, no guessed address patterns, no data brokers.</p></div>
-      <label>Company target<select value={targetId} onChange={(event) => { setTargetId(event.target.value); setSelectedClaimIds([]); }}><option value="">Choose a company…</option>{targets.filter((target) => target.state === "active").map((target) => <option key={target.id} value={target.id}>{target.companyName} — {target.track === "now_remote" ? "Now · Remote" : "Summer 2027"}</option>)}</select></label>
+      <label>Filter companies<input value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} placeholder="Search company or domain" /></label>
+      <label>Company target<select value={targetId} onChange={(event) => { setTargetId(event.target.value); setSelectedClaimIds([]); }}><option value="">Choose a company…</option>{filteredTargets.map((target) => <option key={target.id} value={target.id}>{target.companyName} — {target.track === "now_remote" ? "Now · Remote" : "Summer 2027"}</option>)}</select></label>
       {selectedTarget && <div className={styles.targetCard}><div><strong>{selectedTarget.companyName}</strong><span>{selectedTarget.companyDomain}</span></div><a href={selectedTarget.officialUrl} target="_blank" rel="noreferrer">Official site ↗</a></div>}
       <button disabled={busy !== null || !targetId} onClick={() => void research()}>{busy === "research" ? "Checking official pages…" : "Find published HR / recruiting contacts"}</button>
     </section>
