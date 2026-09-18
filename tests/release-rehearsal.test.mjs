@@ -107,6 +107,20 @@ async function runBuiltWorkerRehearsal() {
     }), env, context);
     assert.equal(nonOwnerHealth.status, 403);
 
+    const invalidBrowserHandoff = await worker.fetch(new Request("http://localhost/browser-handoff/exchange", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        token: `scout1.${"a".repeat(60)}.${"b".repeat(64)}`,
+        currentUrl: "https://example.com/jobs/apply",
+        fields: [],
+      }),
+    }), env, context);
+    assert.equal(invalidBrowserHandoff.status, 401);
+    assert.deepEqual(await invalidBrowserHandoff.json(), {
+      error: "Browser handoff was invalid, expired, or pinned to a different page",
+    });
+
     const health = await worker.fetch(new Request("http://localhost/api/health", { headers: ownerHeaders() }), env, context);
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), {

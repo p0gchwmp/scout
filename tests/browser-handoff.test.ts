@@ -36,6 +36,17 @@ test("browser handoff rejects tamper, expiry, and a different application path",
   await assert.rejects(() => verifyBrowserHandoffToken({ token: handoff.token, currentUrl: "https://example.com/jobs/apply", secret, now: handoff.expiresAt + 1 }), /expired/i);
 });
 
+test("extension uses the bearer-token capability route outside the normal authenticated API namespace", async () => {
+  const popup = await readFile(new URL("../extension/popup.js", import.meta.url), "utf8");
+  const capabilityRoute = await readFile(new URL("../app/browser-handoff/exchange/route.ts", import.meta.url), "utf8");
+  const worker = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
+
+  assert.match(popup, /\/browser-handoff\/exchange/);
+  assert.doesNotMatch(popup, /\/api\/applications\/browser-task\/exchange/);
+  assert.match(capabilityRoute, /api\/applications\/browser-task\/exchange\/route/);
+  assert.doesNotMatch(worker, /browser-handoff\/exchange/);
+});
+
 test("extension exchange is bearer-token scoped and exposes no submission surface", async () => {
   const route = await readFile(new URL("../app/api/applications/browser-task/exchange/route.ts", import.meta.url), "utf8");
   assert.match(route, /verifyBrowserHandoffToken/);
