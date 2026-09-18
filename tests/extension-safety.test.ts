@@ -3,9 +3,9 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 
 test("Safe Fill covers major internship portals and form providers without all-URLs access", async () => {
-  const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url), "utf8")) as { version?: string; host_permissions?: string[]; permissions?: string[] };
+  const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url), "utf8")) as { version?: string; host_permissions?: string[]; permissions?: string[]; background?: { scripts?: string[]; service_worker?: string } };
   const hosts = manifest.host_permissions ?? [];
-  assert.equal(manifest.version, "0.5.0");
+  assert.equal(manifest.version, "0.5.1");
   for (const expected of [
     "https://job-boards.greenhouse.io/*",
     "https://*.myworkdayjobs.com/*",
@@ -20,6 +20,28 @@ test("Safe Fill covers major internship portals and form providers without all-U
   assert.ok(manifest.permissions?.includes("activeTab"));
   assert.ok(manifest.permissions?.includes("scripting"));
   assert.ok(!hosts.includes("<all_urls>"));
+});
+
+test("Safe Fill loads directly in Chromium and Firefox/Zen and requests Scout access from the click gesture", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url), "utf8")) as {
+    background?: { scripts?: string[]; service_worker?: string; type?: string };
+  };
+  const popup = await readFile(new URL("../extension/popup.js", import.meta.url), "utf8");
+
+  assert.deepEqual(manifest.background?.scripts, ["background.js"]);
+  assert.equal(manifest.background?.service_worker, "background.js");
+  assert.equal(manifest.background?.type, "module");
+  assert.match(popup, /DEFAULT_SCOUT_BASE_URL = "https:\/\/ryan-scout-e3a2eb4fdd1a\.herokuapp\.com"/);
+  assert.match(popup, /loadButton\.addEventListener\("click", \(\) => \{/);
+  assert.match(popup, /const permissionRequest = chrome\.permissions\.request\(scoutOriginPermission\(baseUrl\)\)/);
+  assert.match(popup, /await loadApprovedTask\(baseUrl\)/);
+
+  const clickHandler = popup.match(/loadButton\.addEventListener\("click", \(\) => \{[\s\S]*?\n\}\);/)?.[0] ?? "";
+  assert.ok(clickHandler);
+  const requestIndex = clickHandler.indexOf("chrome.permissions.request");
+  const awaitIndex = clickHandler.indexOf("await ");
+  assert.ok(requestIndex >= 0);
+  assert.ok(awaitIndex === -1 || requestIndex < awaitIndex, "Firefox permission request must happen before any await in the user gesture");
 });
 
 test("Safe Fill classifies visible controls without sending their entered values", async () => {

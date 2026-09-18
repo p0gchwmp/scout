@@ -71,6 +71,14 @@ type EcosystemPayload = {
   error?: string;
 };
 
+type EcosystemActionPayload = {
+  createdTargets?: number;
+  researchedTargets?: number;
+  candidatesStored?: number;
+  deferredTargets?: number;
+  error?: string;
+};
+
 const emptyTarget = { companyName: "", companyDomain: "", officialUrl: "", track: "now_remote" as const, interestNote: "" };
 
 export function CompanyOutreachWorkspace() {
@@ -159,6 +167,36 @@ export function CompanyOutreachWorkspace() {
       setNotice(`Expanded Scout's controlled company queue: ${payload.createdTargets ?? 0} new target(s), ${payload.queuedTargets ?? 0} active target(s), ${payload.researchedTargets ?? 0} bounded contact-research pass(es), ${payload.candidatesFound ?? 0} published contact candidate(s). Nothing was sent.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to expand the company outreach queue");
+    } finally { setBusy(null); }
+  }
+
+  async function prepareCompanyAndVcOutreach() {
+    setBusy("prepare-outreach"); setError(""); setNotice("");
+    try {
+      const companyResponse = await fetch("/api/company-outreach/autopilot", { method: "POST" });
+      const companyPayload = await companyResponse.json() as AutopilotPayload;
+      if (!companyResponse.ok) throw new Error(companyPayload.error ?? "Unable to prepare company outreach targets");
+
+      const seedResponse = await fetch("/api/ecosystem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "seed_recruiting_targets" }),
+      });
+      const seedPayload = await seedResponse.json() as EcosystemActionPayload;
+      if (!seedResponse.ok) throw new Error(seedPayload.error ?? "Unable to seed official VC/ecosystem recruiting targets");
+
+      const researchResponse = await fetch("/api/ecosystem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "research_public_contacts" }),
+      });
+      const researchPayload = await researchResponse.json() as EcosystemActionPayload;
+      if (!researchResponse.ok) throw new Error(researchPayload.error ?? "Unable to research VC/ecosystem recruiting contacts");
+
+      await load();
+      setNotice(`Outreach prep complete: ${companyPayload.queuedTargets ?? 0} company target(s), ${companyPayload.researchedTargets ?? 0} company research pass(es), ${seedPayload.createdTargets ?? 0} new official ecosystem target(s), and ${researchPayload.candidatesStored ?? 0} VC/ecosystem public contact candidate(s) stored as needs_review. Nothing was sent.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to prepare company + VC outreach");
     } finally { setBusy(null); }
   }
 
@@ -322,10 +360,11 @@ export function CompanyOutreachWorkspace() {
     <section className={styles.section}>
       <div className={styles.sectionHead}><div><p className={styles.kicker}>DISCOVERY</p><h2>Find more companies — the starter list is not the universe.</h2></div><p>Expand from every controlled Scout company source, then optionally surface broader ecosystem leads for explicit review before contact research.</p></div>
       <div className={styles.actions}>
-        <button disabled={busy !== null} onClick={() => void findMoreCompanies()}>{busy === "find-companies" ? "Expanding company queue…" : "Find more companies"}</button>
+        <button disabled={busy !== null} onClick={() => void prepareCompanyAndVcOutreach()}>{busy === "prepare-outreach" ? "Preparing company + VC outreach…" : "Prepare company + VC outreach"}</button>
+        <button className={styles.secondary} disabled={busy !== null} onClick={() => void findMoreCompanies()}>{busy === "find-companies" ? "Expanding company queue…" : "Find more companies"}</button>
         <button className={styles.secondary} disabled={busy !== null} onClick={() => void discoverBroaderCompanies()}>{busy === "discover-companies" ? "Searching broader ecosystem…" : "Broader ecosystem search"}</button>
       </div>
-      <p><strong>{targets.filter((target) => target.state === "active").length}</strong> active outreach target(s). Controlled-source expansion is open-ended over registered Scout employers; contact crawling remains bounded and every new email still defaults to <strong>needs_review</strong>.</p>
+      <p><strong>{targets.filter((target) => target.state === "active").length}</strong> active outreach target(s). The combined prep button expands controlled companies and official VC/ecosystem recruiting targets, then performs bounded public-contact research. Every new email still defaults to <strong>needs_review</strong>.</p>
       {ecosystemLeads.length > 0 && <div className={styles.list}>{ecosystemLeads.map((lead) => <article className={styles.card} key={`${lead.sourceMode}:${lead.url}`}>
         <div><div className={styles.meta}>{lead.sourceMode.replaceAll("_", " ")} · {lead.institutionType.replaceAll("_", " ")}</div><h3>{lead.sourceName}</h3><p>{lead.title}</p>{lead.description && <small>{lead.description}</small>}</div>
         <div className={styles.actions}><a href={lead.url} target="_blank" rel="noreferrer">Open source ↗</a>{lead.sourceMode !== "portfolio_board" ? <button className={styles.secondary} disabled={busy !== null} onClick={() => reviewLeadAsTarget(lead)}>Review as outreach target</button> : <Link href="/ecosystem">Resolve employer first →</Link>}</div>

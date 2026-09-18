@@ -153,6 +153,23 @@ test("company discovery is not capped to the legacy 15-company surface", async (
   assert.doesNotMatch(autopilotPanel, /slice\(0,\s*15\)/);
 });
 
+test("company and VC outreach prep can run together while keeping review and send boundaries", async () => {
+  const client = await readFile(new URL("../app/company-outreach/company-outreach-client.tsx", import.meta.url), "utf8");
+  const reviewPanel = await readFile(new URL("../app/review/autopilot-panel.tsx", import.meta.url), "utf8");
+
+  assert.match(client, /Prepare company \+ VC outreach/);
+  assert.match(client, /action: "seed_recruiting_targets"/);
+  assert.match(client, /action: "research_public_contacts"/);
+  assert.match(client, /stored as needs_review/);
+  assert.match(client, /Nothing was sent/);
+
+  assert.match(reviewPanel, /Promise\.allSettled/);
+  assert.match(reviewPanel, /Internship discovery failed/);
+  assert.match(reviewPanel, /Company outreach autopilot failed/);
+  assert.match(reviewPanel, /Nothing was sent or submitted/);
+  assert.doesNotMatch(reviewPanel, /messages\.send|drafts\.send|submitApplication\s*:\s*true/);
+});
+
 test("review autopilot reports non-JSON responses without leaking raw server bodies", async () => {
   const autopilotPanel = await readFile(new URL("../app/review/autopilot-panel.tsx", import.meta.url), "utf8");
   assert.match(autopilotPanel, /headers\.set\("accept", "application\/json"\)/);
