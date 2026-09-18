@@ -132,6 +132,27 @@ test("company-first workspace is owner-only and autopilot is reachable from the 
   assert.match(root, /Company Outreach/);
 });
 
+test("company discovery is not capped to the legacy 15-company surface", async () => {
+  const queue = await readFile(new URL("../lib/scout/company-autopilot.ts", import.meta.url), "utf8");
+  const autopilotRoute = await readFile(new URL("../app/api/company-outreach/autopilot/route.ts", import.meta.url), "utf8");
+  const targetRoute = await readFile(new URL("../app/api/company-outreach/route.ts", import.meta.url), "utf8");
+  const client = await readFile(new URL("../app/company-outreach/company-outreach-client.tsx", import.meta.url), "utf8");
+  const autopilotPanel = await readFile(new URL("../app/review/autopilot-panel.tsx", import.meta.url), "utf8");
+
+  assert.match(queue, /input\.limit \?\? 40, 100/);
+  assert.match(queue, /not a ceiling/);
+  assert.match(autopilotRoute, /MAX_TARGETS_PER_RUN = 60/);
+  assert.match(autopilotRoute, /limit\(1000\)/);
+  assert.match(targetRoute, /limit\(250\)/);
+  assert.match(client, /Find more companies/);
+  assert.match(client, /Broader ecosystem search/);
+  assert.match(client, /"\/api\/company-outreach\/autopilot"/);
+  assert.match(client, /"\/api\/ecosystem"/);
+  assert.match(client, /Review as outreach target/);
+  assert.match(client, /needs_review/);
+  assert.doesNotMatch(autopilotPanel, /slice\(0,\s*15\)/);
+});
+
 test("review autopilot reports non-JSON responses without leaking raw server bodies", async () => {
   const autopilotPanel = await readFile(new URL("../app/review/autopilot-panel.tsx", import.meta.url), "utf8");
   assert.match(autopilotPanel, /headers\.set\("accept", "application\/json"\)/);

@@ -30,6 +30,8 @@ export type CompanyAutopilotCandidate = {
   reasons: string[];
 };
 
+// Bootstrap suggestions only. The normal queue is open-ended over every enabled
+// Scout company source discovered from verified jobs; this list is not a ceiling.
 const CONTROLLED_WATCHLIST_SEEDS = Object.freeze([
   { companyName: "Roblox", companyDomain: "roblox.com", focus: "consumer product, gaming, creator ecosystem, operations" },
   { companyName: "CRED", companyDomain: "cred.club", focus: "consumer fintech, product, business, operations" },
@@ -132,5 +134,5 @@ export function buildCompanyAutopilotQueue(input: {
 
   return [...candidates.values()]
     .sort((left, right) => right.priorityScore - left.priorityScore || left.companyName.localeCompare(right.companyName))
-    .slice(0, Math.max(1, Math.min(input.limit ?? 12, 20)));
+    .slice(0, Math.max(1, Math.min(input.limit ?? 40, 100)));
 }

@@ -230,7 +230,7 @@ export function AutopilotPanel() {
         <button disabled={busy !== null} onClick={() => void runScout()}>{busy === "run" ? "Scout is hunting…" : "Run Scout"}</button>
       </div>
       <div className={styles.summary} aria-label="Autopilot queue summary">
-        <div><strong>{targets.length}</strong><span>companies queued</span></div>
+        <div><strong>{targets.length}</strong><span>companies queued · no legacy 15-company display cap</span></div>
         <div><strong>{contactsToReview.length}</strong><span>company contacts to review</span></div>
         <div><strong>{pendingDrafts.length}</strong><span>company drafts to review</span></div>
         <div><strong>{approvedDrafts.length}</strong><span>approved company drafts</span></div>
@@ -241,7 +241,7 @@ export function AutopilotPanel() {
       <div className={styles.sectionHead}><div><p className={styles.kicker}>COMPANIES WORTH CONTACTING</p><h2>Automatically ranked targets</h2></div><p>Manual company/domain entry is no longer required for the normal path.</p></div>
       <div className={styles.list}>
         {!targets.length && <div className={styles.empty}>Run Scout to create the first company outreach queue.</div>}
-        {targets.slice().sort((left, right) => right.priorityScore - left.priorityScore).slice(0, 15).map((target) => <article className={styles.card} key={target.id}>
+        {targets.slice().sort((left, right) => right.priorityScore - left.priorityScore).map((target) => <article className={styles.card} key={target.id}>
           <div className={styles.cardMain}>
             <div className={styles.meta}>{target.track === "now_remote" ? "Now · Remote" : "Summer 2027"} · {target.origin.replaceAll("_", " ")} · priority {target.priorityScore}</div>
             <h3>{target.companyName}</h3>

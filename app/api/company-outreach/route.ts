@@ -8,7 +8,7 @@ export async function GET() {
   const unauthorized = await requireScoutApiUser();
   if (unauthorized) return unauthorized;
   try {
-    const targets = await getDb().select().from(companyOutreachTargets).orderBy(desc(companyOutreachTargets.createdAt)).limit(100);
+    const targets = await getDb().select().from(companyOutreachTargets).orderBy(desc(companyOutreachTargets.createdAt)).limit(250);
     return Response.json({ targets });
   } catch (error) {
     return scoutServerError("company-outreach.list", error, "Unable to load company outreach targets");
