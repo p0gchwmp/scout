@@ -318,7 +318,7 @@ async function loadApprovedTask(baseUrl) {
   const tab = await activeTab();
   const inspection = await send("SCOUT_INSPECT");
 
-  const response = await fetch(`${baseUrl}/api/applications/browser-task/exchange`, {
+  const response = await fetch(`${baseUrl}/browser-handoff/exchange`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ token, currentUrl: tab.url, fields: fieldMetadata(inspection) }),
