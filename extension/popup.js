@@ -416,7 +416,7 @@ loadButton.addEventListener("click", () => {
   }
 
   // Firefox / Zen requires permissions.request() to be invoked directly from
-  // the user-click handler. Do not put an await before this call.
+  // the user-click handler. Do not yield to another async operation before this call.
   const permissionRequest = chrome.permissions.request(scoutOriginPermission(baseUrl));
   void permissionRequest
     .then(async (granted) => {
