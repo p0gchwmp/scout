@@ -114,28 +114,42 @@ export function AutopilotPanel() {
   async function runScout() {
     setBusy("run"); setError(""); setNotice("");
     try {
-      const discoveryPayload = await requestJson<{ found?: number; error?: string }>(
-        "/api/agent/discover",
-        { method: "POST" },
-        "Internship discovery failed",
-      );
-      const payload = await requestJson<{
-        createdTargets?: number;
-        queuedTargets?: number;
-        researchedTargets?: number;
-        candidatesFound?: number;
-        searchQueriesAttempted?: number;
-        searchProvider?: string | null;
-        error?: string;
-      }>(
-        "/api/company-outreach/autopilot",
-        { method: "POST" },
-        "Company outreach autopilot failed",
-      );
+      const [discoveryResult, outreachResult] = await Promise.allSettled([
+        requestJson<{ found?: number; error?: string }>(
+          "/api/agent/discover",
+          { method: "POST" },
+          "Internship discovery failed",
+        ),
+        requestJson<{
+          createdTargets?: number;
+          queuedTargets?: number;
+          researchedTargets?: number;
+          candidatesFound?: number;
+          searchQueriesAttempted?: number;
+          searchProvider?: string | null;
+          error?: string;
+        }>(
+          "/api/company-outreach/autopilot",
+          { method: "POST" },
+          "Company outreach autopilot failed",
+        ),
+      ]);
+
       await load();
-      setNotice(`Scout run complete: ${discoveryPayload.found ?? 0} internship lead(s), ${payload.queuedTargets ?? 0} company target(s), ${payload.researchedTargets ?? 0} company research pass(es), ${payload.candidatesFound ?? 0} published contact candidate(s).${payload.searchProvider ? ` Public search: ${payload.searchProvider}.` : " Public search is not configured yet; first-party research only."} Nothing was sent.`);
+      if (discoveryResult.status === "rejected" && outreachResult.status === "rejected") {
+        throw new Error(`${failureMessage(discoveryResult)} · ${failureMessage(outreachResult)}`);
+      }
+
+      const discoveryFound = discoveryResult.status === "fulfilled" ? discoveryResult.value.found ?? 0 : 0;
+      const outreach = outreachResult.status === "fulfilled" ? outreachResult.value : null;
+      const partialErrors = [
+        discoveryResult.status === "rejected" ? failureMessage(discoveryResult) : null,
+        outreachResult.status === "rejected" ? failureMessage(outreachResult) : null,
+      ].filter((value): value is string => Boolean(value));
+
+      setNotice(`Scout prep complete: ${discoveryFound} internship lead(s), ${outreach?.queuedTargets ?? 0} company target(s), ${outreach?.researchedTargets ?? 0} company research pass(es), ${outreach?.candidatesFound ?? 0} published contact candidate(s).${outreach?.searchProvider ? ` Public search: ${outreach.searchProvider}.` : " Company outreach can still use bounded first-party research."}${partialErrors.length ? ` Partial lane issue: ${partialErrors.join(" · ")}.` : ""} Nothing was sent or submitted.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Scout run failed");
+      setError(caught instanceof Error ? caught.message : "Scout prep failed");
     } finally { setBusy(null); }
   }
 
@@ -221,8 +235,8 @@ export function AutopilotPanel() {
   return <>
     <section className={styles.section}>
       <div className={styles.sectionHead}>
-        <div><p className={styles.kicker}>SCOUT AUTOPILOT</p><h2>One run. Scout does the hunting.</h2></div>
-        <p>Internship discovery + automatic company queue + bounded public recruiter research. You review evidence and final copy.</p>
+        <div><p className={styles.kicker}>SCOUT AUTOPILOT</p><h2>Two lanes, one review queue.</h2></div>
+        <p>Internship discovery and company/VC outreach prep run independently, so one lane failing does not erase useful work from the other. You review evidence and final copy.</p>
       </div>
       {notice && <div className={styles.notice}>{notice}</div>}
       {error && <div className={`${styles.notice} ${styles.error}`}>{error}</div>}
