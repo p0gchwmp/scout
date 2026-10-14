@@ -25,6 +25,7 @@
     "db:generate": "drizzle-kit generate",
     "check:clean": "node scripts/assert-clean-worktree.mjs",
     "verify:release": "npm test && npm run lint && python tests/migration-smoke.py && python tests/personio-migration-smoke.py && python tests/company-outreach-migration-smoke.py && npm run db:generate && git diff --exit-code && npm run check:clean && node scripts/scout-local-run.mjs --self-test && node scripts/scout-doctor.mjs --self-test && node scripts/scout-smoke.mjs --self-test && node scripts/scout-ready.mjs --self-test && node scripts/scout-hosting-doctor.mjs --self-test && node scripts/scout-smoke.mjs && npm run build:node && git diff --check && npm run check:clean && git status --short --branch && git diff --stat",
+    "scout:fill": "node scripts/scout-desktop-fill.mjs",
     "scout:ai:status": "node --experimental-strip-types scripts/scout-ai-status.mjs",
     "scout:gmail:oauth": "node scripts/scout-gmail-oauth.mjs",
     "scout:profile:repair": "node scripts/scout-profile-repair.mjs",

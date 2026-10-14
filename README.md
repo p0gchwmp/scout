@@ -96,3 +96,20 @@ Generated draft bytes depend only on template version 1 and the pinned candidate
 - `npm run lint` checks source files (generated `work`, `dist`, and `outputs` artifacts are ignored).
 - `npm run build` creates the production vinext/Cloudflare build.
 - `npm test` runs unit tests, the production build, and the rendered HTML smoke test.
+
+
+## Extension-free desktop Safe Fill (Windows / Edge)
+
+Scout's current /assist page can create a signed, short-lived browser handoff for a `ready_for_review` application. You no longer need a Zen/Firefox extension to fill **verified reusable profile fields**.
+
+1. Install Node.js 22+ and Microsoft Edge on the **same local computer** as your Scout checkout.
+2. Update the local checkout to the current `main` branch.
+3. While signed into your owner-only hosted Scout, visit `/assist`, choose a ready application and click **Create desktop fill handoff**, then **Copy token**.
+4. From a terminal in the local Scout repository, run `npm run scout:fill` and paste the token at the prompt. Do not put it in command-line arguments or screenshots.
+5. Scout validates the signed handoff against its existing exact-page, version, profile-evidence and approved-claim checks *before* launching a temporary isolated Microsoft Edge profile.
+6. Once the employer form is visible, press Enter in the terminal. Scout displays the verified field mappings and asks you to type `FILL` before it changes any fields.
+7. Review the still-open Edge form, answer sensitive questions, upload the resume manually, and submit yourself if appropriate. Return to the terminal to close the temporary window.
+
+The runner does **not** control the current Zen tab, install a browser add-on, scrape contacts, fill claim drafts, solve CAPTCHA, upload files, send email or submit applications. It never overwrites nonempty form fields. The local browser session is temporary and is not a permanently authenticated profile. Forms requiring unsupported widgets, iframes, first/last-name decomposition or an employer login stay partly manual.
+
+This is a **local desktop workflow**, not hosted autonomous browser control. The production app does not receive remote-control access to your personal browser. The existing extension is retained for backward compatibility but is optional.
